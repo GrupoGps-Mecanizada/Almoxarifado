@@ -70,6 +70,33 @@
         .status-badge:hover::before {
             left: 100%;
         }
+
+        /* Loading Overlay */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(15, 23, 42, 0.95);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            backdrop-filter: blur(5px);
+        }
+
+        /* Skeleton Loading */
+        .skeleton {
+            background: linear-gradient(90deg, #1e293b 25%, #334155 50%, #1e293b 75%);
+            background-size: 200% 100%;
+            animation: skeleton-loading 1.5s ease-in-out infinite;
+        }
+
+        @keyframes skeleton-loading {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
     </style>
 </head>
 <body class="bg-gradient-dark text-gray-100">
@@ -79,8 +106,15 @@
         // ============================================
         // CONFIGURAÇÃO
         // ============================================
-        const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby-lucFUnQqPV4Rjz7dLcUuTKlaDNJHcjt8V4ASG8-bmpixjEoISSb6TtHcsk5noplSzg/exec';
+        const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw0t5npl17rGnH19dXfTQR-uvEPOvFFUJy428k_OtfbKXoJJsDBlCJSh1FmIrmjv1dHZg/exec';
         
+        // Cache de dados
+        const CACHE_DURATION = 5 * 60 * 1000; // 5 minutos
+        let dataCache = {
+            items: { data: null, timestamp: 0 },
+            movements: { data: null, timestamp: 0, filters: null }
+        };
+
         // ============================================
         // TIPOS DE MOVIMENTAÇÃO
         // ============================================
@@ -101,6 +135,7 @@
             movements: [],
             selectedDate: getCurrentDate(),
             isLoading: false,
+            isInitialLoading: true,
             
             // Paginação
             currentPage: 1,
@@ -175,12 +210,99 @@
             return colors[color] || colors.slate;
         }
 
+        // Loading Overlay
+        function showLoading(message = 'Carregando...') {
+            const overlay = document.createElement('div');
+            overlay.id = 'loading-overlay';
+            overlay.className = 'loading-overlay';
+            overlay.innerHTML = `
+                <div class="text-center">
+                    <i class="ph ph-spinner animate-spin text-6xl text-emerald-400 mb-4"></i>
+                    <p class="text-xl text-white font-semibold">${message}</p>
+                </div>
+            `;
+            document.body.appendChild(overlay);
+        }
+
+        function hideLoading() {
+            const overlay = document.getElementById('loading-overlay');
+            if (overlay) {
+                overlay.remove();
+            }
+        }
+
+        // Cache helpers
+        function isCacheValid(cacheKey) {
+            const cached = dataCache[cacheKey];
+            if (!cached.data) return false;
+            return (Date.now() - cached.timestamp) < CACHE_DURATION;
+        }
+
+        function setCache(cacheKey, data, filters = null) {
+            dataCache[cacheKey] = {
+                data: data,
+                timestamp: Date.now(),
+                filters: filters
+            };
+        }
+
+        function getCache(cacheKey) {
+            if (isCacheValid(cacheKey)) {
+                return dataCache[cacheKey].data;
+            }
+            return null;
+        }
+
+        function clearCache(cacheKey = null) {
+            if (cacheKey) {
+                dataCache[cacheKey] = { data: null, timestamp: 0, filters: null };
+            } else {
+                // Clear all cache
+                Object.keys(dataCache).forEach(key => {
+                    dataCache[key] = { data: null, timestamp: 0, filters: null };
+                });
+            }
+        }
+
         // ============================================
-        // SERVIÇOS / API
+        // SERVIÇOS / API COM TIMEOUT E RETRY
         // ============================================
+        async function fetchWithTimeout(url, options = {}, timeout = 30000) {
+            const controller = new AbortController();
+            const id = setTimeout(() => controller.abort(), timeout);
+            
+            try {
+                const response = await fetch(url, {
+                    ...options,
+                    signal: controller.signal
+                });
+                clearTimeout(id);
+                return response;
+            } catch (error) {
+                clearTimeout(id);
+                if (error.name === 'AbortError') {
+                    throw new Error('Tempo limite de conexão excedido');
+                }
+                throw error;
+            }
+        }
+
+        async function retryFetch(fetchFunction, retries = 2) {
+            for (let i = 0; i <= retries; i++) {
+                try {
+                    return await fetchFunction();
+                } catch (error) {
+                    if (i === retries) throw error;
+                    await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+                }
+            }
+        }
+
         async function login(username, password) {
             try {
-                const response = await fetch(`${GOOGLE_SCRIPT_URL}?action=login&username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`);
+                const response = await fetchWithTimeout(
+                    `${GOOGLE_SCRIPT_URL}?action=login&username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`
+                );
                 const data = await response.json();
                 return data;
             } catch (error) {
@@ -189,10 +311,26 @@
             }
         }
 
-        async function getItems() {
+        async function getItems(useCache = true) {
+            // Check cache first
+            if (useCache) {
+                const cached = getCache('items');
+                if (cached) {
+                    console.log('📦 Usando cache de itens');
+                    return { success: true, items: cached };
+                }
+            }
+
             try {
-                const response = await fetch(`${GOOGLE_SCRIPT_URL}?action=getItems`);
+                const response = await retryFetch(() => 
+                    fetchWithTimeout(`${GOOGLE_SCRIPT_URL}?action=getItems`)
+                );
                 const data = await response.json();
+                
+                if (data.success) {
+                    setCache('items', data.items);
+                }
+                
                 return data;
             } catch (error) {
                 console.error('Erro ao buscar itens:', error);
@@ -202,11 +340,18 @@
 
         async function saveItem(item) {
             try {
-                const response = await fetch(GOOGLE_SCRIPT_URL, {
-                    method: 'POST',
-                    body: JSON.stringify({ action: 'saveItem', item: item })
-                });
+                const response = await retryFetch(() => 
+                    fetchWithTimeout(GOOGLE_SCRIPT_URL, {
+                        method: 'POST',
+                        body: JSON.stringify({ action: 'saveItem', item: item })
+                    })
+                );
                 const data = await response.json();
+                
+                if (data.success) {
+                    clearCache('items');
+                }
+                
                 return data;
             } catch (error) {
                 console.error('Erro ao salvar item:', error);
@@ -216,11 +361,18 @@
 
         async function deleteItem(itemId) {
             try {
-                const response = await fetch(GOOGLE_SCRIPT_URL, {
-                    method: 'POST',
-                    body: JSON.stringify({ action: 'deleteItem', itemId: itemId })
-                });
+                const response = await retryFetch(() =>
+                    fetchWithTimeout(GOOGLE_SCRIPT_URL, {
+                        method: 'POST',
+                        body: JSON.stringify({ action: 'deleteItem', itemId: itemId })
+                    })
+                );
                 const data = await response.json();
+                
+                if (data.success) {
+                    clearCache('items');
+                }
+                
                 return data;
             } catch (error) {
                 console.error('Erro ao deletar item:', error);
@@ -230,11 +382,18 @@
 
         async function saveMovement(movement) {
             try {
-                const response = await fetch(GOOGLE_SCRIPT_URL, {
-                    method: 'POST',
-                    body: JSON.stringify({ action: 'saveMovement', movement: movement })
-                });
+                const response = await retryFetch(() =>
+                    fetchWithTimeout(GOOGLE_SCRIPT_URL, {
+                        method: 'POST',
+                        body: JSON.stringify({ action: 'saveMovement', movement: movement })
+                    })
+                );
                 const data = await response.json();
+                
+                if (data.success) {
+                    clearCache(); // Clear all cache when movement is saved
+                }
+                
                 return data;
             } catch (error) {
                 console.error('Erro ao salvar movimentação:', error);
@@ -242,7 +401,23 @@
             }
         }
 
-        async function getMovements(filters) {
+        async function getMovements(filters, useCache = true) {
+            // Check cache with filter comparison
+            if (useCache) {
+                const cached = dataCache.movements;
+                if (cached.data && isCacheValid('movements')) {
+                    const filtersMatch = cached.filters && 
+                        cached.filters.startDate === filters.startDate &&
+                        cached.filters.endDate === filters.endDate &&
+                        cached.filters.type === filters.type;
+                    
+                    if (filtersMatch) {
+                        console.log('📦 Usando cache de movimentações');
+                        return { success: true, movements: cached.data };
+                    }
+                }
+            }
+
             try {
                 const params = new URLSearchParams({
                     action: 'getMovements',
@@ -250,8 +425,16 @@
                     endDate: filters.endDate,
                     type: filters.type
                 });
-                const response = await fetch(`${GOOGLE_SCRIPT_URL}?${params}`);
+                
+                const response = await retryFetch(() =>
+                    fetchWithTimeout(`${GOOGLE_SCRIPT_URL}?${params}`)
+                );
                 const data = await response.json();
+                
+                if (data.success) {
+                    setCache('movements', data.movements, filters);
+                }
+                
                 return data;
             } catch (error) {
                 console.error('Erro ao buscar movimentações:', error);
@@ -261,7 +444,7 @@
 
         async function getStatistics() {
             try {
-                const response = await fetch(`${GOOGLE_SCRIPT_URL}?action=getStatistics`);
+                const response = await fetchWithTimeout(`${GOOGLE_SCRIPT_URL}?action=getStatistics`);
                 const data = await response.json();
                 return data;
             } catch (error) {
@@ -285,15 +468,22 @@
 
             state.isLoading = true;
             render();
+            showLoading('Autenticando...');
 
             const result = await login(username, password);
 
             if (result.success) {
                 state.user = result.user;
                 localStorage.setItem('user', JSON.stringify(result.user));
+                
+                // Load items in background
+                showLoading('Carregando dados...');
                 await loadItems();
+                
+                hideLoading();
                 state.view = 'dashboard';
             } else {
+                hideLoading();
                 alert('Login falhou: ' + (result.error || 'Credenciais inválidas'));
             }
 
@@ -301,21 +491,30 @@
             render();
         }
 
-        async function loadItems() {
-            const result = await getItems();
+        async function loadItems(forceRefresh = false) {
+            const result = await getItems(!forceRefresh);
             if (result.success) {
                 state.items = result.items;
+            } else {
+                console.error('Erro ao carregar itens:', result.error);
             }
         }
 
-        async function loadMovements() {
+        async function loadMovements(forceRefresh = false) {
             state.isLoading = true;
             render();
             
-            const result = await getMovements(state.filters);
+            showLoading('Carregando histórico...');
+            
+            const result = await getMovements(state.filters, !forceRefresh);
+            
+            hideLoading();
+            
             if (result.success) {
                 state.movements = result.movements;
                 state.currentPage = 1;
+            } else {
+                alert('Erro ao carregar movimentações: ' + result.error);
             }
             
             state.isLoading = false;
@@ -330,12 +529,15 @@
         }
 
         function handleLogout() {
-            localStorage.removeItem('user');
-            state.user = null;
-            state.items = [];
-            state.movements = [];
-            state.view = 'login';
-            render();
+            if (confirm('Deseja realmente sair?')) {
+                localStorage.removeItem('user');
+                clearCache();
+                state.user = null;
+                state.items = [];
+                state.movements = [];
+                state.view = 'login';
+                render();
+            }
         }
 
         function startDistribution() {
@@ -377,6 +579,7 @@
 
             state.isLoading = true;
             render();
+            showLoading('Registrando distribuição...');
 
             const movement = {
                 date: getCurrentDate(),
@@ -391,9 +594,11 @@
 
             const result = await saveMovement(movement);
 
+            hideLoading();
+
             if (result.success) {
                 alert('✅ Distribuição registrada com sucesso!');
-                await loadItems();
+                await loadItems(true); // Force refresh
                 cancelDistribution();
             } else {
                 alert('Erro ao registrar distribuição: ' + result.error);
@@ -420,12 +625,15 @@
 
             state.isLoading = true;
             render();
+            showLoading(state.editingItem ? 'Atualizando item...' : 'Cadastrando item...');
 
             const result = await saveItem(itemData);
 
+            hideLoading();
+
             if (result.success) {
                 alert(`✅ Item ${state.editingItem ? 'atualizado' : 'cadastrado'} com sucesso!`);
-                await loadItems();
+                await loadItems(true); // Force refresh
                 state.editingItem = null;
                 state.view = 'stock';
             } else {
@@ -443,12 +651,15 @@
 
             state.isLoading = true;
             render();
+            showLoading('Excluindo item...');
 
             const result = await deleteItem(itemId);
 
+            hideLoading();
+
             if (result.success) {
                 alert('✅ Item excluído com sucesso!');
-                await loadItems();
+                await loadItems(true); // Force refresh
             } else {
                 alert('Erro ao excluir item: ' + result.error);
             }
@@ -470,7 +681,7 @@
         }
 
         async function applyFilters() {
-            await loadMovements();
+            await loadMovements(false); // Don't use cache when applying filters
         }
 
         function changePage(delta) {
@@ -480,6 +691,7 @@
             if (newPage >= 1 && newPage <= totalPages) {
                 state.currentPage = newPage;
                 render();
+                window.scrollTo({ top: 0, behavior: 'smooth' });
             }
         }
 
@@ -576,7 +788,7 @@
                             
                             <button 
                                 type="submit" 
-                                class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 uppercase tracking-wider"
+                                class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed"
                                 ${state.isLoading ? 'disabled' : ''}
                             >
                                 ${state.isLoading ? '<i class="ph ph-spinner animate-spin text-2xl"></i> ENTRANDO...' : '<i class="ph ph-sign-in text-xl"></i> ENTRAR'}
@@ -584,7 +796,7 @@
                         </form>
                         
                         <div class="mt-6 text-center text-xs text-slate-500 font-mono">
-                            <p>v2.0.0 | © 2026</p>
+                            <p>v2.1.0 | © 2026</p>
                         </div>
                     </div>
                 </div>
@@ -785,7 +997,7 @@
                                         ` : ''}
 
                                         <div class="flex gap-2 pt-4 border-t border-slate-700">
-                                            <button onclick="openEditItem(${JSON.stringify(item).replace(/"/g, '&quot;')})" class="flex-1 bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg font-semibold transition-all flex items-center justify-center gap-2">
+                                            <button onclick='openEditItem(${JSON.stringify(item).replace(/'/g, "\\'")})}' class="flex-1 bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg font-semibold transition-all flex items-center justify-center gap-2">
                                                 <i class="ph ph-pencil-simple"></i>
                                                 Editar
                                             </button>
@@ -1003,9 +1215,11 @@
                                 <p class="text-slate-400">
                                     Mostrando <span class="font-bold text-white">${paginatedMovements.length}</span> de <span class="font-bold text-white">${filteredMovements.length}</span> registros
                                 </p>
-                                <p class="text-slate-400 font-mono text-sm">
-                                    Página ${state.currentPage} de ${totalPages || 1}
-                                </p>
+                                ${totalPages > 1 ? `
+                                    <p class="text-slate-400 font-mono text-sm">
+                                        Página ${state.currentPage} de ${totalPages}
+                                    </p>
+                                ` : ''}
                             </div>
 
                             ${state.isLoading ? `
@@ -1254,7 +1468,7 @@
                                     </button>
                                     <button 
                                         type="submit"
-                                        class="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2"
+                                        class="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                                         ${state.isLoading ? 'disabled' : ''}
                                     >
                                         ${state.isLoading ? '<i class="ph ph-spinner animate-spin text-2xl"></i> SALVANDO...' : `<i class="ph ph-floppy-disk text-xl"></i> ${isEdit ? 'ATUALIZAR' : 'CADASTRAR'}`}
@@ -1319,15 +1533,29 @@
         // ============================================
         // INICIALIZAÇÃO
         // ============================================
-        document.addEventListener('DOMContentLoaded', () => {
+        document.addEventListener('DOMContentLoaded', async () => {
             const savedUser = localStorage.getItem('user');
+            
             if (savedUser) {
+                showLoading('Carregando sistema...');
                 state.user = JSON.parse(savedUser);
-                loadItems().then(() => {
+                
+                try {
+                    await loadItems();
                     state.view = 'dashboard';
-                    render();
-                });
+                    state.isInitialLoading = false;
+                } catch (error) {
+                    console.error('Erro ao carregar dados:', error);
+                    alert('Erro ao carregar dados. Por favor, faça login novamente.');
+                    localStorage.removeItem('user');
+                    state.user = null;
+                    state.view = 'login';
+                }
+                
+                hideLoading();
+                render();
             } else {
+                state.isInitialLoading = false;
                 render();
             }
         });

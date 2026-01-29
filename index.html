@@ -3,13 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Almoxarifado EPI - Sistema de Controle</title>
+    <title>Almoxarifado EPI - Sistema Multi-Estoque v3.0</title>
     <meta name="theme-color" content="#0F172A">
     
-    <!-- Phosphor Icons -->
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
-    
-    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
     <style>
@@ -22,109 +19,81 @@
         }
         
         .font-mono { font-family: 'Space Mono', monospace; }
-        
         .animate-spin { animation: spin 1s linear infinite; }
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         
         .fade-in { animation: fadeIn 0.3s ease-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         
-        .slide-in { animation: slideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
-        @keyframes slideIn { from { opacity: 0; transform: translateX(-20px); } to { opacity: 1; transform: translateX(0); } }
-        
-        /* Custom Scrollbar */
         ::-webkit-scrollbar { width: 8px; }
         ::-webkit-scrollbar-track { background: #1e293b; }
         ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: #64748b; }
         
-        /* Gradient Background */
         .bg-gradient-dark {
             background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #334155 100%);
         }
         
-        /* Glass Effect */
         .glass {
             background: rgba(255, 255, 255, 0.05);
             backdrop-filter: blur(10px);
             border: 1px solid rgba(255, 255, 255, 0.1);
         }
         
-        /* Status Badge Animation */
-        .status-badge {
-            position: relative;
-            overflow: hidden;
-        }
-        
-        .status-badge::before {
-            content: '';
-            position: absolute;
+        .loading-overlay {
+            position: fixed;
             top: 0;
-            left: -100%;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
-            transition: left 0.5s;
-        }
-        
-        .status-badge:hover::before {
-            left: 100%;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(15, 23, 42, 0.95);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
         }
     </style>
 </head>
 <body class="bg-gradient-dark text-gray-100">
     <div id="app"></div>
+    
+    <div id="loadingOverlay" class="loading-overlay hidden">
+        <div class="text-center">
+            <i class="ph ph-spinner animate-spin text-6xl text-emerald-400"></i>
+            <p class="text-xl mt-4" id="loadingMessage">Processando...</p>
+        </div>
+    </div>
 
     <script>
-        // ============================================
-        // CONFIGURAÇÃO
-        // ============================================
+        // ⚠️ IMPORTANTE: SUBSTITUA PELA SUA URL DO GOOGLE APPS SCRIPT
         const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz-xO56iWqs5zFYCndfQcqWJL5AdCOyxO6v8RUqnQPkgcOMUPWeCydQedJC5MVjrS8X8g/exec';
         
-        // Cache de dados
-        const cache = {
-            movements: null,
-            movementsTimestamp: null,
-            items: null,
-            itemsTimestamp: null,
-            CACHE_DURATION: 60000 // 1 minuto
-        };
-
-        // ============================================
         // TIPOS DE MOVIMENTAÇÃO
-        // ============================================
         const MOVEMENT_TYPES = {
             'ENTRADA': { label: 'Entrada', color: 'emerald', icon: 'arrow-down-left' },
             'SAIDA': { label: 'Saída', color: 'red', icon: 'arrow-up-right' },
             'DISTRIBUICAO': { label: 'Distribuição', color: 'blue', icon: 'hand-coins' },
-            'AJUSTE': { label: 'Ajuste', color: 'amber', icon: 'wrench' }
+            'AJUSTE': { label: 'Ajuste', color: 'amber', icon: 'wrench' },
+            'TRANSFERENCIA': { label: 'Transferência', color: 'indigo', icon: 'swap' }
         };
 
-        // ============================================
         // ESTADO DA APLICAÇÃO
-        // ============================================
         let state = {
             view: 'login',
             user: null,
+            currentAlmoxarifado: 'ALM1',
             items: [],
             movements: [],
-            selectedDate: getCurrentDate(),
-            isLoading: false,
-            loadingMessage: '',
+            statistics: null,
             
-            // Paginação
-            currentPage: 1,
-            itemsPerPage: 50,
-            
-            // Filtros
             filters: {
                 startDate: getFirstDayOfMonth(),
                 endDate: getCurrentDate(),
                 type: 'TODOS',
+                almoxarifado: 'TODOS',
                 searchTerm: ''
             },
             
-            // Operação de distribuição
             distributionOperation: {
                 active: false,
                 selectedItem: null,
@@ -133,19 +102,21 @@
                 observations: ''
             },
             
-            // Edição de item
-            editingItem: null,
+            transferOperation: {
+                active: false,
+                selectedItem: null,
+                origem: 'ALM2',
+                destino: 'ALM1',
+                quantity: 1,
+                observations: ''
+            },
             
-            // Estatísticas
-            statistics: null
+            editingItem: null,
+            currentPage: 1,
+            itemsPerPage: 50
         };
 
-        // Debounce timer
-        let searchDebounceTimer = null;
-
-        // ============================================
         // UTILITÁRIOS
-        // ============================================
         function getCurrentDate() {
             return new Date().toISOString().split('T')[0];
         }
@@ -158,193 +129,104 @@
         function formatDate(dateStr) {
             if (!dateStr) return '';
             const date = new Date(dateStr + 'T00:00:00');
-            return date.toLocaleDateString('pt-BR', { 
-                day: '2-digit',
-                month: '2-digit',
-                year: 'numeric'
-            });
+            return date.toLocaleDateString('pt-BR');
         }
 
         function formatDateTime(dateStr) {
             if (!dateStr) return '';
             const date = new Date(dateStr);
-            return date.toLocaleString('pt-BR', {
-                day: '2-digit',
-                month: '2-digit',
-                year: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit'
-            });
+            return date.toLocaleString('pt-BR');
         }
 
-        function getColorClass(color, type = 'bg') {
+        function showLoading(message = 'Processando...') {
+            const overlay = document.getElementById('loadingOverlay');
+            const messageEl = document.getElementById('loadingMessage');
+            if (overlay && messageEl) {
+                messageEl.textContent = message;
+                overlay.classList.remove('hidden');
+            }
+        }
+
+        function hideLoading() {
+            const overlay = document.getElementById('loadingOverlay');
+            if (overlay) {
+                overlay.classList.add('hidden');
+            }
+        }
+
+        function getColorClass(color) {
             const colors = {
-                emerald: type === 'bg' ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : 'bg-emerald-600',
-                red: type === 'bg' ? 'bg-red-500/20 border-red-500 text-red-400' : 'bg-red-600',
-                blue: type === 'bg' ? 'bg-blue-500/20 border-blue-500 text-blue-400' : 'bg-blue-600',
-                amber: type === 'bg' ? 'bg-amber-500/20 border-amber-500 text-amber-400' : 'bg-amber-600',
-                slate: type === 'bg' ? 'bg-slate-500/20 border-slate-500 text-slate-400' : 'bg-slate-600'
+                emerald: 'bg-emerald-500/20 border-emerald-500 text-emerald-400',
+                red: 'bg-red-500/20 border-red-500 text-red-400',
+                blue: 'bg-blue-500/20 border-blue-500 text-blue-400',
+                amber: 'bg-amber-500/20 border-amber-500 text-amber-400',
+                indigo: 'bg-indigo-500/20 border-indigo-500 text-indigo-400'
             };
-            return colors[color] || colors.slate;
+            return colors[color] || 'bg-slate-500/20 border-slate-500 text-slate-400';
         }
 
-        function debounce(func, wait) {
-            return function executedFunction(...args) {
-                clearTimeout(searchDebounceTimer);
-                searchDebounceTimer = setTimeout(() => func(...args), wait);
-            };
-        }
-
-        function isCacheValid(timestamp) {
-            if (!timestamp) return false;
-            return (Date.now() - timestamp) < cache.CACHE_DURATION;
-        }
-
-        // ============================================
-        // SERVIÇOS / API
-        // ============================================
-        async function login(username, password) {
+        // API CALLS
+        async function apiCall(endpoint, params = {}, isPost = false) {
             try {
-                const response = await fetch(`${GOOGLE_SCRIPT_URL}?action=login&username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`);
-                const data = await response.json();
-                return data;
-            } catch (error) {
-                console.error('Erro no login:', error);
-                return { success: false, error: error.message };
-            }
-        }
-
-        async function getItems(forceRefresh = false) {
-            // Verifica cache
-            if (!forceRefresh && cache.items && isCacheValid(cache.itemsTimestamp)) {
-                return { success: true, items: cache.items };
-            }
-
-            try {
-                const response = await fetch(`${GOOGLE_SCRIPT_URL}?action=getItems`);
-                const data = await response.json();
+                let url = GOOGLE_SCRIPT_URL;
                 
-                if (data.success) {
-                    cache.items = data.items;
-                    cache.itemsTimestamp = Date.now();
+                if (isPost) {
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'text/plain' },
+                        body: JSON.stringify(params)
+                    });
+                    return await response.json();
+                } else {
+                    const queryString = new URLSearchParams(params).toString();
+                    const response = await fetch(`${url}?${queryString}`);
+                    return await response.json();
                 }
-                
-                return data;
             } catch (error) {
-                console.error('Erro ao buscar itens:', error);
+                console.error('API Error:', error);
                 return { success: false, error: error.message };
             }
+        }
+
+        async function login(username, password) {
+            return await apiCall('', { action: 'login', username, password });
+        }
+
+        async function getItems(almoxarifado = 'ALM1') {
+            return await apiCall('', { action: 'getItems', almoxarifado });
         }
 
         async function saveItem(item) {
-            try {
-                const response = await fetch(GOOGLE_SCRIPT_URL, {
-                    method: 'POST',
-                    body: JSON.stringify({ action: 'saveItem', item: item })
-                });
-                const data = await response.json();
-                
-                // Invalida cache
-                if (data.success) {
-                    cache.items = null;
-                    cache.itemsTimestamp = null;
-                }
-                
-                return data;
-            } catch (error) {
-                console.error('Erro ao salvar item:', error);
-                return { success: false, error: error.message };
-            }
+            return await apiCall('', { action: 'saveItem', item }, true);
         }
 
-        async function deleteItem(itemId) {
-            try {
-                const response = await fetch(GOOGLE_SCRIPT_URL, {
-                    method: 'POST',
-                    body: JSON.stringify({ action: 'deleteItem', itemId: itemId })
-                });
-                const data = await response.json();
-                
-                // Invalida cache
-                if (data.success) {
-                    cache.items = null;
-                    cache.itemsTimestamp = null;
-                }
-                
-                return data;
-            } catch (error) {
-                console.error('Erro ao deletar item:', error);
-                return { success: false, error: error.message };
-            }
+        async function deleteItem(itemId, almoxarifado) {
+            return await apiCall('', { action: 'deleteItem', itemId, almoxarifado }, true);
         }
 
         async function saveMovement(movement) {
-            try {
-                const response = await fetch(GOOGLE_SCRIPT_URL, {
-                    method: 'POST',
-                    body: JSON.stringify({ action: 'saveMovement', movement: movement })
-                });
-                const data = await response.json();
-                
-                // Invalida cache
-                if (data.success) {
-                    cache.movements = null;
-                    cache.movementsTimestamp = null;
-                    cache.items = null;
-                    cache.itemsTimestamp = null;
-                }
-                
-                return data;
-            } catch (error) {
-                console.error('Erro ao salvar movimentação:', error);
-                return { success: false, error: error.message };
-            }
+            return await apiCall('', { action: 'saveMovement', movement }, true);
         }
 
-        async function getMovements(filters, forceRefresh = false) {
-            // Verifica cache (apenas se filtros não mudaram)
-            const filterKey = JSON.stringify(filters);
-            if (!forceRefresh && cache.movements && cache.movementsFilterKey === filterKey && isCacheValid(cache.movementsTimestamp)) {
-                return { success: true, movements: cache.movements };
-            }
-
-            try {
-                const params = new URLSearchParams({
-                    action: 'getMovements',
-                    startDate: filters.startDate,
-                    endDate: filters.endDate,
-                    type: filters.type
-                });
-                const response = await fetch(`${GOOGLE_SCRIPT_URL}?${params}`);
-                const data = await response.json();
-                
-                if (data.success) {
-                    cache.movements = data.movements;
-                    cache.movementsFilterKey = filterKey;
-                    cache.movementsTimestamp = Date.now();
-                }
-                
-                return data;
-            } catch (error) {
-                console.error('Erro ao buscar movimentações:', error);
-                return { success: false, error: error.message };
-            }
+        async function transferBetweenStocks(transfer) {
+            return await apiCall('', { action: 'transferBetweenStocks', transfer }, true);
         }
 
-        async function getStatistics() {
-            try {
-                const response = await fetch(`${GOOGLE_SCRIPT_URL}?action=getStatistics`);
-                const data = await response.json();
-                return data;
-            } catch (error) {
-                console.error('Erro ao buscar estatísticas:', error);
-                return { success: false, error: error.message };
-            }
+        async function getMovements(filters) {
+            return await apiCall('', {
+                action: 'getMovements',
+                startDate: filters.startDate,
+                endDate: filters.endDate,
+                type: filters.type,
+                almoxarifado: filters.almoxarifado
+            });
         }
 
-        // ============================================
+        async function getStatistics(almoxarifado = 'TODOS') {
+            return await apiCall('', { action: 'getStatistics', almoxarifado });
+        }
+
         // LÓGICA DE NEGÓCIO
-        // ============================================
         async function handleLogin(e) {
             e.preventDefault();
             const username = document.getElementById('username').value;
@@ -355,9 +237,7 @@
                 return;
             }
 
-            state.isLoading = true;
-            state.loadingMessage = 'Autenticando...';
-            render();
+            showLoading('Autenticando...');
 
             const result = await login(username, password);
 
@@ -365,29 +245,28 @@
                 state.user = result.user;
                 localStorage.setItem('user', JSON.stringify(result.user));
                 
-                state.loadingMessage = 'Carregando dados...';
-                render();
-                
+                showLoading('Carregando dados...');
                 await loadItems();
+                await loadStatistics();
+                
                 state.view = 'dashboard';
+                hideLoading();
+                render();
             } else {
+                hideLoading();
                 alert('Login falhou: ' + (result.error || 'Credenciais inválidas'));
             }
-
-            state.isLoading = false;
-            state.loadingMessage = '';
-            render();
         }
 
-        async function loadItems(forceRefresh = false) {
-            const result = await getItems(forceRefresh);
+        async function loadItems() {
+            const result = await getItems(state.currentAlmoxarifado);
             if (result.success) {
                 state.items = result.items;
             }
         }
 
-        async function loadMovements(forceRefresh = false) {
-            const result = await getMovements(state.filters, forceRefresh);
+        async function loadMovements() {
+            const result = await getMovements(state.filters);
             if (result.success) {
                 state.movements = result.movements;
                 state.currentPage = 1;
@@ -395,7 +274,7 @@
         }
 
         async function loadStatistics() {
-            const result = await getStatistics();
+            const result = await getStatistics(state.currentAlmoxarifado);
             if (result.success) {
                 state.statistics = result.statistics;
             }
@@ -403,17 +282,43 @@
 
         function handleLogout() {
             localStorage.removeItem('user');
-            state.user = null;
-            state.items = [];
-            state.movements = [];
-            cache.items = null;
-            cache.movements = null;
-            cache.itemsTimestamp = null;
-            cache.movementsTimestamp = null;
-            state.view = 'login';
+            state = {
+                view: 'login',
+                user: null,
+                currentAlmoxarifado: 'ALM1',
+                items: [],
+                movements: [],
+                statistics: null,
+                filters: {
+                    startDate: getFirstDayOfMonth(),
+                    endDate: getCurrentDate(),
+                    type: 'TODOS',
+                    almoxarifado: 'TODOS',
+                    searchTerm: ''
+                },
+                distributionOperation: {
+                    active: false,
+                    selectedItem: null,
+                    employeeName: '',
+                    quantity: 1,
+                    observations: ''
+                },
+                transferOperation: {
+                    active: false,
+                    selectedItem: null,
+                    origem: 'ALM2',
+                    destino: 'ALM1',
+                    quantity: 1,
+                    observations: ''
+                },
+                editingItem: null,
+                currentPage: 1,
+                itemsPerPage: 50
+            };
             render();
         }
 
+        // DISTRIBUIÇÃO
         function startDistribution() {
             state.distributionOperation.active = true;
             state.view = 'distribution';
@@ -447,13 +352,11 @@
             }
 
             if (item.quantidade < op.quantity) {
-                alert('Quantidade em estoque insuficiente');
+                alert('Quantidade insuficiente');
                 return;
             }
 
-            state.isLoading = true;
-            state.loadingMessage = 'Registrando distribuição...';
-            render();
+            showLoading('Registrando distribuição...');
 
             const movement = {
                 date: getCurrentDate(),
@@ -463,21 +366,113 @@
                 quantity: op.quantity,
                 employee: op.employeeName,
                 user: state.user.nome,
-                observations: op.observations
+                observations: op.observations,
+                almoxarifado: state.currentAlmoxarifado
             };
 
             const result = await saveMovement(movement);
 
             if (result.success) {
-                alert('✅ Distribuição registrada com sucesso!');
-                await loadItems(true);
+                await loadItems();
+                await loadStatistics();
+                hideLoading();
+                alert('✅ Distribuição registrada!');
                 cancelDistribution();
             } else {
-                alert('Erro ao registrar distribuição: ' + result.error);
+                hideLoading();
+                alert('Erro: ' + result.error);
+            }
+        }
+
+        // TRANSFERÊNCIA
+        function startTransfer() {
+            state.transferOperation.active = true;
+            state.view = 'transfer';
+            render();
+        }
+
+        function cancelTransfer() {
+            state.transferOperation = {
+                active: false,
+                selectedItem: null,
+                origem: 'ALM2',
+                destino: 'ALM1',
+                quantity: 1,
+                observations: ''
+            };
+            state.view = 'dashboard';
+            render();
+        }
+
+        async function confirmTransfer() {
+            const op = state.transferOperation;
+            
+            if (!op.selectedItem || op.quantity <= 0) {
+                alert('Preencha todos os campos');
+                return;
             }
 
-            state.isLoading = false;
-            state.loadingMessage = '';
+            if (op.origem === op.destino) {
+                alert('Origem e destino devem ser diferentes');
+                return;
+            }
+
+            showLoading('Processando transferência...');
+
+            const origemItems = await getItems(op.origem);
+            if (!origemItems.success) {
+                hideLoading();
+                alert('Erro ao buscar itens de origem');
+                return;
+            }
+
+            const item = origemItems.items.find(i => i.id === op.selectedItem);
+            if (!item) {
+                hideLoading();
+                alert('Item não encontrado no almoxarifado de origem');
+                return;
+            }
+
+            if (item.quantidade < op.quantity) {
+                hideLoading();
+                alert('Quantidade insuficiente no almoxarifado de origem');
+                return;
+            }
+
+            const transfer = {
+                itemId: item.id,
+                itemName: item.nome,
+                quantity: op.quantity,
+                origem: op.origem,
+                destino: op.destino,
+                user: state.user.nome,
+                observations: op.observations
+            };
+
+            const result = await transferBetweenStocks(transfer);
+
+            if (result.success) {
+                await loadItems();
+                await loadStatistics();
+                hideLoading();
+                alert('✅ Transferência realizada!');
+                cancelTransfer();
+            } else {
+                hideLoading();
+                alert('Erro: ' + result.error);
+            }
+        }
+
+        // EDIÇÃO DE ITENS
+        function openNewItem() {
+            state.editingItem = null;
+            state.view = 'editItem';
+            render();
+        }
+
+        function openEditItem(item) {
+            state.editingItem = item;
+            state.view = 'editItem';
             render();
         }
 
@@ -493,101 +488,64 @@
                 ca: document.getElementById('itemCA').value,
                 validade: document.getElementById('itemValidity').value,
                 localizacao: document.getElementById('itemLocation').value,
-                observacoes: document.getElementById('itemObs').value
+                observacoes: document.getElementById('itemObs').value,
+                almoxarifado: state.currentAlmoxarifado
             };
 
-            state.isLoading = true;
-            state.loadingMessage = 'Salvando item...';
-            render();
+            showLoading('Salvando item...');
 
             const result = await saveItem(itemData);
 
             if (result.success) {
-                alert(`✅ Item ${state.editingItem ? 'atualizado' : 'cadastrado'} com sucesso!`);
-                await loadItems(true);
+                await loadItems();
+                await loadStatistics();
+                hideLoading();
+                alert(`✅ Item ${state.editingItem ? 'atualizado' : 'cadastrado'}!`);
                 state.editingItem = null;
                 state.view = 'stock';
+                render();
             } else {
-                alert('Erro ao salvar item: ' + result.error);
+                hideLoading();
+                alert('Erro: ' + result.error);
             }
-
-            state.isLoading = false;
-            state.loadingMessage = '';
-            render();
         }
 
         async function handleDeleteItem(itemId) {
-            if (!confirm('Tem certeza que deseja excluir este item?')) {
-                return;
-            }
+            if (!confirm('Excluir este item?')) return;
 
-            state.isLoading = true;
-            state.loadingMessage = 'Excluindo item...';
-            render();
+            showLoading('Excluindo...');
 
-            const result = await deleteItem(itemId);
+            const result = await deleteItem(itemId, state.currentAlmoxarifado);
 
             if (result.success) {
-                alert('✅ Item excluído com sucesso!');
-                await loadItems(true);
+                await loadItems();
+                await loadStatistics();
+                hideLoading();
+                alert('✅ Item excluído!');
+                render();
             } else {
-                alert('Erro ao excluir item: ' + result.error);
+                hideLoading();
+                alert('Erro: ' + result.error);
             }
-
-            state.isLoading = false;
-            state.loadingMessage = '';
-            render();
         }
 
-        function openEditItem(item) {
-            state.editingItem = item;
-            state.view = 'editItem';
+        // HISTÓRICO
+        async function navigateToHistory() {
+            state.view = 'history';
+            showLoading('Carregando histórico...');
             render();
-        }
-
-        function openNewItem() {
-            state.editingItem = null;
-            state.view = 'editItem';
+            
+            await loadMovements();
+            
+            hideLoading();
             render();
         }
 
         async function applyFilters() {
-            state.isLoading = true;
-            state.loadingMessage = 'Buscando movimentações...';
-            render();
-            
-            await loadMovements(true);
-            
-            state.isLoading = false;
-            state.loadingMessage = '';
-            render();
-        }
-
-        // Função otimizada para navegar para o histórico
-        async function navigateToHistory() {
-            // Muda para a view imediatamente com loading
-            state.view = 'history';
-            state.isLoading = true;
-            state.loadingMessage = 'Carregando histórico...';
-            render();
-            
-            // Carrega movimentações em background
+            showLoading('Buscando...');
             await loadMovements();
-            
-            state.isLoading = false;
-            state.loadingMessage = '';
+            hideLoading();
             render();
-        }
-
-        function changePage(delta) {
-            const totalPages = Math.ceil(getFilteredMovements().length / state.itemsPerPage);
-            const newPage = state.currentPage + delta;
-            
-            if (newPage >= 1 && newPage <= totalPages) {
-                state.currentPage = newPage;
-                render();
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-            }
         }
 
         function getFilteredMovements() {
@@ -612,16 +570,18 @@
             return filtered.slice(start, end);
         }
 
-        // Debounced search
-        const handleSearchInput = debounce((value) => {
-            state.filters.searchTerm = value;
-            state.currentPage = 1;
-            render();
-        }, 300);
+        function changePage(delta) {
+            const totalPages = Math.ceil(getFilteredMovements().length / state.itemsPerPage);
+            const newPage = state.currentPage + delta;
+            
+            if (newPage >= 1 && newPage <= totalPages) {
+                state.currentPage = newPage;
+                render();
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+        }
 
-        // ============================================
         // RENDERIZAÇÃO
-        // ============================================
         function render() {
             const app = document.getElementById('app');
             
@@ -637,6 +597,9 @@
                     break;
                 case 'distribution':
                     app.innerHTML = renderDistribution();
+                    break;
+                case 'transfer':
+                    app.innerHTML = renderTransfer();
                     break;
                 case 'history':
                     app.innerHTML = renderHistory();
@@ -655,7 +618,7 @@
                             <i class="ph-fill ph-package text-7xl"></i>
                         </div>
                         <h1 class="text-4xl font-bold text-center mb-2 font-mono">ALMOXARIFADO</h1>
-                        <p class="text-center text-slate-400 mb-8 text-sm uppercase tracking-wider">Sistema de Controle de EPIs</p>
+                        <p class="text-center text-slate-400 mb-8 text-sm uppercase tracking-wider">Sistema Multi-Estoque v3.0</p>
                         
                         <form onsubmit="handleLogin(event)" class="space-y-6">
                             <div>
@@ -667,7 +630,6 @@
                                         id="username"
                                         class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 pl-12 focus:border-emerald-500 outline-none text-lg text-white"
                                         placeholder="Digite seu usuário"
-                                        ${state.isLoading ? 'disabled' : ''}
                                         required
                                     >
                                 </div>
@@ -682,7 +644,6 @@
                                         id="password"
                                         class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 pl-12 focus:border-emerald-500 outline-none text-lg text-white"
                                         placeholder="Digite sua senha"
-                                        ${state.isLoading ? 'disabled' : ''}
                                         required
                                     >
                                 </div>
@@ -690,32 +651,98 @@
                             
                             <button 
                                 type="submit" 
-                                class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed"
-                                ${state.isLoading ? 'disabled' : ''}
+                                class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 uppercase tracking-wider"
                             >
-                                ${state.isLoading ? `<i class="ph ph-spinner animate-spin text-2xl"></i> ${state.loadingMessage.toUpperCase()}` : '<i class="ph ph-sign-in text-xl"></i> ENTRAR'}
+                                <i class="ph ph-sign-in text-xl"></i> ENTRAR
                             </button>
                         </form>
                         
                         <div class="mt-6 text-center text-xs text-slate-500 font-mono">
-                            <p>v2.1.0 | © 2026 | Optimized</p>
+                            <p>v3.0.0 | © 2026 | Multi-Almoxarifado</p>
                         </div>
                     </div>
                 </div>
             `;
         }
 
+        function renderHeader() {
+            return `
+                <header class="bg-slate-900 border-b border-slate-800 p-4 sticky top-0 z-30 shadow-lg">
+                    <div class="max-w-7xl mx-auto flex justify-between items-center flex-wrap gap-4">
+                        <div class="flex items-center gap-4">
+                            <div class="w-12 h-12 bg-emerald-500/20 rounded-lg flex items-center justify-center">
+                                <i class="ph-fill ph-package text-emerald-400 text-2xl"></i>
+                            </div>
+                            <div>
+                                <h1 class="font-bold text-xl font-mono">ALMOXARIFADO</h1>
+                                <p class="text-sm text-slate-400">${state.user?.nome || 'Sistema'}</p>
+                            </div>
+                        </div>
+                        
+                        <div class="flex items-center gap-2">
+                            ${state.view !== 'login' ? `
+                                <select 
+                                    onchange="state.currentAlmoxarifado = this.value; showLoading('Carregando...'); loadItems().then(() => { loadStatistics().then(() => { hideLoading(); render(); }); });"
+                                    class="bg-slate-800 border-2 border-slate-700 rounded-lg px-4 py-2 text-sm font-semibold focus:border-emerald-500 outline-none"
+                                >
+                                    <option value="ALM1" ${state.currentAlmoxarifado === 'ALM1' ? 'selected' : ''}>📦 ALM1 - Distribuição</option>
+                                    <option value="ALM2" ${state.currentAlmoxarifado === 'ALM2' ? 'selected' : ''}>🏭 ALM2 - Estoque</option>
+                                </select>
+                            ` : ''}
+                        </div>
+                        
+                        <nav class="flex gap-2">
+                            <button 
+                                onclick="state.view='dashboard'; showLoading('Carregando...'); loadStatistics().then(() => { hideLoading(); render(); })"
+                                class="px-4 py-2 rounded-lg hover:bg-slate-800 transition-all ${state.view === 'dashboard' ? 'bg-slate-800' : ''}"
+                                title="Dashboard"
+                            >
+                                <i class="ph-fill ph-house text-xl"></i>
+                            </button>
+                            <button 
+                                onclick="state.view='stock'; showLoading('Carregando...'); loadItems().then(() => { hideLoading(); render(); })"
+                                class="px-4 py-2 rounded-lg hover:bg-slate-800 transition-all ${state.view === 'stock' ? 'bg-slate-800' : ''}"
+                                title="Estoque"
+                            >
+                                <i class="ph-fill ph-warehouse text-xl"></i>
+                            </button>
+                            <button 
+                                onclick="navigateToHistory()"
+                                class="px-4 py-2 rounded-lg hover:bg-slate-800 transition-all ${state.view === 'history' ? 'bg-slate-800' : ''}"
+                                title="Histórico"
+                            >
+                                <i class="ph-fill ph-clock-counter-clockwise text-xl"></i>
+                            </button>
+                            <button 
+                                onclick="handleLogout()"
+                                class="px-4 py-2 rounded-lg hover:bg-red-900/50 transition-all text-red-400"
+                                title="Sair"
+                            >
+                                <i class="ph-fill ph-sign-out text-xl"></i>
+                            </button>
+                        </nav>
+                    </div>
+                </header>
+            `;
+        }
+
         function renderDashboard() {
-            const totalItems = state.items.length;
-            const totalQuantity = state.items.reduce((sum, item) => sum + item.quantidade, 0);
-            const lowStock = state.items.filter(item => item.quantidade < 10).length;
+            const stats = state.statistics || {};
+            const totalItems = stats.totalItems || 0;
+            const totalQuantity = stats.totalQuantity || 0;
+            const lowStock = stats.lowStock || 0;
+
+            const almLabel = state.currentAlmoxarifado === 'ALM1' ? 'Distribuição' : 'Estoque';
 
             return `
                 <div class="min-h-screen pb-6">
                     ${renderHeader()}
                     
                     <main class="p-4 max-w-7xl mx-auto space-y-6">
-                        <!-- Statistics Cards -->
+                        <div class="flex justify-between items-center">
+                            <h1 class="text-3xl font-bold">Dashboard - ${almLabel}</h1>
+                        </div>
+
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-4 fade-in">
                             <div class="glass p-6 rounded-xl border-l-4 border-emerald-500">
                                 <div class="flex items-center justify-between">
@@ -754,8 +781,7 @@
                             </div>
                         </div>
 
-                        <!-- Quick Actions -->
-                        <div class="glass p-6 rounded-xl slide-in">
+                        <div class="glass p-6 rounded-xl">
                             <h2 class="text-xl font-bold mb-4 flex items-center gap-2">
                                 <i class="ph-fill ph-lightning text-amber-400"></i>
                                 Ações Rápidas
@@ -766,15 +792,23 @@
                                         <i class="ph-fill ph-hand-coins text-emerald-400 text-2xl"></i>
                                     </div>
                                     <h3 class="font-bold text-lg mb-1">Distribuir EPI</h3>
-                                    <p class="text-slate-400 text-sm">Registrar entrega ao colaborador</p>
+                                    <p class="text-slate-400 text-sm">Entrega ao colaborador</p>
                                 </button>
 
-                                <button onclick="state.view='stock'; render()" class="glass p-6 rounded-lg hover:border-blue-500 border-2 border-transparent transition-all text-left group">
+                                <button onclick="startTransfer()" class="glass p-6 rounded-lg hover:border-indigo-500 border-2 border-transparent transition-all text-left group">
+                                    <div class="w-12 h-12 bg-indigo-500/20 rounded-lg flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                                        <i class="ph-fill ph-swap text-indigo-400 text-2xl"></i>
+                                    </div>
+                                    <h3 class="font-bold text-lg mb-1">Transferir</h3>
+                                    <p class="text-slate-400 text-sm">Entre almoxarifados</p>
+                                </button>
+
+                                <button onclick="state.view='stock'; showLoading('Carregando...'); loadItems().then(() => { hideLoading(); render(); })" class="glass p-6 rounded-lg hover:border-blue-500 border-2 border-transparent transition-all text-left group">
                                     <div class="w-12 h-12 bg-blue-500/20 rounded-lg flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
                                         <i class="ph-fill ph-warehouse text-blue-400 text-2xl"></i>
                                     </div>
                                     <h3 class="font-bold text-lg mb-1">Ver Estoque</h3>
-                                    <p class="text-slate-400 text-sm">Visualizar inventário completo</p>
+                                    <p class="text-slate-400 text-sm">Inventário completo</p>
                                 </button>
 
                                 <button onclick="navigateToHistory()" class="glass p-6 rounded-lg hover:border-purple-500 border-2 border-transparent transition-all text-left group">
@@ -784,27 +818,21 @@
                                     <h3 class="font-bold text-lg mb-1">Histórico</h3>
                                     <p class="text-slate-400 text-sm">Ver movimentações</p>
                                 </button>
-
-                                <button onclick="openNewItem()" class="glass p-6 rounded-lg hover:border-amber-500 border-2 border-transparent transition-all text-left group">
-                                    <div class="w-12 h-12 bg-amber-500/20 rounded-lg flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                                        <i class="ph-fill ph-plus-circle text-amber-400 text-2xl"></i>
-                                    </div>
-                                    <h3 class="font-bold text-lg mb-1">Novo Item</h3>
-                                    <p class="text-slate-400 text-sm">Cadastrar EPI no sistema</p>
-                                </button>
                             </div>
                         </div>
 
-                        <!-- Recent Items -->
                         <div class="glass p-6 rounded-xl">
                             <h2 class="text-xl font-bold mb-4 flex items-center gap-2">
                                 <i class="ph-fill ph-list text-blue-400"></i>
-                                Itens Recentes
+                                Itens em ${almLabel}
                             </h2>
                             ${state.items.length === 0 ? `
                                 <div class="text-center py-12 text-slate-500">
                                     <i class="ph ph-package text-6xl mb-4 opacity-50"></i>
                                     <p>Nenhum item cadastrado</p>
+                                    <button onclick="openNewItem()" class="mt-4 bg-emerald-600 hover:bg-emerald-700 px-6 py-3 rounded-lg font-bold">
+                                        Cadastrar Item
+                                    </button>
                                 </div>
                             ` : `
                                 <div class="space-y-2">
@@ -812,14 +840,14 @@
                                         <div class="glass p-4 rounded-lg flex items-center justify-between hover:border-slate-600 border-2 border-transparent transition-all">
                                             <div class="flex-1">
                                                 <h3 class="font-bold text-lg">${item.nome}</h3>
-                                                <div class="flex gap-2 mt-1">
+                                                <div class="flex gap-2 mt-1 flex-wrap">
                                                     <span class="text-xs px-2 py-1 bg-blue-500/20 text-blue-400 rounded-full font-semibold">${item.categoria}</span>
-                                                    <span class="text-xs px-2 py-1 bg-slate-500/20 text-slate-400 rounded-full font-mono">${item.unidade}</span>
+                                                    ${item.ca ? `<span class="text-xs px-2 py-1 bg-purple-500/20 text-purple-400 rounded-full font-mono">CA ${item.ca}</span>` : ''}
                                                 </div>
                                             </div>
                                             <div class="text-right">
                                                 <p class="text-2xl font-bold font-mono ${item.quantidade < 10 ? 'text-amber-400' : 'text-emerald-400'}">${item.quantidade}</p>
-                                                <p class="text-xs text-slate-500 uppercase">Em estoque</p>
+                                                <p class="text-xs text-slate-500 uppercase">${item.unidade}</p>
                                             </div>
                                         </div>
                                     `).join('')}
@@ -837,10 +865,10 @@
                     ${renderHeader()}
                     
                     <main class="p-4 max-w-7xl mx-auto space-y-6">
-                        <div class="flex justify-between items-center mb-6">
+                        <div class="flex justify-between items-center mb-6 flex-wrap gap-4">
                             <h1 class="text-3xl font-bold flex items-center gap-3">
                                 <i class="ph-fill ph-warehouse text-emerald-400"></i>
-                                Estoque de EPIs
+                                Estoque - ${state.currentAlmoxarifado === 'ALM1' ? 'Distribuição' : 'Estoque Principal'}
                             </h1>
                             <button onclick="openNewItem()" class="bg-emerald-600 hover:bg-emerald-700 px-6 py-3 rounded-lg font-bold flex items-center gap-2 transition-all">
                                 <i class="ph-fill ph-plus-circle text-xl"></i>
@@ -939,7 +967,7 @@
                             ${availableItems.length === 0 ? `
                                 <div class="text-center py-12 text-slate-500">
                                     <i class="ph ph-warning-circle text-8xl mb-4 text-amber-500"></i>
-                                    <p class="text-xl mb-4">Nenhum item disponível em estoque</p>
+                                    <p class="text-xl mb-4">Nenhum item disponível em ${state.currentAlmoxarifado === 'ALM1' ? 'Distribuição' : 'Estoque'}</p>
                                     <button onclick="cancelDistribution()" class="bg-slate-700 hover:bg-slate-600 px-6 py-3 rounded-lg font-bold">
                                         Voltar
                                     </button>
@@ -982,7 +1010,7 @@
                                         <input 
                                             type="text"
                                             value="${state.distributionOperation.employeeName}"
-                                            onchange="state.distributionOperation.employeeName = this.value"
+                                            oninput="state.distributionOperation.employeeName = this.value"
                                             class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-emerald-500 outline-none text-lg text-white"
                                             placeholder="Digite o nome completo"
                                             required
@@ -994,7 +1022,7 @@
                                         <input 
                                             type="number"
                                             value="${state.distributionOperation.quantity}"
-                                            onchange="state.distributionOperation.quantity = parseInt(this.value)"
+                                            oninput="state.distributionOperation.quantity = parseInt(this.value) || 1"
                                             min="1"
                                             max="${selectedItem ? selectedItem.quantidade : 999}"
                                             class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-emerald-500 outline-none text-lg text-white font-mono"
@@ -1005,7 +1033,7 @@
                                     <div>
                                         <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Observações</label>
                                         <textarea 
-                                            onchange="state.distributionOperation.observations = this.value"
+                                            oninput="state.distributionOperation.observations = this.value"
                                             class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-emerald-500 outline-none text-lg text-white"
                                             rows="3"
                                             placeholder="Informações adicionais (opcional)"
@@ -1017,20 +1045,129 @@
                                             type="button"
                                             onclick="cancelDistribution()"
                                             class="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-4 rounded-xl transition-all"
-                                            ${state.isLoading ? 'disabled' : ''}
                                         >
                                             CANCELAR
                                         </button>
                                         <button 
                                             type="submit"
-                                            class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                                            ${state.isLoading ? 'disabled' : ''}
+                                            class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2"
                                         >
-                                            ${state.isLoading ? `<i class="ph ph-spinner animate-spin text-2xl"></i> ${state.loadingMessage.toUpperCase()}` : '<i class="ph ph-check-circle text-xl"></i> CONFIRMAR DISTRIBUIÇÃO'}
+                                            <i class="ph ph-check-circle text-xl"></i> CONFIRMAR DISTRIBUIÇÃO
                                         </button>
                                     </div>
                                 </form>
                             `}
+                        </div>
+                    </main>
+                </div>
+            `;
+        }
+
+        function renderTransfer() {
+            return `
+                <div class="min-h-screen pb-6">
+                    ${renderHeader()}
+                    
+                    <main class="p-4 max-w-3xl mx-auto">
+                        <div class="glass p-8 rounded-xl">
+                            <div class="flex items-center justify-between mb-6">
+                                <h1 class="text-3xl font-bold flex items-center gap-3">
+                                    <i class="ph-fill ph-swap text-indigo-400"></i>
+                                    Transferir entre Almoxarifados
+                                </h1>
+                                <button onclick="cancelTransfer()" class="text-slate-400 hover:text-white transition-all">
+                                    <i class="ph ph-x text-3xl"></i>
+                                </button>
+                            </div>
+
+                            <form onsubmit="event.preventDefault(); confirmTransfer();" class="space-y-6">
+                                <div class="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Origem</label>
+                                        <select 
+                                            onchange="state.transferOperation.origem = this.value; render()"
+                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-indigo-500 outline-none text-lg text-white"
+                                        >
+                                            <option value="ALM1" ${state.transferOperation.origem === 'ALM1' ? 'selected' : ''}>ALM1 - Distribuição</option>
+                                            <option value="ALM2" ${state.transferOperation.origem === 'ALM2' ? 'selected' : ''}>ALM2 - Estoque</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Destino</label>
+                                        <select 
+                                            onchange="state.transferOperation.destino = this.value; render()"
+                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-indigo-500 outline-none text-lg text-white"
+                                        >
+                                            <option value="ALM1" ${state.transferOperation.destino === 'ALM1' ? 'selected' : ''}>ALM1 - Distribuição</option>
+                                            <option value="ALM2" ${state.transferOperation.destino === 'ALM2' ? 'selected' : ''}>ALM2 - Estoque</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Selecione o Item (do almoxarifado de origem)</label>
+                                    <input 
+                                        type="text"
+                                        id="transferItemId"
+                                        oninput="state.transferOperation.selectedItem = this.value"
+                                        value="${state.transferOperation.selectedItem || ''}"
+                                        class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-indigo-500 outline-none text-lg text-white font-mono"
+                                        placeholder="Digite o ID do item (ex: ITEM-001)"
+                                        required
+                                    >
+                                    <p class="text-xs text-slate-500 mt-2">💡 Dica: Consulte o ID do item na tela de Estoque</p>
+                                </div>
+
+                                <div>
+                                    <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Quantidade *</label>
+                                    <input 
+                                        type="number"
+                                        value="${state.transferOperation.quantity}"
+                                        oninput="state.transferOperation.quantity = parseInt(this.value) || 1"
+                                        min="1"
+                                        class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-indigo-500 outline-none text-lg text-white font-mono"
+                                        required
+                                    >
+                                </div>
+
+                                <div>
+                                    <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Observações</label>
+                                    <textarea 
+                                        oninput="state.transferOperation.observations = this.value"
+                                        class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-indigo-500 outline-none text-lg text-white"
+                                        rows="3"
+                                        placeholder="Motivo da transferência (opcional)"
+                                    >${state.transferOperation.observations}</textarea>
+                                </div>
+
+                                <div class="bg-indigo-500/10 border-2 border-indigo-500/50 rounded-lg p-4">
+                                    <h3 class="font-bold text-indigo-300 mb-2 flex items-center gap-2">
+                                        <i class="ph-fill ph-info"></i>
+                                        Resumo da Transferência
+                                    </h3>
+                                    <p class="text-sm text-slate-300">
+                                        <strong>De:</strong> ${state.transferOperation.origem === 'ALM1' ? 'Almoxarifado 1 (Distribuição)' : 'Almoxarifado 2 (Estoque)'}<br>
+                                        <strong>Para:</strong> ${state.transferOperation.destino === 'ALM1' ? 'Almoxarifado 1 (Distribuição)' : 'Almoxarifado 2 (Estoque)'}<br>
+                                        <strong>Quantidade:</strong> ${state.transferOperation.quantity}
+                                    </p>
+                                </div>
+
+                                <div class="flex gap-4 pt-6">
+                                    <button 
+                                        type="button"
+                                        onclick="cancelTransfer()"
+                                        class="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-4 rounded-xl transition-all"
+                                    >
+                                        CANCELAR
+                                    </button>
+                                    <button 
+                                        type="submit"
+                                        class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2"
+                                    >
+                                        <i class="ph ph-swap text-xl"></i> CONFIRMAR TRANSFERÊNCIA
+                                    </button>
+                                </div>
+                            </form>
                         </div>
                     </main>
                 </div>
@@ -1052,7 +1189,6 @@
                             Histórico de Movimentações
                         </h1>
 
-                        <!-- Filtros -->
                         <div class="glass p-6 rounded-xl">
                             <h2 class="font-bold mb-4 flex items-center gap-2 text-lg">
                                 <i class="ph ph-funnel text-blue-400"></i>
@@ -1093,7 +1229,6 @@
                                     <button 
                                         onclick="applyFilters()"
                                         class="w-full bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg font-bold transition-all flex items-center justify-center gap-2"
-                                        ${state.isLoading ? 'disabled' : ''}
                                     >
                                         <i class="ph ph-magnifying-glass"></i>
                                         BUSCAR
@@ -1106,14 +1241,13 @@
                                 <input 
                                     type="text"
                                     value="${state.filters.searchTerm}"
-                                    oninput="handleSearchInput(this.value)"
+                                    oninput="state.filters.searchTerm = this.value; render()"
                                     class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-3 focus:border-blue-500 outline-none text-white"
                                     placeholder="Buscar por item, colaborador ou usuário..."
                                 >
                             </div>
                         </div>
 
-                        <!-- Resultados -->
                         <div class="glass p-6 rounded-xl">
                             <div class="flex justify-between items-center mb-4">
                                 <p class="text-slate-400">
@@ -1124,12 +1258,7 @@
                                 </p>
                             </div>
 
-                            ${state.isLoading ? `
-                                <div class="text-center py-12">
-                                    <i class="ph ph-spinner animate-spin text-6xl text-blue-400"></i>
-                                    <p class="text-slate-400 mt-4">${state.loadingMessage}</p>
-                                </div>
-                            ` : filteredMovements.length === 0 ? `
+                            ${filteredMovements.length === 0 ? `
                                 <div class="text-center py-12 text-slate-500">
                                     <i class="ph ph-database text-8xl mb-4 opacity-50"></i>
                                     <p class="text-xl">Nenhuma movimentação encontrada</p>
@@ -1141,10 +1270,10 @@
                                         const typeInfo = MOVEMENT_TYPES[movement.type];
                                         return `
                                             <div class="glass p-4 rounded-lg hover:border-${typeInfo.color}-500 border-2 border-transparent transition-all">
-                                                <div class="flex items-start justify-between gap-4">
+                                                <div class="flex items-start justify-between gap-4 flex-wrap">
                                                     <div class="flex-1">
-                                                        <div class="flex items-center gap-3 mb-2">
-                                                            <div class="w-10 h-10 ${getColorClass(typeInfo.color, 'full')} rounded-lg flex items-center justify-center flex-shrink-0">
+                                                        <div class="flex items-center gap-3 mb-2 flex-wrap">
+                                                            <div class="w-10 h-10 bg-${typeInfo.color}-600 rounded-lg flex items-center justify-center flex-shrink-0">
                                                                 <i class="ph-fill ph-${typeInfo.icon} text-white text-xl"></i>
                                                             </div>
                                                             <div>
@@ -1168,6 +1297,13 @@
                                                                 <i class="ph ph-user-circle"></i>
                                                                 <span class="font-semibold">Responsável:</span> ${movement.user}
                                                             </p>
+                                                            ${movement.almoxarifado ? `
+                                                                <p class="flex items-center gap-2">
+                                                                    <i class="ph ph-warehouse"></i>
+                                                                    <span class="font-semibold">Almoxarifado:</span> ${movement.almoxarifado === 'ALM1' ? 'Distribuição' : 'Estoque'}
+                                                                    ${movement.almoxarifadoDestino ? ` → ${movement.almoxarifadoDestino === 'ALM1' ? 'Distribuição' : 'Estoque'}` : ''}
+                                                                </p>
+                                                            ` : ''}
                                                             ${movement.observations ? `
                                                                 <p class="flex items-center gap-2">
                                                                     <i class="ph ph-note"></i>
@@ -1178,8 +1314,8 @@
                                                     </div>
                                                     
                                                     <div class="text-right flex-shrink-0">
-                                                        <p class="text-3xl font-bold font-mono ${movement.type === 'ENTRADA' ? 'text-emerald-400' : 'text-red-400'}">
-                                                            ${movement.type === 'ENTRADA' ? '+' : '-'}${movement.quantity}
+                                                        <p class="text-3xl font-bold font-mono ${movement.type === 'ENTRADA' || movement.type === 'TRANSFERENCIA' ? 'text-emerald-400' : 'text-red-400'}">
+                                                            ${movement.type === 'ENTRADA' ? '+' : movement.type === 'TRANSFERENCIA' ? '⇄' : '-'}${movement.quantity}
                                                         </p>
                                                         <p class="text-xs text-slate-500 mt-1">${formatDateTime(movement.timestamp)}</p>
                                                     </div>
@@ -1189,7 +1325,6 @@
                                     }).join('')}
                                 </div>
 
-                                <!-- Paginação -->
                                 ${totalPages > 1 ? `
                                     <div class="flex justify-center items-center gap-2 mt-6 pt-6 border-t border-slate-700 flex-wrap">
                                         <button 
@@ -1215,7 +1350,7 @@
                                                 }
                                                 return `
                                                     <button 
-                                                        onclick="state.currentPage = ${pageNum}; render()"
+                                                        onclick="state.currentPage = ${pageNum}; render(); window.scrollTo({top: 0, behavior: 'smooth'})"
                                                         class="w-10 h-10 rounded-lg font-bold ${state.currentPage === pageNum ? 'bg-blue-600' : 'bg-slate-700 hover:bg-slate-600'} transition-all"
                                                     >
                                                         ${pageNum}
@@ -1319,7 +1454,7 @@
                                     </div>
 
                                     <div>
-                                        <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">CA (Certificado de Aprovação)</label>
+                                        <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">CA (Certificado)</label>
                                         <input 
                                             type="text"
                                             id="itemCA"
@@ -1356,7 +1491,7 @@
                                             id="itemObs"
                                             class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-amber-500 outline-none text-lg text-white"
                                             rows="3"
-                                            placeholder="Informações adicionais sobre o item..."
+                                            placeholder="Informações adicionais..."
                                         >${item.observacoes || ''}</textarea>
                                     </div>
                                 </div>
@@ -1366,16 +1501,14 @@
                                         type="button"
                                         onclick="state.view='stock'; render()"
                                         class="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-4 rounded-xl transition-all"
-                                        ${state.isLoading ? 'disabled' : ''}
                                     >
                                         CANCELAR
                                     </button>
                                     <button 
                                         type="submit"
-                                        class="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                                        ${state.isLoading ? 'disabled' : ''}
+                                        class="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2"
                                     >
-                                        ${state.isLoading ? `<i class="ph ph-spinner animate-spin text-2xl"></i> ${state.loadingMessage.toUpperCase()}` : `<i class="ph ph-floppy-disk text-xl"></i> ${isEdit ? 'ATUALIZAR' : 'CADASTRAR'}`}
+                                        <i class="ph ph-floppy-disk text-xl"></i> ${isEdit ? 'ATUALIZAR' : 'CADASTRAR'}
                                     </button>
                                 </div>
                             </form>
@@ -1385,71 +1518,20 @@
             `;
         }
 
-        function renderHeader() {
-            return `
-                <header class="bg-slate-900 border-b border-slate-800 p-4 sticky top-0 z-30 shadow-lg">
-                    <div class="max-w-7xl mx-auto flex justify-between items-center">
-                        <div class="flex items-center gap-4">
-                            <div class="w-12 h-12 bg-emerald-500/20 rounded-lg flex items-center justify-center">
-                                <i class="ph-fill ph-package text-emerald-400 text-2xl"></i>
-                            </div>
-                            <div>
-                                <h1 class="font-bold text-xl font-mono">ALMOXARIFADO</h1>
-                                <p class="text-sm text-slate-400">${state.user?.nome || 'Sistema'}</p>
-                            </div>
-                        </div>
-                        
-                        <nav class="flex gap-2">
-                            <button 
-                                onclick="state.view='dashboard'; render()"
-                                class="px-4 py-2 rounded-lg hover:bg-slate-800 transition-all ${state.view === 'dashboard' ? 'bg-slate-800' : ''}"
-                                title="Dashboard"
-                            >
-                                <i class="ph-fill ph-house text-xl"></i>
-                            </button>
-                            <button 
-                                onclick="state.view='stock'; render()"
-                                class="px-4 py-2 rounded-lg hover:bg-slate-800 transition-all ${state.view === 'stock' ? 'bg-slate-800' : ''}"
-                                title="Estoque"
-                            >
-                                <i class="ph-fill ph-warehouse text-xl"></i>
-                            </button>
-                            <button 
-                                onclick="navigateToHistory()"
-                                class="px-4 py-2 rounded-lg hover:bg-slate-800 transition-all ${state.view === 'history' ? 'bg-slate-800' : ''}"
-                                title="Histórico"
-                            >
-                                <i class="ph-fill ph-clock-counter-clockwise text-xl"></i>
-                            </button>
-                            <button 
-                                onclick="handleLogout()"
-                                class="px-4 py-2 rounded-lg hover:bg-red-900/50 transition-all text-red-400"
-                                title="Sair"
-                            >
-                                <i class="ph-fill ph-sign-out text-xl"></i>
-                            </button>
-                        </nav>
-                    </div>
-                </header>
-            `;
-        }
-
-        // ============================================
         // INICIALIZAÇÃO
-        // ============================================
         document.addEventListener('DOMContentLoaded', () => {
             const savedUser = localStorage.getItem('user');
             if (savedUser) {
                 state.user = JSON.parse(savedUser);
-                state.loadingMessage = 'Carregando...';
-                state.isLoading = true;
+                showLoading('Carregando dados...');
                 render();
                 
                 loadItems().then(() => {
-                    state.view = 'dashboard';
-                    state.isLoading = false;
-                    state.loadingMessage = '';
-                    render();
+                    loadStatistics().then(() => {
+                        state.view = 'dashboard';
+                        hideLoading();
+                        render();
+                    });
                 });
             } else {
                 render();

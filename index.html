@@ -1,1 +1,1336 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Almoxarifado EPI - Sistema de Controle</title>
+    <meta name="theme-color" content="#0F172A">
+    
+    <!-- Phosphor Icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Work+Sans:wght@300;400;600;700;800&display=swap');
+        
+        body { 
+            -webkit-tap-highlight-color: transparent; 
+            overscroll-behavior-y: none;
+            font-family: 'Work Sans', sans-serif;
+        }
+        
+        .font-mono { font-family: 'Space Mono', monospace; }
+        
+        .animate-spin { animation: spin 1s linear infinite; }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        
+        .fade-in { animation: fadeIn 0.3s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .slide-in { animation: slideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+        @keyframes slideIn { from { opacity: 0; transform: translateX(-20px); } to { opacity: 1; transform: translateX(0); } }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #1e293b; }
+        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+        
+        /* Gradient Background */
+        .bg-gradient-dark {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #334155 100%);
+        }
+        
+        /* Glass Effect */
+        .glass {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        /* Status Badge Animation */
+        .status-badge {
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .status-badge::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+            transition: left 0.5s;
+        }
+        
+        .status-badge:hover::before {
+            left: 100%;
+        }
+    </style>
+</head>
+<body class="bg-gradient-dark text-gray-100">
+    <div id="app"></div>
 
+    <script>
+        // ============================================
+        // CONFIGURAÇÃO
+        // ============================================
+        const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby-lucFUnQqPV4Rjz7dLcUuTKlaDNJHcjt8V4ASG8-bmpixjEoISSb6TtHcsk5noplSzg/exec';
+        
+        // ============================================
+        // TIPOS DE MOVIMENTAÇÃO
+        // ============================================
+        const MOVEMENT_TYPES = {
+            'ENTRADA': { label: 'Entrada', color: 'emerald', icon: 'arrow-down-left' },
+            'SAIDA': { label: 'Saída', color: 'red', icon: 'arrow-up-right' },
+            'DISTRIBUICAO': { label: 'Distribuição', color: 'blue', icon: 'hand-coins' },
+            'AJUSTE': { label: 'Ajuste', color: 'amber', icon: 'wrench' }
+        };
+
+        // ============================================
+        // ESTADO DA APLICAÇÃO
+        // ============================================
+        let state = {
+            view: 'login',
+            user: null,
+            items: [],
+            movements: [],
+            selectedDate: getCurrentDate(),
+            isLoading: false,
+            
+            // Paginação
+            currentPage: 1,
+            itemsPerPage: 50,
+            
+            // Filtros
+            filters: {
+                startDate: getFirstDayOfMonth(),
+                endDate: getCurrentDate(),
+                type: 'TODOS',
+                searchTerm: ''
+            },
+            
+            // Operação de distribuição
+            distributionOperation: {
+                active: false,
+                selectedItem: null,
+                employeeName: '',
+                quantity: 1,
+                observations: ''
+            },
+            
+            // Edição de item
+            editingItem: null,
+            
+            // Estatísticas
+            statistics: null
+        };
+
+        // ============================================
+        // UTILITÁRIOS
+        // ============================================
+        function getCurrentDate() {
+            return new Date().toISOString().split('T')[0];
+        }
+
+        function getFirstDayOfMonth() {
+            const now = new Date();
+            return new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+        }
+
+        function formatDate(dateStr) {
+            if (!dateStr) return '';
+            const date = new Date(dateStr + 'T00:00:00');
+            return date.toLocaleDateString('pt-BR', { 
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric'
+            });
+        }
+
+        function formatDateTime(dateStr) {
+            if (!dateStr) return '';
+            const date = new Date(dateStr);
+            return date.toLocaleString('pt-BR', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        function getColorClass(color, type = 'bg') {
+            const colors = {
+                emerald: type === 'bg' ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : 'bg-emerald-600',
+                red: type === 'bg' ? 'bg-red-500/20 border-red-500 text-red-400' : 'bg-red-600',
+                blue: type === 'bg' ? 'bg-blue-500/20 border-blue-500 text-blue-400' : 'bg-blue-600',
+                amber: type === 'bg' ? 'bg-amber-500/20 border-amber-500 text-amber-400' : 'bg-amber-600',
+                slate: type === 'bg' ? 'bg-slate-500/20 border-slate-500 text-slate-400' : 'bg-slate-600'
+            };
+            return colors[color] || colors.slate;
+        }
+
+        // ============================================
+        // SERVIÇOS / API
+        // ============================================
+        async function login(username, password) {
+            try {
+                const response = await fetch(`${GOOGLE_SCRIPT_URL}?action=login&username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`);
+                const data = await response.json();
+                return data;
+            } catch (error) {
+                console.error('Erro no login:', error);
+                return { success: false, error: error.message };
+            }
+        }
+
+        async function getItems() {
+            try {
+                const response = await fetch(`${GOOGLE_SCRIPT_URL}?action=getItems`);
+                const data = await response.json();
+                return data;
+            } catch (error) {
+                console.error('Erro ao buscar itens:', error);
+                return { success: false, error: error.message };
+            }
+        }
+
+        async function saveItem(item) {
+            try {
+                const response = await fetch(GOOGLE_SCRIPT_URL, {
+                    method: 'POST',
+                    body: JSON.stringify({ action: 'saveItem', item: item })
+                });
+                const data = await response.json();
+                return data;
+            } catch (error) {
+                console.error('Erro ao salvar item:', error);
+                return { success: false, error: error.message };
+            }
+        }
+
+        async function deleteItem(itemId) {
+            try {
+                const response = await fetch(GOOGLE_SCRIPT_URL, {
+                    method: 'POST',
+                    body: JSON.stringify({ action: 'deleteItem', itemId: itemId })
+                });
+                const data = await response.json();
+                return data;
+            } catch (error) {
+                console.error('Erro ao deletar item:', error);
+                return { success: false, error: error.message };
+            }
+        }
+
+        async function saveMovement(movement) {
+            try {
+                const response = await fetch(GOOGLE_SCRIPT_URL, {
+                    method: 'POST',
+                    body: JSON.stringify({ action: 'saveMovement', movement: movement })
+                });
+                const data = await response.json();
+                return data;
+            } catch (error) {
+                console.error('Erro ao salvar movimentação:', error);
+                return { success: false, error: error.message };
+            }
+        }
+
+        async function getMovements(filters) {
+            try {
+                const params = new URLSearchParams({
+                    action: 'getMovements',
+                    startDate: filters.startDate,
+                    endDate: filters.endDate,
+                    type: filters.type
+                });
+                const response = await fetch(`${GOOGLE_SCRIPT_URL}?${params}`);
+                const data = await response.json();
+                return data;
+            } catch (error) {
+                console.error('Erro ao buscar movimentações:', error);
+                return { success: false, error: error.message };
+            }
+        }
+
+        async function getStatistics() {
+            try {
+                const response = await fetch(`${GOOGLE_SCRIPT_URL}?action=getStatistics`);
+                const data = await response.json();
+                return data;
+            } catch (error) {
+                console.error('Erro ao buscar estatísticas:', error);
+                return { success: false, error: error.message };
+            }
+        }
+
+        // ============================================
+        // LÓGICA DE NEGÓCIO
+        // ============================================
+        async function handleLogin(e) {
+            e.preventDefault();
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+
+            if (!username || !password) {
+                alert('Preencha todos os campos');
+                return;
+            }
+
+            state.isLoading = true;
+            render();
+
+            const result = await login(username, password);
+
+            if (result.success) {
+                state.user = result.user;
+                localStorage.setItem('user', JSON.stringify(result.user));
+                await loadItems();
+                state.view = 'dashboard';
+            } else {
+                alert('Login falhou: ' + (result.error || 'Credenciais inválidas'));
+            }
+
+            state.isLoading = false;
+            render();
+        }
+
+        async function loadItems() {
+            const result = await getItems();
+            if (result.success) {
+                state.items = result.items;
+            }
+        }
+
+        async function loadMovements() {
+            state.isLoading = true;
+            render();
+            
+            const result = await getMovements(state.filters);
+            if (result.success) {
+                state.movements = result.movements;
+                state.currentPage = 1;
+            }
+            
+            state.isLoading = false;
+            render();
+        }
+
+        async function loadStatistics() {
+            const result = await getStatistics();
+            if (result.success) {
+                state.statistics = result.statistics;
+            }
+        }
+
+        function handleLogout() {
+            localStorage.removeItem('user');
+            state.user = null;
+            state.items = [];
+            state.movements = [];
+            state.view = 'login';
+            render();
+        }
+
+        function startDistribution() {
+            state.distributionOperation.active = true;
+            state.view = 'distribution';
+            render();
+        }
+
+        function cancelDistribution() {
+            state.distributionOperation = {
+                active: false,
+                selectedItem: null,
+                employeeName: '',
+                quantity: 1,
+                observations: ''
+            };
+            state.view = 'dashboard';
+            render();
+        }
+
+        async function confirmDistribution() {
+            const op = state.distributionOperation;
+            
+            if (!op.selectedItem || !op.employeeName || op.quantity <= 0) {
+                alert('Preencha todos os campos obrigatórios');
+                return;
+            }
+
+            const item = state.items.find(i => i.id === op.selectedItem);
+            if (!item) {
+                alert('Item não encontrado');
+                return;
+            }
+
+            if (item.quantidade < op.quantity) {
+                alert('Quantidade em estoque insuficiente');
+                return;
+            }
+
+            state.isLoading = true;
+            render();
+
+            const movement = {
+                date: getCurrentDate(),
+                type: 'DISTRIBUICAO',
+                itemId: item.id,
+                itemName: item.nome,
+                quantity: op.quantity,
+                employee: op.employeeName,
+                user: state.user.nome,
+                observations: op.observations
+            };
+
+            const result = await saveMovement(movement);
+
+            if (result.success) {
+                alert('✅ Distribuição registrada com sucesso!');
+                await loadItems();
+                cancelDistribution();
+            } else {
+                alert('Erro ao registrar distribuição: ' + result.error);
+            }
+
+            state.isLoading = false;
+            render();
+        }
+
+        async function handleSaveItem(e) {
+            e.preventDefault();
+            
+            const itemData = {
+                id: state.editingItem?.id || 'ITEM-' + Date.now(),
+                nome: document.getElementById('itemName').value,
+                categoria: document.getElementById('itemCategory').value,
+                quantidade: parseInt(document.getElementById('itemQuantity').value),
+                unidade: document.getElementById('itemUnit').value,
+                ca: document.getElementById('itemCA').value,
+                validade: document.getElementById('itemValidity').value,
+                localizacao: document.getElementById('itemLocation').value,
+                observacoes: document.getElementById('itemObs').value
+            };
+
+            state.isLoading = true;
+            render();
+
+            const result = await saveItem(itemData);
+
+            if (result.success) {
+                alert(`✅ Item ${state.editingItem ? 'atualizado' : 'cadastrado'} com sucesso!`);
+                await loadItems();
+                state.editingItem = null;
+                state.view = 'stock';
+            } else {
+                alert('Erro ao salvar item: ' + result.error);
+            }
+
+            state.isLoading = false;
+            render();
+        }
+
+        async function handleDeleteItem(itemId) {
+            if (!confirm('Tem certeza que deseja excluir este item?')) {
+                return;
+            }
+
+            state.isLoading = true;
+            render();
+
+            const result = await deleteItem(itemId);
+
+            if (result.success) {
+                alert('✅ Item excluído com sucesso!');
+                await loadItems();
+            } else {
+                alert('Erro ao excluir item: ' + result.error);
+            }
+
+            state.isLoading = false;
+            render();
+        }
+
+        function openEditItem(item) {
+            state.editingItem = item;
+            state.view = 'editItem';
+            render();
+        }
+
+        function openNewItem() {
+            state.editingItem = null;
+            state.view = 'editItem';
+            render();
+        }
+
+        async function applyFilters() {
+            await loadMovements();
+        }
+
+        function changePage(delta) {
+            const totalPages = Math.ceil(getFilteredMovements().length / state.itemsPerPage);
+            const newPage = state.currentPage + delta;
+            
+            if (newPage >= 1 && newPage <= totalPages) {
+                state.currentPage = newPage;
+                render();
+            }
+        }
+
+        function getFilteredMovements() {
+            let filtered = state.movements;
+            
+            if (state.filters.searchTerm) {
+                const term = state.filters.searchTerm.toLowerCase();
+                filtered = filtered.filter(m => 
+                    m.itemName?.toLowerCase().includes(term) ||
+                    m.employee?.toLowerCase().includes(term) ||
+                    m.user?.toLowerCase().includes(term)
+                );
+            }
+            
+            return filtered;
+        }
+
+        function getPaginatedMovements() {
+            const filtered = getFilteredMovements();
+            const start = (state.currentPage - 1) * state.itemsPerPage;
+            const end = start + state.itemsPerPage;
+            return filtered.slice(start, end);
+        }
+
+        // ============================================
+        // RENDERIZAÇÃO
+        // ============================================
+        function render() {
+            const app = document.getElementById('app');
+            
+            switch(state.view) {
+                case 'login':
+                    app.innerHTML = renderLogin();
+                    break;
+                case 'dashboard':
+                    app.innerHTML = renderDashboard();
+                    break;
+                case 'stock':
+                    app.innerHTML = renderStock();
+                    break;
+                case 'distribution':
+                    app.innerHTML = renderDistribution();
+                    break;
+                case 'history':
+                    app.innerHTML = renderHistory();
+                    break;
+                case 'editItem':
+                    app.innerHTML = renderEditItem();
+                    break;
+            }
+        }
+
+        function renderLogin() {
+            return `
+                <div class="min-h-screen flex flex-col justify-center items-center p-6">
+                    <div class="glass p-8 rounded-2xl w-full max-w-md shadow-2xl fade-in">
+                        <div class="flex justify-center mb-6 text-emerald-400">
+                            <i class="ph-fill ph-package text-7xl"></i>
+                        </div>
+                        <h1 class="text-4xl font-bold text-center mb-2 font-mono">ALMOXARIFADO</h1>
+                        <p class="text-center text-slate-400 mb-8 text-sm uppercase tracking-wider">Sistema de Controle de EPIs</p>
+                        
+                        <form onsubmit="handleLogin(event)" class="space-y-6">
+                            <div>
+                                <label class="text-sm font-bold text-slate-300 block mb-2 uppercase tracking-wide">Usuário</label>
+                                <div class="relative">
+                                    <i class="ph ph-user absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xl"></i>
+                                    <input 
+                                        type="text" 
+                                        id="username"
+                                        class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 pl-12 focus:border-emerald-500 outline-none text-lg text-white"
+                                        placeholder="Digite seu usuário"
+                                        ${state.isLoading ? 'disabled' : ''}
+                                        required
+                                    >
+                                </div>
+                            </div>
+                            
+                            <div>
+                                <label class="text-sm font-bold text-slate-300 block mb-2 uppercase tracking-wide">Senha</label>
+                                <div class="relative">
+                                    <i class="ph ph-lock absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xl"></i>
+                                    <input 
+                                        type="password" 
+                                        id="password"
+                                        class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 pl-12 focus:border-emerald-500 outline-none text-lg text-white"
+                                        placeholder="Digite sua senha"
+                                        ${state.isLoading ? 'disabled' : ''}
+                                        required
+                                    >
+                                </div>
+                            </div>
+                            
+                            <button 
+                                type="submit" 
+                                class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 uppercase tracking-wider"
+                                ${state.isLoading ? 'disabled' : ''}
+                            >
+                                ${state.isLoading ? '<i class="ph ph-spinner animate-spin text-2xl"></i> ENTRANDO...' : '<i class="ph ph-sign-in text-xl"></i> ENTRAR'}
+                            </button>
+                        </form>
+                        
+                        <div class="mt-6 text-center text-xs text-slate-500 font-mono">
+                            <p>v2.0.0 | © 2026</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderDashboard() {
+            const totalItems = state.items.length;
+            const totalQuantity = state.items.reduce((sum, item) => sum + item.quantidade, 0);
+            const lowStock = state.items.filter(item => item.quantidade < 10).length;
+
+            return `
+                <div class="min-h-screen pb-6">
+                    ${renderHeader()}
+                    
+                    <main class="p-4 max-w-7xl mx-auto space-y-6">
+                        <!-- Statistics Cards -->
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 fade-in">
+                            <div class="glass p-6 rounded-xl border-l-4 border-emerald-500">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p class="text-slate-400 text-sm uppercase tracking-wide font-semibold">Total de Itens</p>
+                                        <p class="text-4xl font-bold font-mono mt-2">${totalItems}</p>
+                                    </div>
+                                    <div class="w-16 h-16 bg-emerald-500/20 rounded-xl flex items-center justify-center">
+                                        <i class="ph-fill ph-package text-emerald-400 text-3xl"></i>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="glass p-6 rounded-xl border-l-4 border-blue-500">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p class="text-slate-400 text-sm uppercase tracking-wide font-semibold">Quantidade Total</p>
+                                        <p class="text-4xl font-bold font-mono mt-2">${totalQuantity}</p>
+                                    </div>
+                                    <div class="w-16 h-16 bg-blue-500/20 rounded-xl flex items-center justify-center">
+                                        <i class="ph-fill ph-stack text-blue-400 text-3xl"></i>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="glass p-6 rounded-xl border-l-4 border-amber-500">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p class="text-slate-400 text-sm uppercase tracking-wide font-semibold">Estoque Baixo</p>
+                                        <p class="text-4xl font-bold font-mono mt-2">${lowStock}</p>
+                                    </div>
+                                    <div class="w-16 h-16 bg-amber-500/20 rounded-xl flex items-center justify-center">
+                                        <i class="ph-fill ph-warning text-amber-400 text-3xl"></i>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Quick Actions -->
+                        <div class="glass p-6 rounded-xl slide-in">
+                            <h2 class="text-xl font-bold mb-4 flex items-center gap-2">
+                                <i class="ph-fill ph-lightning text-amber-400"></i>
+                                Ações Rápidas
+                            </h2>
+                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                <button onclick="startDistribution()" class="glass p-6 rounded-lg hover:border-emerald-500 border-2 border-transparent transition-all text-left group">
+                                    <div class="w-12 h-12 bg-emerald-500/20 rounded-lg flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                                        <i class="ph-fill ph-hand-coins text-emerald-400 text-2xl"></i>
+                                    </div>
+                                    <h3 class="font-bold text-lg mb-1">Distribuir EPI</h3>
+                                    <p class="text-slate-400 text-sm">Registrar entrega ao colaborador</p>
+                                </button>
+
+                                <button onclick="state.view='stock'; render()" class="glass p-6 rounded-lg hover:border-blue-500 border-2 border-transparent transition-all text-left group">
+                                    <div class="w-12 h-12 bg-blue-500/20 rounded-lg flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                                        <i class="ph-fill ph-warehouse text-blue-400 text-2xl"></i>
+                                    </div>
+                                    <h3 class="font-bold text-lg mb-1">Ver Estoque</h3>
+                                    <p class="text-slate-400 text-sm">Visualizar inventário completo</p>
+                                </button>
+
+                                <button onclick="loadMovements().then(() => { state.view='history'; render(); })" class="glass p-6 rounded-lg hover:border-purple-500 border-2 border-transparent transition-all text-left group">
+                                    <div class="w-12 h-12 bg-purple-500/20 rounded-lg flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                                        <i class="ph-fill ph-clock-counter-clockwise text-purple-400 text-2xl"></i>
+                                    </div>
+                                    <h3 class="font-bold text-lg mb-1">Histórico</h3>
+                                    <p class="text-slate-400 text-sm">Ver movimentações</p>
+                                </button>
+
+                                <button onclick="openNewItem()" class="glass p-6 rounded-lg hover:border-amber-500 border-2 border-transparent transition-all text-left group">
+                                    <div class="w-12 h-12 bg-amber-500/20 rounded-lg flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                                        <i class="ph-fill ph-plus-circle text-amber-400 text-2xl"></i>
+                                    </div>
+                                    <h3 class="font-bold text-lg mb-1">Novo Item</h3>
+                                    <p class="text-slate-400 text-sm">Cadastrar EPI no sistema</p>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Recent Items -->
+                        <div class="glass p-6 rounded-xl">
+                            <h2 class="text-xl font-bold mb-4 flex items-center gap-2">
+                                <i class="ph-fill ph-list text-blue-400"></i>
+                                Itens Recentes
+                            </h2>
+                            ${state.items.length === 0 ? `
+                                <div class="text-center py-12 text-slate-500">
+                                    <i class="ph ph-package text-6xl mb-4 opacity-50"></i>
+                                    <p>Nenhum item cadastrado</p>
+                                </div>
+                            ` : `
+                                <div class="space-y-2">
+                                    ${state.items.slice(0, 5).map(item => `
+                                        <div class="glass p-4 rounded-lg flex items-center justify-between hover:border-slate-600 border-2 border-transparent transition-all">
+                                            <div class="flex-1">
+                                                <h3 class="font-bold text-lg">${item.nome}</h3>
+                                                <div class="flex gap-2 mt-1">
+                                                    <span class="text-xs px-2 py-1 bg-blue-500/20 text-blue-400 rounded-full font-semibold">${item.categoria}</span>
+                                                    <span class="text-xs px-2 py-1 bg-slate-500/20 text-slate-400 rounded-full font-mono">${item.unidade}</span>
+                                                </div>
+                                            </div>
+                                            <div class="text-right">
+                                                <p class="text-2xl font-bold font-mono ${item.quantidade < 10 ? 'text-amber-400' : 'text-emerald-400'}">${item.quantidade}</p>
+                                                <p class="text-xs text-slate-500 uppercase">Em estoque</p>
+                                            </div>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            `}
+                        </div>
+                    </main>
+                </div>
+            `;
+        }
+
+        function renderStock() {
+            return `
+                <div class="min-h-screen pb-6">
+                    ${renderHeader()}
+                    
+                    <main class="p-4 max-w-7xl mx-auto space-y-6">
+                        <div class="flex justify-between items-center mb-6">
+                            <h1 class="text-3xl font-bold flex items-center gap-3">
+                                <i class="ph-fill ph-warehouse text-emerald-400"></i>
+                                Estoque de EPIs
+                            </h1>
+                            <button onclick="openNewItem()" class="bg-emerald-600 hover:bg-emerald-700 px-6 py-3 rounded-lg font-bold flex items-center gap-2 transition-all">
+                                <i class="ph-fill ph-plus-circle text-xl"></i>
+                                Novo Item
+                            </button>
+                        </div>
+
+                        ${state.items.length === 0 ? `
+                            <div class="glass p-12 rounded-xl text-center">
+                                <i class="ph ph-package text-8xl text-slate-600 mb-4"></i>
+                                <p class="text-slate-400 text-xl mb-6">Nenhum item cadastrado</p>
+                                <button onclick="openNewItem()" class="bg-emerald-600 hover:bg-emerald-700 px-8 py-4 rounded-lg font-bold">
+                                    Cadastrar Primeiro Item
+                                </button>
+                            </div>
+                        ` : `
+                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                ${state.items.map(item => `
+                                    <div class="glass p-6 rounded-xl hover:border-emerald-500 border-2 border-transparent transition-all fade-in">
+                                        <div class="flex justify-between items-start mb-4">
+                                            <div class="flex-1">
+                                                <h3 class="font-bold text-xl mb-2">${item.nome}</h3>
+                                                <div class="flex gap-2 flex-wrap">
+                                                    <span class="text-xs px-3 py-1 bg-blue-500/20 text-blue-400 rounded-full font-semibold">${item.categoria}</span>
+                                                    <span class="text-xs px-3 py-1 bg-slate-500/20 text-slate-400 rounded-full font-mono">${item.unidade}</span>
+                                                    ${item.ca ? `<span class="text-xs px-3 py-1 bg-purple-500/20 text-purple-400 rounded-full font-mono">CA ${item.ca}</span>` : ''}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div class="mb-4">
+                                            <div class="flex justify-between items-end mb-2">
+                                                <span class="text-slate-400 text-sm uppercase">Quantidade</span>
+                                                <span class="text-3xl font-bold font-mono ${item.quantidade < 10 ? 'text-amber-400' : 'text-emerald-400'}">${item.quantidade}</span>
+                                            </div>
+                                            ${item.quantidade < 10 ? `
+                                                <div class="bg-amber-500/20 border border-amber-500 text-amber-400 px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-2">
+                                                    <i class="ph-fill ph-warning"></i>
+                                                    ESTOQUE BAIXO
+                                                </div>
+                                            ` : ''}
+                                        </div>
+
+                                        ${item.localizacao ? `
+                                            <p class="text-slate-400 text-sm mb-2 flex items-center gap-2">
+                                                <i class="ph ph-map-pin"></i>
+                                                ${item.localizacao}
+                                            </p>
+                                        ` : ''}
+
+                                        ${item.validade ? `
+                                            <p class="text-slate-400 text-sm mb-4 flex items-center gap-2">
+                                                <i class="ph ph-calendar"></i>
+                                                Validade: ${formatDate(item.validade)}
+                                            </p>
+                                        ` : ''}
+
+                                        <div class="flex gap-2 pt-4 border-t border-slate-700">
+                                            <button onclick="openEditItem(${JSON.stringify(item).replace(/"/g, '&quot;')})" class="flex-1 bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg font-semibold transition-all flex items-center justify-center gap-2">
+                                                <i class="ph ph-pencil-simple"></i>
+                                                Editar
+                                            </button>
+                                            <button onclick="handleDeleteItem('${item.id}')" class="bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white px-4 py-2 rounded-lg font-semibold transition-all flex items-center justify-center gap-2 border border-red-500">
+                                                <i class="ph ph-trash"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        `}
+                    </main>
+                </div>
+            `;
+        }
+
+        function renderDistribution() {
+            const availableItems = state.items.filter(item => item.quantidade > 0);
+            const selectedItem = availableItems.find(item => item.id === state.distributionOperation.selectedItem);
+
+            return `
+                <div class="min-h-screen pb-6">
+                    ${renderHeader()}
+                    
+                    <main class="p-4 max-w-3xl mx-auto">
+                        <div class="glass p-8 rounded-xl">
+                            <div class="flex items-center justify-between mb-6">
+                                <h1 class="text-3xl font-bold flex items-center gap-3">
+                                    <i class="ph-fill ph-hand-coins text-emerald-400"></i>
+                                    Distribuir EPI
+                                </h1>
+                                <button onclick="cancelDistribution()" class="text-slate-400 hover:text-white transition-all">
+                                    <i class="ph ph-x text-3xl"></i>
+                                </button>
+                            </div>
+
+                            ${availableItems.length === 0 ? `
+                                <div class="text-center py-12 text-slate-500">
+                                    <i class="ph ph-warning-circle text-8xl mb-4 text-amber-500"></i>
+                                    <p class="text-xl mb-4">Nenhum item disponível em estoque</p>
+                                    <button onclick="cancelDistribution()" class="bg-slate-700 hover:bg-slate-600 px-6 py-3 rounded-lg font-bold">
+                                        Voltar
+                                    </button>
+                                </div>
+                            ` : `
+                                <form onsubmit="event.preventDefault(); confirmDistribution();" class="space-y-6">
+                                    <div>
+                                        <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Selecione o Item</label>
+                                        <select 
+                                            onchange="state.distributionOperation.selectedItem = this.value; render()"
+                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-emerald-500 outline-none text-lg text-white"
+                                            required
+                                        >
+                                            <option value="">-- Escolha um item --</option>
+                                            ${availableItems.map(item => `
+                                                <option value="${item.id}" ${state.distributionOperation.selectedItem === item.id ? 'selected' : ''}>
+                                                    ${item.nome} - ${item.categoria} (Disponível: ${item.quantidade})
+                                                </option>
+                                            `).join('')}
+                                        </select>
+                                    </div>
+
+                                    ${selectedItem ? `
+                                        <div class="glass p-4 rounded-lg border-2 border-emerald-500/50">
+                                            <div class="flex justify-between items-center">
+                                                <div>
+                                                    <p class="text-slate-400 text-sm">Item Selecionado</p>
+                                                    <p class="font-bold text-lg">${selectedItem.nome}</p>
+                                                </div>
+                                                <div class="text-right">
+                                                    <p class="text-slate-400 text-sm">Disponível</p>
+                                                    <p class="font-bold text-2xl font-mono text-emerald-400">${selectedItem.quantidade}</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ` : ''}
+
+                                    <div>
+                                        <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Nome do Colaborador *</label>
+                                        <input 
+                                            type="text"
+                                            value="${state.distributionOperation.employeeName}"
+                                            onchange="state.distributionOperation.employeeName = this.value"
+                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-emerald-500 outline-none text-lg text-white"
+                                            placeholder="Digite o nome completo"
+                                            required
+                                        >
+                                    </div>
+
+                                    <div>
+                                        <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Quantidade *</label>
+                                        <input 
+                                            type="number"
+                                            value="${state.distributionOperation.quantity}"
+                                            onchange="state.distributionOperation.quantity = parseInt(this.value)"
+                                            min="1"
+                                            max="${selectedItem ? selectedItem.quantidade : 999}"
+                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-emerald-500 outline-none text-lg text-white font-mono"
+                                            required
+                                        >
+                                    </div>
+
+                                    <div>
+                                        <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Observações</label>
+                                        <textarea 
+                                            onchange="state.distributionOperation.observations = this.value"
+                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-emerald-500 outline-none text-lg text-white"
+                                            rows="3"
+                                            placeholder="Informações adicionais (opcional)"
+                                        >${state.distributionOperation.observations}</textarea>
+                                    </div>
+
+                                    <div class="flex gap-4 pt-6">
+                                        <button 
+                                            type="button"
+                                            onclick="cancelDistribution()"
+                                            class="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-4 rounded-xl transition-all"
+                                        >
+                                            CANCELAR
+                                        </button>
+                                        <button 
+                                            type="submit"
+                                            class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2"
+                                            ${state.isLoading ? 'disabled' : ''}
+                                        >
+                                            ${state.isLoading ? '<i class="ph ph-spinner animate-spin text-2xl"></i> PROCESSANDO...' : '<i class="ph ph-check-circle text-xl"></i> CONFIRMAR DISTRIBUIÇÃO'}
+                                        </button>
+                                    </div>
+                                </form>
+                            `}
+                        </div>
+                    </main>
+                </div>
+            `;
+        }
+
+        function renderHistory() {
+            const filteredMovements = getFilteredMovements();
+            const paginatedMovements = getPaginatedMovements();
+            const totalPages = Math.ceil(filteredMovements.length / state.itemsPerPage);
+
+            return `
+                <div class="min-h-screen pb-6">
+                    ${renderHeader()}
+                    
+                    <main class="p-4 max-w-7xl mx-auto space-y-6">
+                        <h1 class="text-3xl font-bold flex items-center gap-3">
+                            <i class="ph-fill ph-clock-counter-clockwise text-purple-400"></i>
+                            Histórico de Movimentações
+                        </h1>
+
+                        <!-- Filtros -->
+                        <div class="glass p-6 rounded-xl">
+                            <h2 class="font-bold mb-4 flex items-center gap-2 text-lg">
+                                <i class="ph ph-funnel text-blue-400"></i>
+                                Filtros
+                            </h2>
+                            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                <div>
+                                    <label class="text-xs font-bold text-slate-400 block mb-2 uppercase">Data Inicial</label>
+                                    <input 
+                                        type="date"
+                                        value="${state.filters.startDate}"
+                                        onchange="state.filters.startDate = this.value"
+                                        class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-3 focus:border-blue-500 outline-none text-white"
+                                    >
+                                </div>
+                                <div>
+                                    <label class="text-xs font-bold text-slate-400 block mb-2 uppercase">Data Final</label>
+                                    <input 
+                                        type="date"
+                                        value="${state.filters.endDate}"
+                                        onchange="state.filters.endDate = this.value"
+                                        class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-3 focus:border-blue-500 outline-none text-white"
+                                    >
+                                </div>
+                                <div>
+                                    <label class="text-xs font-bold text-slate-400 block mb-2 uppercase">Tipo</label>
+                                    <select 
+                                        onchange="state.filters.type = this.value"
+                                        class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-3 focus:border-blue-500 outline-none text-white"
+                                    >
+                                        <option value="TODOS" ${state.filters.type === 'TODOS' ? 'selected' : ''}>Todos</option>
+                                        ${Object.entries(MOVEMENT_TYPES).map(([code, info]) => `
+                                            <option value="${code}" ${state.filters.type === code ? 'selected' : ''}>${info.label}</option>
+                                        `).join('')}
+                                    </select>
+                                </div>
+                                <div class="flex items-end">
+                                    <button 
+                                        onclick="applyFilters()"
+                                        class="w-full bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg font-bold transition-all flex items-center justify-center gap-2"
+                                    >
+                                        <i class="ph ph-magnifying-glass"></i>
+                                        BUSCAR
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="mt-4">
+                                <label class="text-xs font-bold text-slate-400 block mb-2 uppercase">Pesquisar</label>
+                                <input 
+                                    type="text"
+                                    value="${state.filters.searchTerm}"
+                                    oninput="state.filters.searchTerm = this.value; render()"
+                                    class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-3 focus:border-blue-500 outline-none text-white"
+                                    placeholder="Buscar por item, colaborador ou usuário..."
+                                >
+                            </div>
+                        </div>
+
+                        <!-- Resultados -->
+                        <div class="glass p-6 rounded-xl">
+                            <div class="flex justify-between items-center mb-4">
+                                <p class="text-slate-400">
+                                    Mostrando <span class="font-bold text-white">${paginatedMovements.length}</span> de <span class="font-bold text-white">${filteredMovements.length}</span> registros
+                                </p>
+                                <p class="text-slate-400 font-mono text-sm">
+                                    Página ${state.currentPage} de ${totalPages || 1}
+                                </p>
+                            </div>
+
+                            ${state.isLoading ? `
+                                <div class="text-center py-12">
+                                    <i class="ph ph-spinner animate-spin text-6xl text-blue-400"></i>
+                                    <p class="text-slate-400 mt-4">Carregando movimentações...</p>
+                                </div>
+                            ` : filteredMovements.length === 0 ? `
+                                <div class="text-center py-12 text-slate-500">
+                                    <i class="ph ph-database text-8xl mb-4 opacity-50"></i>
+                                    <p class="text-xl">Nenhuma movimentação encontrada</p>
+                                </div>
+                            ` : `
+                                <div class="space-y-2">
+                                    ${paginatedMovements.map(movement => {
+                                        const typeInfo = MOVEMENT_TYPES[movement.type];
+                                        return `
+                                            <div class="glass p-4 rounded-lg hover:border-${typeInfo.color}-500 border-2 border-transparent transition-all">
+                                                <div class="flex items-start justify-between gap-4">
+                                                    <div class="flex-1">
+                                                        <div class="flex items-center gap-3 mb-2">
+                                                            <div class="w-10 h-10 ${getColorClass(typeInfo.color, 'full')} rounded-lg flex items-center justify-center">
+                                                                <i class="ph-fill ph-${typeInfo.icon} text-white text-xl"></i>
+                                                            </div>
+                                                            <div>
+                                                                <h3 class="font-bold text-lg">${movement.itemName}</h3>
+                                                                <span class="text-xs px-2 py-1 ${getColorClass(typeInfo.color)} rounded-full font-semibold uppercase">${typeInfo.label}</span>
+                                                            </div>
+                                                        </div>
+                                                        
+                                                        <div class="ml-13 space-y-1 text-sm text-slate-400">
+                                                            ${movement.employee ? `
+                                                                <p class="flex items-center gap-2">
+                                                                    <i class="ph ph-user"></i>
+                                                                    <span class="font-semibold">Colaborador:</span> ${movement.employee}
+                                                                </p>
+                                                            ` : ''}
+                                                            <p class="flex items-center gap-2">
+                                                                <i class="ph ph-calendar"></i>
+                                                                <span class="font-semibold">Data:</span> ${formatDate(movement.date)}
+                                                            </p>
+                                                            <p class="flex items-center gap-2">
+                                                                <i class="ph ph-user-circle"></i>
+                                                                <span class="font-semibold">Responsável:</span> ${movement.user}
+                                                            </p>
+                                                            ${movement.observations ? `
+                                                                <p class="flex items-center gap-2">
+                                                                    <i class="ph ph-note"></i>
+                                                                    <span class="font-semibold">Obs:</span> ${movement.observations}
+                                                                </p>
+                                                            ` : ''}
+                                                        </div>
+                                                    </div>
+                                                    
+                                                    <div class="text-right">
+                                                        <p class="text-3xl font-bold font-mono ${movement.type === 'ENTRADA' ? 'text-emerald-400' : 'text-red-400'}">
+                                                            ${movement.type === 'ENTRADA' ? '+' : '-'}${movement.quantity}
+                                                        </p>
+                                                        <p class="text-xs text-slate-500 mt-1">${formatDateTime(movement.timestamp)}</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        `;
+                                    }).join('')}
+                                </div>
+
+                                <!-- Paginação -->
+                                ${totalPages > 1 ? `
+                                    <div class="flex justify-center items-center gap-2 mt-6 pt-6 border-t border-slate-700">
+                                        <button 
+                                            onclick="changePage(-1)"
+                                            ${state.currentPage === 1 ? 'disabled' : ''}
+                                            class="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                                        >
+                                            <i class="ph ph-caret-left"></i>
+                                            Anterior
+                                        </button>
+                                        
+                                        <div class="flex gap-2">
+                                            ${Array.from({length: Math.min(totalPages, 5)}, (_, i) => {
+                                                let pageNum;
+                                                if (totalPages <= 5) {
+                                                    pageNum = i + 1;
+                                                } else if (state.currentPage <= 3) {
+                                                    pageNum = i + 1;
+                                                } else if (state.currentPage >= totalPages - 2) {
+                                                    pageNum = totalPages - 4 + i;
+                                                } else {
+                                                    pageNum = state.currentPage - 2 + i;
+                                                }
+                                                return `
+                                                    <button 
+                                                        onclick="state.currentPage = ${pageNum}; render()"
+                                                        class="w-10 h-10 rounded-lg font-bold ${state.currentPage === pageNum ? 'bg-blue-600' : 'bg-slate-700 hover:bg-slate-600'} transition-all"
+                                                    >
+                                                        ${pageNum}
+                                                    </button>
+                                                `;
+                                            }).join('')}
+                                        </div>
+                                        
+                                        <button 
+                                            onclick="changePage(1)"
+                                            ${state.currentPage === totalPages ? 'disabled' : ''}
+                                            class="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                                        >
+                                            Próxima
+                                            <i class="ph ph-caret-right"></i>
+                                        </button>
+                                    </div>
+                                ` : ''}
+                            `}
+                        </div>
+                    </main>
+                </div>
+            `;
+        }
+
+        function renderEditItem() {
+            const item = state.editingItem || {};
+            const isEdit = !!state.editingItem;
+
+            return `
+                <div class="min-h-screen pb-6">
+                    ${renderHeader()}
+                    
+                    <main class="p-4 max-w-3xl mx-auto">
+                        <div class="glass p-8 rounded-xl">
+                            <div class="flex items-center justify-between mb-6">
+                                <h1 class="text-3xl font-bold flex items-center gap-3">
+                                    <i class="ph-fill ph-${isEdit ? 'pencil-simple' : 'plus-circle'} text-amber-400"></i>
+                                    ${isEdit ? 'Editar Item' : 'Novo Item'}
+                                </h1>
+                                <button onclick="state.view='stock'; render()" class="text-slate-400 hover:text-white transition-all">
+                                    <i class="ph ph-x text-3xl"></i>
+                                </button>
+                            </div>
+
+                            <form onsubmit="handleSaveItem(event)" class="space-y-6">
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div class="md:col-span-2">
+                                        <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Nome do Item *</label>
+                                        <input 
+                                            type="text"
+                                            id="itemName"
+                                            value="${item.nome || ''}"
+                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-amber-500 outline-none text-lg text-white"
+                                            placeholder="Ex: Capacete de Segurança"
+                                            required
+                                        >
+                                    </div>
+
+                                    <div>
+                                        <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Categoria *</label>
+                                        <select 
+                                            id="itemCategory"
+                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-amber-500 outline-none text-lg text-white"
+                                            required
+                                        >
+                                            <option value="">Selecione...</option>
+                                            <option value="Proteção Individual" ${item.categoria === 'Proteção Individual' ? 'selected' : ''}>Proteção Individual</option>
+                                            <option value="Ferramentas" ${item.categoria === 'Ferramentas' ? 'selected' : ''}>Ferramentas</option>
+                                            <option value="Uniformes" ${item.categoria === 'Uniformes' ? 'selected' : ''}>Uniformes</option>
+                                            <option value="Outros" ${item.categoria === 'Outros' ? 'selected' : ''}>Outros</option>
+                                        </select>
+                                    </div>
+
+                                    <div>
+                                        <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Unidade *</label>
+                                        <select 
+                                            id="itemUnit"
+                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-amber-500 outline-none text-lg text-white"
+                                            required
+                                        >
+                                            <option value="">Selecione...</option>
+                                            <option value="UN" ${item.unidade === 'UN' ? 'selected' : ''}>Unidade (UN)</option>
+                                            <option value="PAR" ${item.unidade === 'PAR' ? 'selected' : ''}>Par (PAR)</option>
+                                            <option value="CX" ${item.unidade === 'CX' ? 'selected' : ''}>Caixa (CX)</option>
+                                            <option value="KG" ${item.unidade === 'KG' ? 'selected' : ''}>Quilograma (KG)</option>
+                                            <option value="LT" ${item.unidade === 'LT' ? 'selected' : ''}>Litro (LT)</option>
+                                        </select>
+                                    </div>
+
+                                    <div>
+                                        <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Quantidade *</label>
+                                        <input 
+                                            type="number"
+                                            id="itemQuantity"
+                                            value="${item.quantidade || 0}"
+                                            min="0"
+                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-amber-500 outline-none text-lg text-white font-mono"
+                                            required
+                                        >
+                                    </div>
+
+                                    <div>
+                                        <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">CA (Certificado de Aprovação)</label>
+                                        <input 
+                                            type="text"
+                                            id="itemCA"
+                                            value="${item.ca || ''}"
+                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-amber-500 outline-none text-lg text-white font-mono"
+                                            placeholder="Ex: 12345"
+                                        >
+                                    </div>
+
+                                    <div>
+                                        <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Validade</label>
+                                        <input 
+                                            type="date"
+                                            id="itemValidity"
+                                            value="${item.validade || ''}"
+                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-amber-500 outline-none text-lg text-white"
+                                        >
+                                    </div>
+
+                                    <div>
+                                        <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Localização</label>
+                                        <input 
+                                            type="text"
+                                            id="itemLocation"
+                                            value="${item.localizacao || ''}"
+                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-amber-500 outline-none text-lg text-white"
+                                            placeholder="Ex: Prateleira A1"
+                                        >
+                                    </div>
+
+                                    <div class="md:col-span-2">
+                                        <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Observações</label>
+                                        <textarea 
+                                            id="itemObs"
+                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-amber-500 outline-none text-lg text-white"
+                                            rows="3"
+                                            placeholder="Informações adicionais sobre o item..."
+                                        >${item.observacoes || ''}</textarea>
+                                    </div>
+                                </div>
+
+                                <div class="flex gap-4 pt-6 border-t border-slate-700">
+                                    <button 
+                                        type="button"
+                                        onclick="state.view='stock'; render()"
+                                        class="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-4 rounded-xl transition-all"
+                                    >
+                                        CANCELAR
+                                    </button>
+                                    <button 
+                                        type="submit"
+                                        class="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2"
+                                        ${state.isLoading ? 'disabled' : ''}
+                                    >
+                                        ${state.isLoading ? '<i class="ph ph-spinner animate-spin text-2xl"></i> SALVANDO...' : `<i class="ph ph-floppy-disk text-xl"></i> ${isEdit ? 'ATUALIZAR' : 'CADASTRAR'}`}
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </main>
+                </div>
+            `;
+        }
+
+        function renderHeader() {
+            return `
+                <header class="bg-slate-900 border-b border-slate-800 p-4 sticky top-0 z-30 shadow-lg">
+                    <div class="max-w-7xl mx-auto flex justify-between items-center">
+                        <div class="flex items-center gap-4">
+                            <div class="w-12 h-12 bg-emerald-500/20 rounded-lg flex items-center justify-center">
+                                <i class="ph-fill ph-package text-emerald-400 text-2xl"></i>
+                            </div>
+                            <div>
+                                <h1 class="font-bold text-xl font-mono">ALMOXARIFADO</h1>
+                                <p class="text-sm text-slate-400">${state.user?.nome || 'Sistema'}</p>
+                            </div>
+                        </div>
+                        
+                        <nav class="flex gap-2">
+                            <button 
+                                onclick="state.view='dashboard'; render()"
+                                class="px-4 py-2 rounded-lg hover:bg-slate-800 transition-all ${state.view === 'dashboard' ? 'bg-slate-800' : ''}"
+                                title="Dashboard"
+                            >
+                                <i class="ph-fill ph-house text-xl"></i>
+                            </button>
+                            <button 
+                                onclick="state.view='stock'; render()"
+                                class="px-4 py-2 rounded-lg hover:bg-slate-800 transition-all ${state.view === 'stock' ? 'bg-slate-800' : ''}"
+                                title="Estoque"
+                            >
+                                <i class="ph-fill ph-warehouse text-xl"></i>
+                            </button>
+                            <button 
+                                onclick="loadMovements().then(() => { state.view='history'; render(); })"
+                                class="px-4 py-2 rounded-lg hover:bg-slate-800 transition-all ${state.view === 'history' ? 'bg-slate-800' : ''}"
+                                title="Histórico"
+                            >
+                                <i class="ph-fill ph-clock-counter-clockwise text-xl"></i>
+                            </button>
+                            <button 
+                                onclick="handleLogout()"
+                                class="px-4 py-2 rounded-lg hover:bg-red-900/50 transition-all text-red-400"
+                                title="Sair"
+                            >
+                                <i class="ph-fill ph-sign-out text-xl"></i>
+                            </button>
+                        </nav>
+                    </div>
+                </header>
+            `;
+        }
+
+        // ============================================
+        // INICIALIZAÇÃO
+        // ============================================
+        document.addEventListener('DOMContentLoaded', () => {
+            const savedUser = localStorage.getItem('user');
+            if (savedUser) {
+                state.user = JSON.parse(savedUser);
+                loadItems().then(() => {
+                    state.view = 'dashboard';
+                    render();
+                });
+            } else {
+                render();
+            }
+        });
+    </script>
+</body>
+</html>

@@ -79,8 +79,17 @@
         // ============================================
         // CONFIGURAÇÃO
         // ============================================
-        const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw0t5npl17rGnH19dXfTQR-uvEPOvFFUJy428k_OtfbKXoJJsDBlCJSh1FmIrmjv1dHZg/exec';
+        const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz-xO56iWqs5zFYCndfQcqWJL5AdCOyxO6v8RUqnQPkgcOMUPWeCydQedJC5MVjrS8X8g/exec';
         
+        // Cache de dados
+        const cache = {
+            movements: null,
+            movementsTimestamp: null,
+            items: null,
+            itemsTimestamp: null,
+            CACHE_DURATION: 60000 // 1 minuto
+        };
+
         // ============================================
         // TIPOS DE MOVIMENTAÇÃO
         // ============================================
@@ -101,6 +110,7 @@
             movements: [],
             selectedDate: getCurrentDate(),
             isLoading: false,
+            loadingMessage: '',
             
             // Paginação
             currentPage: 1,
@@ -129,6 +139,9 @@
             // Estatísticas
             statistics: null
         };
+
+        // Debounce timer
+        let searchDebounceTimer = null;
 
         // ============================================
         // UTILITÁRIOS
@@ -175,6 +188,18 @@
             return colors[color] || colors.slate;
         }
 
+        function debounce(func, wait) {
+            return function executedFunction(...args) {
+                clearTimeout(searchDebounceTimer);
+                searchDebounceTimer = setTimeout(() => func(...args), wait);
+            };
+        }
+
+        function isCacheValid(timestamp) {
+            if (!timestamp) return false;
+            return (Date.now() - timestamp) < cache.CACHE_DURATION;
+        }
+
         // ============================================
         // SERVIÇOS / API
         // ============================================
@@ -189,10 +214,21 @@
             }
         }
 
-        async function getItems() {
+        async function getItems(forceRefresh = false) {
+            // Verifica cache
+            if (!forceRefresh && cache.items && isCacheValid(cache.itemsTimestamp)) {
+                return { success: true, items: cache.items };
+            }
+
             try {
                 const response = await fetch(`${GOOGLE_SCRIPT_URL}?action=getItems`);
                 const data = await response.json();
+                
+                if (data.success) {
+                    cache.items = data.items;
+                    cache.itemsTimestamp = Date.now();
+                }
+                
                 return data;
             } catch (error) {
                 console.error('Erro ao buscar itens:', error);
@@ -207,6 +243,13 @@
                     body: JSON.stringify({ action: 'saveItem', item: item })
                 });
                 const data = await response.json();
+                
+                // Invalida cache
+                if (data.success) {
+                    cache.items = null;
+                    cache.itemsTimestamp = null;
+                }
+                
                 return data;
             } catch (error) {
                 console.error('Erro ao salvar item:', error);
@@ -221,6 +264,13 @@
                     body: JSON.stringify({ action: 'deleteItem', itemId: itemId })
                 });
                 const data = await response.json();
+                
+                // Invalida cache
+                if (data.success) {
+                    cache.items = null;
+                    cache.itemsTimestamp = null;
+                }
+                
                 return data;
             } catch (error) {
                 console.error('Erro ao deletar item:', error);
@@ -235,6 +285,15 @@
                     body: JSON.stringify({ action: 'saveMovement', movement: movement })
                 });
                 const data = await response.json();
+                
+                // Invalida cache
+                if (data.success) {
+                    cache.movements = null;
+                    cache.movementsTimestamp = null;
+                    cache.items = null;
+                    cache.itemsTimestamp = null;
+                }
+                
                 return data;
             } catch (error) {
                 console.error('Erro ao salvar movimentação:', error);
@@ -242,7 +301,13 @@
             }
         }
 
-        async function getMovements(filters) {
+        async function getMovements(filters, forceRefresh = false) {
+            // Verifica cache (apenas se filtros não mudaram)
+            const filterKey = JSON.stringify(filters);
+            if (!forceRefresh && cache.movements && cache.movementsFilterKey === filterKey && isCacheValid(cache.movementsTimestamp)) {
+                return { success: true, movements: cache.movements };
+            }
+
             try {
                 const params = new URLSearchParams({
                     action: 'getMovements',
@@ -252,6 +317,13 @@
                 });
                 const response = await fetch(`${GOOGLE_SCRIPT_URL}?${params}`);
                 const data = await response.json();
+                
+                if (data.success) {
+                    cache.movements = data.movements;
+                    cache.movementsFilterKey = filterKey;
+                    cache.movementsTimestamp = Date.now();
+                }
+                
                 return data;
             } catch (error) {
                 console.error('Erro ao buscar movimentações:', error);
@@ -284,6 +356,7 @@
             }
 
             state.isLoading = true;
+            state.loadingMessage = 'Autenticando...';
             render();
 
             const result = await login(username, password);
@@ -291,6 +364,10 @@
             if (result.success) {
                 state.user = result.user;
                 localStorage.setItem('user', JSON.stringify(result.user));
+                
+                state.loadingMessage = 'Carregando dados...';
+                render();
+                
                 await loadItems();
                 state.view = 'dashboard';
             } else {
@@ -298,28 +375,23 @@
             }
 
             state.isLoading = false;
+            state.loadingMessage = '';
             render();
         }
 
-        async function loadItems() {
-            const result = await getItems();
+        async function loadItems(forceRefresh = false) {
+            const result = await getItems(forceRefresh);
             if (result.success) {
                 state.items = result.items;
             }
         }
 
-        async function loadMovements() {
-            state.isLoading = true;
-            render();
-            
-            const result = await getMovements(state.filters);
+        async function loadMovements(forceRefresh = false) {
+            const result = await getMovements(state.filters, forceRefresh);
             if (result.success) {
                 state.movements = result.movements;
                 state.currentPage = 1;
             }
-            
-            state.isLoading = false;
-            render();
         }
 
         async function loadStatistics() {
@@ -334,6 +406,10 @@
             state.user = null;
             state.items = [];
             state.movements = [];
+            cache.items = null;
+            cache.movements = null;
+            cache.itemsTimestamp = null;
+            cache.movementsTimestamp = null;
             state.view = 'login';
             render();
         }
@@ -376,6 +452,7 @@
             }
 
             state.isLoading = true;
+            state.loadingMessage = 'Registrando distribuição...';
             render();
 
             const movement = {
@@ -393,13 +470,14 @@
 
             if (result.success) {
                 alert('✅ Distribuição registrada com sucesso!');
-                await loadItems();
+                await loadItems(true);
                 cancelDistribution();
             } else {
                 alert('Erro ao registrar distribuição: ' + result.error);
             }
 
             state.isLoading = false;
+            state.loadingMessage = '';
             render();
         }
 
@@ -419,13 +497,14 @@
             };
 
             state.isLoading = true;
+            state.loadingMessage = 'Salvando item...';
             render();
 
             const result = await saveItem(itemData);
 
             if (result.success) {
                 alert(`✅ Item ${state.editingItem ? 'atualizado' : 'cadastrado'} com sucesso!`);
-                await loadItems();
+                await loadItems(true);
                 state.editingItem = null;
                 state.view = 'stock';
             } else {
@@ -433,6 +512,7 @@
             }
 
             state.isLoading = false;
+            state.loadingMessage = '';
             render();
         }
 
@@ -442,18 +522,20 @@
             }
 
             state.isLoading = true;
+            state.loadingMessage = 'Excluindo item...';
             render();
 
             const result = await deleteItem(itemId);
 
             if (result.success) {
                 alert('✅ Item excluído com sucesso!');
-                await loadItems();
+                await loadItems(true);
             } else {
                 alert('Erro ao excluir item: ' + result.error);
             }
 
             state.isLoading = false;
+            state.loadingMessage = '';
             render();
         }
 
@@ -470,7 +552,31 @@
         }
 
         async function applyFilters() {
+            state.isLoading = true;
+            state.loadingMessage = 'Buscando movimentações...';
+            render();
+            
+            await loadMovements(true);
+            
+            state.isLoading = false;
+            state.loadingMessage = '';
+            render();
+        }
+
+        // Função otimizada para navegar para o histórico
+        async function navigateToHistory() {
+            // Muda para a view imediatamente com loading
+            state.view = 'history';
+            state.isLoading = true;
+            state.loadingMessage = 'Carregando histórico...';
+            render();
+            
+            // Carrega movimentações em background
             await loadMovements();
+            
+            state.isLoading = false;
+            state.loadingMessage = '';
+            render();
         }
 
         function changePage(delta) {
@@ -480,6 +586,7 @@
             if (newPage >= 1 && newPage <= totalPages) {
                 state.currentPage = newPage;
                 render();
+                window.scrollTo({ top: 0, behavior: 'smooth' });
             }
         }
 
@@ -504,6 +611,13 @@
             const end = start + state.itemsPerPage;
             return filtered.slice(start, end);
         }
+
+        // Debounced search
+        const handleSearchInput = debounce((value) => {
+            state.filters.searchTerm = value;
+            state.currentPage = 1;
+            render();
+        }, 300);
 
         // ============================================
         // RENDERIZAÇÃO
@@ -576,15 +690,15 @@
                             
                             <button 
                                 type="submit" 
-                                class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 uppercase tracking-wider"
+                                class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed"
                                 ${state.isLoading ? 'disabled' : ''}
                             >
-                                ${state.isLoading ? '<i class="ph ph-spinner animate-spin text-2xl"></i> ENTRANDO...' : '<i class="ph ph-sign-in text-xl"></i> ENTRAR'}
+                                ${state.isLoading ? `<i class="ph ph-spinner animate-spin text-2xl"></i> ${state.loadingMessage.toUpperCase()}` : '<i class="ph ph-sign-in text-xl"></i> ENTRAR'}
                             </button>
                         </form>
                         
                         <div class="mt-6 text-center text-xs text-slate-500 font-mono">
-                            <p>v2.0.0 | © 2026</p>
+                            <p>v2.1.0 | © 2026 | Optimized</p>
                         </div>
                     </div>
                 </div>
@@ -663,7 +777,7 @@
                                     <p class="text-slate-400 text-sm">Visualizar inventário completo</p>
                                 </button>
 
-                                <button onclick="loadMovements().then(() => { state.view='history'; render(); })" class="glass p-6 rounded-lg hover:border-purple-500 border-2 border-transparent transition-all text-left group">
+                                <button onclick="navigateToHistory()" class="glass p-6 rounded-lg hover:border-purple-500 border-2 border-transparent transition-all text-left group">
                                     <div class="w-12 h-12 bg-purple-500/20 rounded-lg flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
                                         <i class="ph-fill ph-clock-counter-clockwise text-purple-400 text-2xl"></i>
                                     </div>
@@ -785,7 +899,7 @@
                                         ` : ''}
 
                                         <div class="flex gap-2 pt-4 border-t border-slate-700">
-                                            <button onclick="openEditItem(${JSON.stringify(item).replace(/"/g, '&quot;')})" class="flex-1 bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg font-semibold transition-all flex items-center justify-center gap-2">
+                                            <button onclick='openEditItem(${JSON.stringify(item).replace(/'/g, "&#39;")})' class="flex-1 bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg font-semibold transition-all flex items-center justify-center gap-2">
                                                 <i class="ph ph-pencil-simple"></i>
                                                 Editar
                                             </button>
@@ -903,15 +1017,16 @@
                                             type="button"
                                             onclick="cancelDistribution()"
                                             class="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-4 rounded-xl transition-all"
+                                            ${state.isLoading ? 'disabled' : ''}
                                         >
                                             CANCELAR
                                         </button>
                                         <button 
                                             type="submit"
-                                            class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2"
+                                            class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                                             ${state.isLoading ? 'disabled' : ''}
                                         >
-                                            ${state.isLoading ? '<i class="ph ph-spinner animate-spin text-2xl"></i> PROCESSANDO...' : '<i class="ph ph-check-circle text-xl"></i> CONFIRMAR DISTRIBUIÇÃO'}
+                                            ${state.isLoading ? `<i class="ph ph-spinner animate-spin text-2xl"></i> ${state.loadingMessage.toUpperCase()}` : '<i class="ph ph-check-circle text-xl"></i> CONFIRMAR DISTRIBUIÇÃO'}
                                         </button>
                                     </div>
                                 </form>
@@ -978,6 +1093,7 @@
                                     <button 
                                         onclick="applyFilters()"
                                         class="w-full bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg font-bold transition-all flex items-center justify-center gap-2"
+                                        ${state.isLoading ? 'disabled' : ''}
                                     >
                                         <i class="ph ph-magnifying-glass"></i>
                                         BUSCAR
@@ -990,7 +1106,7 @@
                                 <input 
                                     type="text"
                                     value="${state.filters.searchTerm}"
-                                    oninput="state.filters.searchTerm = this.value; render()"
+                                    oninput="handleSearchInput(this.value)"
                                     class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-3 focus:border-blue-500 outline-none text-white"
                                     placeholder="Buscar por item, colaborador ou usuário..."
                                 >
@@ -1011,12 +1127,13 @@
                             ${state.isLoading ? `
                                 <div class="text-center py-12">
                                     <i class="ph ph-spinner animate-spin text-6xl text-blue-400"></i>
-                                    <p class="text-slate-400 mt-4">Carregando movimentações...</p>
+                                    <p class="text-slate-400 mt-4">${state.loadingMessage}</p>
                                 </div>
                             ` : filteredMovements.length === 0 ? `
                                 <div class="text-center py-12 text-slate-500">
                                     <i class="ph ph-database text-8xl mb-4 opacity-50"></i>
                                     <p class="text-xl">Nenhuma movimentação encontrada</p>
+                                    <p class="text-sm mt-2">Tente ajustar os filtros</p>
                                 </div>
                             ` : `
                                 <div class="space-y-2">
@@ -1027,7 +1144,7 @@
                                                 <div class="flex items-start justify-between gap-4">
                                                     <div class="flex-1">
                                                         <div class="flex items-center gap-3 mb-2">
-                                                            <div class="w-10 h-10 ${getColorClass(typeInfo.color, 'full')} rounded-lg flex items-center justify-center">
+                                                            <div class="w-10 h-10 ${getColorClass(typeInfo.color, 'full')} rounded-lg flex items-center justify-center flex-shrink-0">
                                                                 <i class="ph-fill ph-${typeInfo.icon} text-white text-xl"></i>
                                                             </div>
                                                             <div>
@@ -1060,7 +1177,7 @@
                                                         </div>
                                                     </div>
                                                     
-                                                    <div class="text-right">
+                                                    <div class="text-right flex-shrink-0">
                                                         <p class="text-3xl font-bold font-mono ${movement.type === 'ENTRADA' ? 'text-emerald-400' : 'text-red-400'}">
                                                             ${movement.type === 'ENTRADA' ? '+' : '-'}${movement.quantity}
                                                         </p>
@@ -1074,7 +1191,7 @@
 
                                 <!-- Paginação -->
                                 ${totalPages > 1 ? `
-                                    <div class="flex justify-center items-center gap-2 mt-6 pt-6 border-t border-slate-700">
+                                    <div class="flex justify-center items-center gap-2 mt-6 pt-6 border-t border-slate-700 flex-wrap">
                                         <button 
                                             onclick="changePage(-1)"
                                             ${state.currentPage === 1 ? 'disabled' : ''}
@@ -1249,15 +1366,16 @@
                                         type="button"
                                         onclick="state.view='stock'; render()"
                                         class="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-4 rounded-xl transition-all"
+                                        ${state.isLoading ? 'disabled' : ''}
                                     >
                                         CANCELAR
                                     </button>
                                     <button 
                                         type="submit"
-                                        class="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2"
+                                        class="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                                         ${state.isLoading ? 'disabled' : ''}
                                     >
-                                        ${state.isLoading ? '<i class="ph ph-spinner animate-spin text-2xl"></i> SALVANDO...' : `<i class="ph ph-floppy-disk text-xl"></i> ${isEdit ? 'ATUALIZAR' : 'CADASTRAR'}`}
+                                        ${state.isLoading ? `<i class="ph ph-spinner animate-spin text-2xl"></i> ${state.loadingMessage.toUpperCase()}` : `<i class="ph ph-floppy-disk text-xl"></i> ${isEdit ? 'ATUALIZAR' : 'CADASTRAR'}`}
                                     </button>
                                 </div>
                             </form>
@@ -1297,7 +1415,7 @@
                                 <i class="ph-fill ph-warehouse text-xl"></i>
                             </button>
                             <button 
-                                onclick="loadMovements().then(() => { state.view='history'; render(); })"
+                                onclick="navigateToHistory()"
                                 class="px-4 py-2 rounded-lg hover:bg-slate-800 transition-all ${state.view === 'history' ? 'bg-slate-800' : ''}"
                                 title="Histórico"
                             >
@@ -1323,8 +1441,14 @@
             const savedUser = localStorage.getItem('user');
             if (savedUser) {
                 state.user = JSON.parse(savedUser);
+                state.loadingMessage = 'Carregando...';
+                state.isLoading = true;
+                render();
+                
                 loadItems().then(() => {
                     state.view = 'dashboard';
+                    state.isLoading = false;
+                    state.loadingMessage = '';
                     render();
                 });
             } else {

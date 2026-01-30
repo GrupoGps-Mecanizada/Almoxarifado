@@ -79,7 +79,7 @@
         // ============================================
         // CONFIGURAÇÃO
         // ============================================
-        const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzBVWI2w_1dY_yAyQ-eh2KdLcBqbv-qBuHUxV7x0lyj81ZFryrTGW8lOlpD7rGl0H6MKA/exec';
+        const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyncVvza7PTzk4E6nM8uSAWrAmHfVvT5GXWxleFnoXr6uSdqx6S0qPEV8z7jV3Wj_mpvw/exec';
         
         // Cache de dados
         const cache = {
@@ -96,7 +96,8 @@
         // ============================================
         const MOVEMENT_TYPES = {
             'COMPRA': { label: 'Compra de Estoque', color: 'emerald', icon: 'shopping-cart', sign: '+' },
-            'REPOSICAO': { label: 'Reposição', color: 'blue', icon: 'arrow-clockwise', sign: '+' },
+            // ATUALIZADO: Agora Reposição subtrai (-)
+            'REPOSICAO': { label: 'Reposição', color: 'blue', icon: 'arrow-clockwise', sign: '-' },
             'DISTRIBUICAO': { label: 'Distribuição EPI', color: 'purple', icon: 'hand-coins', sign: '-' },
             'SAIDA': { label: 'Saída', color: 'red', icon: 'arrow-up-right', sign: '-' },
             'AJUSTE': { label: 'Ajuste', color: 'amber', icon: 'wrench', sign: '±' }
@@ -162,12 +163,10 @@
         function formatDate(dateStr) {
             if (!dateStr) return '';
             try {
-                // Tenta criar data de várias formas
                 let date;
                 if (dateStr instanceof Date) {
                     date = dateStr;
                 } else if (typeof dateStr === 'string') {
-                    // Se já está no formato yyyy-mm-dd
                     if (dateStr.includes('-') && dateStr.length === 10) {
                         date = new Date(dateStr + 'T12:00:00');
                     } else {
@@ -329,7 +328,6 @@
         async function getMovements(filters, forceRefresh = false) {
             const filterKey = JSON.stringify(filters);
             if (!forceRefresh && cache.movements && cache.movementsFilterKey === filterKey && isCacheValid(cache.movementsTimestamp)) {
-                console.log('Usando cache de movimentações');
                 return { success: true, movements: cache.movements };
             }
 
@@ -341,11 +339,8 @@
                     type: filters.type
                 });
                 
-                console.log('Buscando movimentações com filtros:', filters);
                 const response = await fetch(`${GOOGLE_SCRIPT_URL}?${params}`);
                 const data = await response.json();
-                
-                console.log('Resposta do servidor:', data);
                 
                 if (data.success) {
                     cache.movements = data.movements;
@@ -502,8 +497,8 @@
                 return;
             }
 
-            // Verifica estoque disponível para saídas
-            if (['DISTRIBUICAO', 'SAIDA'].includes(op.type) && item.quantidade < op.quantity) {
+            // ATUALIZADO: Verifica estoque disponível para saídas, distribuição e agora REPOSIÇÃO
+            if (['DISTRIBUICAO', 'SAIDA', 'REPOSICAO'].includes(op.type) && item.quantidade < op.quantity) {
                 alert('Quantidade em estoque insuficiente');
                 return;
             }
@@ -921,7 +916,7 @@
                                     </div>
                                 </button>
 
-                                <!-- Reposição de Estoque -->
+                                <!-- Reposição de Estoque - ATUALIZADO PARA REMOVER -->
                                 <button onclick="startMovement('REPOSICAO')" class="glass p-8 rounded-xl hover:border-blue-500 border-2 border-transparent transition-all group text-left">
                                     <div class="w-16 h-16 bg-blue-500/20 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform mx-auto">
                                         <i class="ph-fill ph-arrow-clockwise text-blue-400 text-4xl"></i>
@@ -930,7 +925,7 @@
                                     <p class="text-slate-400 text-sm text-center">Registrar reposição interna ou transferência de outros setores</p>
                                     <div class="mt-4 pt-4 border-t border-slate-700">
                                         <p class="text-xs text-blue-400 font-semibold text-center">
-                                            <i class="ph-fill ph-arrow-up"></i> ADICIONA ao estoque
+                                            <i class="ph-fill ph-arrow-down"></i> REMOVE do estoque
                                         </p>
                                     </div>
                                 </button>
@@ -958,7 +953,8 @@
         function renderMovement() {
             const op = state.movementOperation;
             const typeInfo = MOVEMENT_TYPES[op.type];
-            const availableItems = op.type === 'DISTRIBUICAO' ? state.items.filter(item => item.quantidade > 0) : state.items;
+            // ATUALIZADO: Agora Reposição também filtra itens com quantidade > 0
+            const availableItems = ['DISTRIBUICAO', 'REPOSICAO'].includes(op.type) ? state.items.filter(item => item.quantidade > 0) : state.items;
             const selectedItem = availableItems.find(item => item.id === op.selectedItem);
 
             return `
@@ -1053,7 +1049,7 @@
                                             value="${op.quantity}"
                                             onchange="state.movementOperation.quantity = parseInt(this.value)"
                                             min="1"
-                                            ${selectedItem && op.type === 'DISTRIBUICAO' ? `max="${selectedItem.quantidade}"` : ''}
+                                            ${selectedItem && (op.type === 'DISTRIBUICAO' || op.type === 'REPOSICAO') ? `max="${selectedItem.quantidade}"` : ''}
                                             class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-${typeInfo.color}-500 outline-none text-lg text-white font-mono"
                                             required
                                         >
@@ -1328,7 +1324,7 @@
                                                     </div>
                                                     
                                                     <div class="text-right flex-shrink-0">
-                                                        <p class="text-3xl font-bold font-mono ${['COMPRA', 'REPOSICAO'].includes(movement.type) ? 'text-emerald-400' : 'text-red-400'}">
+                                                        <p class="text-3xl font-bold font-mono ${typeInfo.sign === '+' ? 'text-emerald-400' : 'text-red-400'}">
                                                             ${typeInfo.sign}${movement.quantity}
                                                         </p>
                                                         <p class="text-xs text-slate-500 mt-1">${formatDateTime(movement.timestamp)}</p>

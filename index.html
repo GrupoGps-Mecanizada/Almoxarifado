@@ -1,25 +1,63 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="pt-BR" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Almoxarifado EPI - Sistema de Controle</title>
+    <title>Almoxarifado EPI - Sistema Profissional</title>
     <meta name="theme-color" content="#0F172A">
+    <meta name="color-scheme" content="dark">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     
     <!-- Phosphor Icons -->
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        // Suprime warning do Tailwind CDN
+        tailwind.config = {
+            darkMode: 'class',
+        }
+    </script>
+    
+    <!-- Chart.js para gráficos -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Work+Sans:wght@300;400;600;700;800&display=swap');
         
+        /* Reset e força tema escuro */
+        html, body {
+            margin: 0;
+            padding: 0;
+            background-color: #0f172a !important;
+            color: #f1f5f9 !important;
+        }
+        
+        * {
+            -webkit-tap-highlight-color: transparent;
+            -webkit-touch-callout: none;
+        }
+        
         body { 
-            -webkit-tap-highlight-color: transparent; 
             overscroll-behavior-y: none;
             font-family: 'Work Sans', sans-serif;
-            background: #0a0f1a;
+            position: fixed;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #0f172a !important;
+            color: #f1f5f9 !important;
+        }
+        
+        #app {
+            height: 100%;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #334155 100%);
+            min-height: 100vh;
         }
         
         .font-mono { font-family: 'Space Mono', monospace; }
@@ -33,22 +71,67 @@
         .slide-in { animation: slideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
         @keyframes slideIn { from { opacity: 0; transform: translateX(-20px); } to { opacity: 1; transform: translateX(0); } }
         
+        /* Skeleton Loading */
+        @keyframes shimmer {
+            0% { background-position: -1000px 0; }
+            100% { background-position: 1000px 0; }
+        }
+        
+        .skeleton {
+            background: linear-gradient(90deg, #1e293b 25%, #334155 50%, #1e293b 75%);
+            background-size: 1000px 100%;
+            animation: shimmer 2s infinite;
+        }
+        
+        /* Optimistic UI */
+        .optimistic-update {
+            opacity: 0.6;
+            pointer-events: none;
+        }
+        
+        .success-flash {
+            animation: successFlash 0.5s ease-out;
+        }
+        
+        @keyframes successFlash {
+            0%, 100% { background-color: transparent; }
+            50% { background-color: rgba(16, 185, 129, 0.2); }
+        }
+        
         /* Custom Scrollbar */
-        ::-webkit-scrollbar { width: 8px; }
-        ::-webkit-scrollbar-track { background: #0f1419; }
-        ::-webkit-scrollbar-thumb { background: #2d3748; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: #4a5568; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #1e293b; }
+        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #64748b; }
         
         /* Gradient Background */
         .bg-gradient-dark {
-            background: linear-gradient(135deg, #0a0f1a 0%, #0f1419 50%, #1a202c 100%);
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #334155 100%) !important;
+        }
+        
+        /* Força tema escuro em todos os elementos */
+        html {
+            background: #0f172a !important;
+        }
+        
+        * {
+            scrollbar-color: #475569 #1e293b;
+        }
+        
+        /* Garante tema escuro em inputs e selects */
+        input, select, textarea {
+            color-scheme: dark;
+        }
+        
+        input::placeholder, textarea::placeholder {
+            color: #94a3b8;
         }
         
         /* Glass Effect */
         .glass {
-            background: rgba(15, 20, 25, 0.7);
+            background: rgba(255, 255, 255, 0.05);
             backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
         }
         
         /* Status Badge Animation */
@@ -71,10 +154,73 @@
         .status-badge:hover::before {
             left: 100%;
         }
+        
+        /* Toast Notifications */
+        .toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 9999;
+            padding: 16px 24px;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            animation: slideInRight 0.3s ease-out;
+            max-width: 90%;
+        }
+        
+        @keyframes slideInRight {
+            from { transform: translateX(400px); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        
+        .toast-success { background: #10b981; color: white; }
+        .toast-error { background: #ef4444; color: white; }
+        .toast-info { background: #3b82f6; color: white; }
+        
+        /* Pull to Refresh Indicator */
+        .ptr-indicator {
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%) translateY(-100%);
+            padding: 10px 20px;
+            background: rgba(16, 185, 129, 0.9);
+            color: white;
+            border-radius: 0 0 12px 12px;
+            font-weight: bold;
+            transition: transform 0.3s;
+            z-index: 1000;
+        }
+        
+        .ptr-indicator.active {
+            transform: translateX(-50%) translateY(0);
+        }
+        
+        /* Chart Container */
+        .chart-container {
+            position: relative;
+            height: 300px;
+            width: 100%;
+        }
+        
+        /* Mobile optimizations */
+        @media (max-width: 640px) {
+            .toast {
+                top: 10px;
+                right: 10px;
+                left: 10px;
+                max-width: calc(100% - 20px);
+            }
+            
+            .chart-container {
+                height: 250px;
+            }
+        }
     </style>
 </head>
-<body class="bg-gradient-dark text-gray-100">
+<body class="text-gray-100">
     <div id="app"></div>
+    <div id="toast-container"></div>
 
     <script>
         // ============================================
@@ -82,33 +228,17 @@
         // ============================================
         const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyncVvza7PTzk4E6nM8uSAWrAmHfVvT5GXWxleFnoXr6uSdqx6S0qPEV8z7jV3Wj_mpvw/exec';
         
-        // Cache de dados
+        // Cache otimizado
         const cache = {
             movements: null,
             movementsTimestamp: null,
             movementsFilterKey: null,
             items: null,
             itemsTimestamp: null,
-            CACHE_DURATION: 60000 // 1 minuto
+            statistics: null,
+            statisticsTimestamp: null,
+            CACHE_DURATION: 300000 // 5 minutos
         };
-
-        // ============================================
-        // AUTO-LOGOUT AO SAIR DA PÁGINA
-        // ============================================
-        window.addEventListener('beforeunload', function(e) {
-            // Limpa o localStorage ao sair
-            if (state.user) {
-                localStorage.removeItem('user');
-            }
-        });
-
-        // Detecta quando a página perde o foco (usuário muda de aba ou minimiza)
-        document.addEventListener('visibilitychange', function() {
-            if (document.hidden && state.user) {
-                // Opcional: você pode adicionar um timeout para deslogar após X minutos de inatividade
-                // Por enquanto, mantém a sessão enquanto a aba está aberta
-            }
-        });
 
         // ============================================
         // TIPOS DE MOVIMENTAÇÃO
@@ -126,6 +256,7 @@
         // ============================================
         let state = {
             view: 'login',
+            previousView: null,
             user: null,
             items: [],
             movements: [],
@@ -137,12 +268,17 @@
             currentPage: 1,
             itemsPerPage: 50,
             
-            // Filtros
+            // Filtros avançados
             filters: {
                 startDate: getFirstDayOfMonth(),
                 endDate: getCurrentDate(),
                 type: 'TODOS',
-                searchTerm: ''
+                searchTerm: '',
+                category: 'TODAS',
+                minQuantity: '',
+                maxQuantity: '',
+                location: '',
+                lowStockOnly: false
             },
             
             // Operação de movimentação
@@ -159,12 +295,26 @@
             // Edição de item
             editingItem: null,
             
-            // Estatísticas
-            statistics: null
+            // Estatísticas e Analytics
+            statistics: null,
+            analytics: {
+                weeklyExpenses: [],
+                monthlyExpenses: [],
+                topReplenishedItems: [],
+                categoryDistribution: []
+            }
         };
+
+        // Navigation history para o botão voltar
+        let navigationHistory = [];
 
         // Debounce timer
         let searchDebounceTimer = null;
+
+        // Pull to refresh
+        let touchStartY = 0;
+        let pullDistance = 0;
+        const PULL_THRESHOLD = 80;
 
         // ============================================
         // UTILITÁRIOS
@@ -222,6 +372,13 @@
             }
         }
 
+        function formatCurrency(value) {
+            return new Intl.NumberFormat('pt-BR', {
+                style: 'currency',
+                currency: 'BRL'
+            }).format(value);
+        }
+
         function getColorClass(color, type = 'bg') {
             const colors = {
                 emerald: type === 'bg' ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : 'bg-emerald-600',
@@ -247,7 +404,120 @@
         }
 
         // ============================================
-        // SERVIÇOS / API
+        // TOAST NOTIFICATIONS
+        // ============================================
+        function showToast(message, type = 'info', duration = 3000) {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type}`;
+            toast.innerHTML = `
+                <div class="flex items-center gap-3">
+                    <i class="ph-fill ph-${type === 'success' ? 'check-circle' : type === 'error' ? 'x-circle' : 'info'} text-2xl"></i>
+                    <span class="font-semibold">${message}</span>
+                </div>
+            `;
+            container.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.style.animation = 'slideInRight 0.3s ease-out reverse';
+                setTimeout(() => container.removeChild(toast), 300);
+            }, duration);
+        }
+
+        // ============================================
+        // NAVEGAÇÃO E HISTÓRICO
+        // ============================================
+        function navigateTo(view) {
+            if (state.view !== view) {
+                navigationHistory.push(state.view);
+                state.previousView = state.view;
+                state.view = view;
+                render();
+            }
+        }
+
+        function goBack() {
+            if (navigationHistory.length > 0) {
+                const previousView = navigationHistory.pop();
+                state.view = previousView;
+                render();
+                return true;
+            }
+            return false;
+        }
+
+        // Intercepta o botão voltar do navegador/dispositivo
+        document.addEventListener('keydown', (e) => {
+            // ESC para voltar
+            if (e.key === 'Escape' && state.view !== 'login') {
+                e.preventDefault();
+                if (state.view === 'dashboard') {
+                    if (confirm('Deseja sair do sistema?')) {
+                        handleLogout();
+                    }
+                } else {
+                    if (!goBack()) {
+                        navigateTo('dashboard');
+                    }
+                }
+            }
+        });
+
+        // Logout automático ao fechar a aba/navegador
+        window.addEventListener('beforeunload', (e) => {
+            // Salva estado antes de sair
+            if (state.user) {
+                // Mantém a sessão salva para próxima vez
+                // Se quiser deslogar, descomente a linha abaixo:
+                // clearSession();
+            }
+        });
+
+        // Logout automático ao sair da página (navegar para outro site)
+        window.addEventListener('pagehide', (e) => {
+            // Desloga ao sair da página
+            clearSession();
+        });
+
+        // ============================================
+        // PERSISTÊNCIA DE LOGIN (7 DIAS)
+        // ============================================
+        function saveSession(user) {
+            const session = {
+                user: user,
+                timestamp: Date.now(),
+                expiresIn: 7 * 24 * 60 * 60 * 1000 // 7 dias
+            };
+            localStorage.setItem('epi_session', JSON.stringify(session));
+        }
+
+        function loadSession() {
+            const sessionData = localStorage.getItem('epi_session');
+            if (!sessionData) return null;
+            
+            try {
+                const session = JSON.parse(sessionData);
+                const now = Date.now();
+                
+                // Verifica se a sessão ainda é válida
+                if (session.timestamp + session.expiresIn > now) {
+                    return session.user;
+                } else {
+                    localStorage.removeItem('epi_session');
+                    return null;
+                }
+            } catch (e) {
+                localStorage.removeItem('epi_session');
+                return null;
+            }
+        }
+
+        function clearSession() {
+            localStorage.removeItem('epi_session');
+        }
+
+        // ============================================
+        // SERVIÇOS / API COM OPTIMISTIC UI
         // ============================================
         async function login(username, password) {
             try {
@@ -282,6 +552,19 @@
         }
 
         async function saveItem(item) {
+            // Optimistic UI - atualiza a interface imediatamente
+            const isNew = !state.items.find(i => i.id === item.id);
+            
+            if (isNew) {
+                state.items.push(item);
+            } else {
+                const index = state.items.findIndex(i => i.id === item.id);
+                state.items[index] = item;
+            }
+            
+            render();
+            showToast(isNew ? 'Item cadastrado!' : 'Item atualizado!', 'success', 2000);
+            
             try {
                 const response = await fetch(GOOGLE_SCRIPT_URL, {
                     method: 'POST',
@@ -292,16 +575,35 @@
                 if (data.success) {
                     cache.items = null;
                     cache.itemsTimestamp = null;
+                    // Recarrega em background para garantir sincronização
+                    loadItems(true);
+                } else {
+                    // Reverte em caso de erro
+                    if (isNew) {
+                        state.items = state.items.filter(i => i.id !== item.id);
+                    } else {
+                        loadItems(true);
+                    }
+                    showToast('Erro ao salvar item', 'error');
                 }
                 
                 return data;
             } catch (error) {
                 console.error('Erro ao salvar item:', error);
+                // Reverte em caso de erro
+                loadItems(true);
+                showToast('Erro ao salvar item', 'error');
                 return { success: false, error: error.message };
             }
         }
 
         async function deleteItem(itemId) {
+            // Optimistic UI
+            const itemBackup = state.items.find(i => i.id === itemId);
+            state.items = state.items.filter(i => i.id !== itemId);
+            render();
+            showToast('Item excluído!', 'success', 2000);
+            
             try {
                 const response = await fetch(GOOGLE_SCRIPT_URL, {
                     method: 'POST',
@@ -312,34 +614,74 @@
                 if (data.success) {
                     cache.items = null;
                     cache.itemsTimestamp = null;
+                } else {
+                    // Reverte em caso de erro
+                    state.items.push(itemBackup);
+                    render();
+                    showToast('Erro ao excluir item', 'error');
                 }
                 
                 return data;
             } catch (error) {
                 console.error('Erro ao deletar item:', error);
+                // Reverte em caso de erro
+                state.items.push(itemBackup);
+                render();
+                showToast('Erro ao excluir item', 'error');
                 return { success: false, error: error.message };
             }
         }
 
         async function saveMovement(movement) {
-            try {
-                const response = await fetch(GOOGLE_SCRIPT_URL, {
-                    method: 'POST',
-                    body: JSON.stringify({ action: 'saveMovement', movement: movement })
-                });
-                const data = await response.json();
+            // Optimistic UI - atualiza estoque imediatamente
+            const item = state.items.find(i => i.id === movement.itemId);
+            if (item) {
+                const oldQuantity = item.quantidade;
                 
-                if (data.success) {
-                    cache.movements = null;
-                    cache.movementsTimestamp = null;
-                    cache.items = null;
-                    cache.itemsTimestamp = null;
+                // Atualiza quantidade baseado no tipo
+                if (movement.type === 'COMPRA') {
+                    item.quantidade += movement.quantity;
+                } else if (['DISTRIBUICAO', 'SAIDA', 'REPOSICAO'].includes(movement.type)) {
+                    item.quantidade -= movement.quantity;
+                } else if (movement.type === 'AJUSTE') {
+                    item.quantidade = movement.quantity;
                 }
                 
-                return data;
-            } catch (error) {
-                console.error('Erro ao salvar movimentação:', error);
-                return { success: false, error: error.message };
+                render();
+                showToast('Movimentação registrada!', 'success', 2000);
+                
+                try {
+                    const response = await fetch(GOOGLE_SCRIPT_URL, {
+                        method: 'POST',
+                        body: JSON.stringify({ action: 'saveMovement', movement: movement })
+                    });
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        cache.movements = null;
+                        cache.movementsTimestamp = null;
+                        cache.items = null;
+                        cache.itemsTimestamp = null;
+                        cache.statistics = null;
+                        cache.statisticsTimestamp = null;
+                        // Recarrega em background
+                        loadItems(true);
+                    } else {
+                        // Reverte em caso de erro
+                        item.quantidade = oldQuantity;
+                        render();
+                        showToast('Erro ao registrar movimentação', 'error');
+                    }
+                    
+                    return data;
+                } catch (error) {
+                    console.error('Erro ao salvar movimentação:', error);
+                    // Reverte em caso de erro
+                    item.quantidade = oldQuantity;
+                    render();
+                    showToast('Erro ao registrar movimentação', 'error');
+                    return { success: false, error: error.message };
+                }
             }
         }
 
@@ -374,9 +716,19 @@
         }
 
         async function getStatistics() {
+            if (cache.statistics && isCacheValid(cache.statisticsTimestamp)) {
+                return { success: true, statistics: cache.statistics };
+            }
+
             try {
                 const response = await fetch(`${GOOGLE_SCRIPT_URL}?action=getStatistics`);
                 const data = await response.json();
+                
+                if (data.success) {
+                    cache.statistics = data.statistics;
+                    cache.statisticsTimestamp = Date.now();
+                }
+                
                 return data;
             } catch (error) {
                 console.error('Erro ao buscar estatísticas:', error);
@@ -393,7 +745,7 @@
             const password = document.getElementById('password').value;
 
             if (!username || !password) {
-                alert('Preencha todos os campos');
+                showToast('Preencha todos os campos', 'error');
                 return;
             }
 
@@ -405,15 +757,16 @@
 
             if (result.success) {
                 state.user = result.user;
-                localStorage.setItem('user', JSON.stringify(result.user));
+                saveSession(result.user);
                 
                 state.loadingMessage = 'Carregando dados...';
                 render();
                 
                 await loadItems();
-                state.view = 'dashboard';
+                navigateTo('dashboard');
+                showToast(`Bem-vindo, ${result.user.nome}!`, 'success');
             } else {
-                alert('Login falhou: ' + (result.error || 'Credenciais inválidas'));
+                showToast('Login falhou: ' + (result.error || 'Credenciais inválidas'), 'error');
             }
 
             state.isLoading = false;
@@ -440,11 +793,47 @@
             const result = await getStatistics();
             if (result.success) {
                 state.statistics = result.statistics;
+                calculateAnalytics();
             }
         }
 
+        function calculateAnalytics() {
+            // Calcula analytics baseado nas movimentações
+            const now = new Date();
+            const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+            const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+            
+            // Movimentações recentes
+            const recentMovements = state.movements.filter(m => {
+                const movDate = new Date(m.date);
+                return movDate >= monthAgo;
+            });
+            
+            // Itens mais repostos
+            const replenishmentCount = {};
+            recentMovements.forEach(m => {
+                if (m.type === 'REPOSICAO' || m.type === 'COMPRA') {
+                    replenishmentCount[m.itemName] = (replenishmentCount[m.itemName] || 0) + m.quantity;
+                }
+            });
+            
+            state.analytics.topReplenishedItems = Object.entries(replenishmentCount)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 5)
+                .map(([name, count]) => ({ name, count }));
+            
+            // Distribuição por categoria
+            const categoryDist = {};
+            state.items.forEach(item => {
+                categoryDist[item.categoria] = (categoryDist[item.categoria] || 0) + item.quantidade;
+            });
+            
+            state.analytics.categoryDistribution = Object.entries(categoryDist)
+                .map(([category, quantity]) => ({ category, quantity }));
+        }
+
         function handleLogout() {
-            localStorage.removeItem('user');
+            clearSession();
             state.user = null;
             state.items = [];
             state.movements = [];
@@ -452,14 +841,16 @@
             cache.movements = null;
             cache.itemsTimestamp = null;
             cache.movementsTimestamp = null;
-            state.view = 'login';
-            render();
+            cache.statistics = null;
+            cache.statisticsTimestamp = null;
+            navigationHistory = [];
+            navigateTo('login');
+            showToast('Sessão encerrada', 'info');
         }
 
         // Funções de movimentação
         function openMovementSelector() {
-            state.view = 'movementSelector';
-            render();
+            navigateTo('movementSelector');
         }
 
         function startMovement(type) {
@@ -472,8 +863,7 @@
                 quantity: 1,
                 observations: ''
             };
-            state.view = 'movement';
-            render();
+            navigateTo('movement');
         }
 
         function cancelMovement() {
@@ -486,44 +876,37 @@
                 quantity: 1,
                 observations: ''
             };
-            state.view = 'dashboard';
-            render();
+            goBack();
         }
 
         async function confirmMovement() {
             const op = state.movementOperation;
             
             if (!op.selectedItem || op.quantity <= 0) {
-                alert('Preencha todos os campos obrigatórios');
+                showToast('Preencha todos os campos obrigatórios', 'error');
                 return;
             }
 
-            // Validações específicas por tipo
             if (op.type === 'DISTRIBUICAO' && !op.employeeName) {
-                alert('Nome do colaborador é obrigatório para distribuição');
+                showToast('Nome do colaborador é obrigatório', 'error');
                 return;
             }
 
             if (op.type === 'COMPRA' && !op.supplier) {
-                alert('Nome do fornecedor é obrigatório para compra');
+                showToast('Nome do fornecedor é obrigatório', 'error');
                 return;
             }
 
             const item = state.items.find(i => i.id === op.selectedItem);
             if (!item) {
-                alert('Item não encontrado');
+                showToast('Item não encontrado', 'error');
                 return;
             }
 
-            // Verifica estoque disponível para saídas, distribuição e reposição
             if (['DISTRIBUICAO', 'SAIDA', 'REPOSICAO'].includes(op.type) && item.quantidade < op.quantity) {
-                alert('Quantidade em estoque insuficiente');
+                showToast('Quantidade em estoque insuficiente', 'error');
                 return;
             }
-
-            state.isLoading = true;
-            state.loadingMessage = 'Registrando movimentação...';
-            render();
 
             const movement = {
                 date: getCurrentDate(),
@@ -540,16 +923,8 @@
             const result = await saveMovement(movement);
 
             if (result.success) {
-                alert('✅ Movimentação registrada com sucesso!');
-                await loadItems(true);
                 cancelMovement();
-            } else {
-                alert('Erro ao registrar movimentação: ' + result.error);
             }
-
-            state.isLoading = false;
-            state.loadingMessage = '';
-            render();
         }
 
         async function handleSaveItem(e) {
@@ -567,24 +942,12 @@
                 observacoes: document.getElementById('itemObs').value
             };
 
-            state.isLoading = true;
-            state.loadingMessage = 'Salvando item...';
-            render();
-
             const result = await saveItem(itemData);
 
             if (result.success) {
-                alert(`✅ Item ${state.editingItem ? 'atualizado' : 'cadastrado'} com sucesso!`);
-                await loadItems(true);
                 state.editingItem = null;
-                state.view = 'stock';
-            } else {
-                alert('Erro ao salvar item: ' + result.error);
+                goBack();
             }
-
-            state.isLoading = false;
-            state.loadingMessage = '';
-            render();
         }
 
         async function handleDeleteItem(itemId) {
@@ -592,34 +955,17 @@
                 return;
             }
 
-            state.isLoading = true;
-            state.loadingMessage = 'Excluindo item...';
-            render();
-
-            const result = await deleteItem(itemId);
-
-            if (result.success) {
-                alert('✅ Item excluído com sucesso!');
-                await loadItems(true);
-            } else {
-                alert('Erro ao excluir item: ' + result.error);
-            }
-
-            state.isLoading = false;
-            state.loadingMessage = '';
-            render();
+            await deleteItem(itemId);
         }
 
         function openEditItem(item) {
             state.editingItem = item;
-            state.view = 'editItem';
-            render();
+            navigateTo('editItem');
         }
 
         function openNewItem() {
             state.editingItem = null;
-            state.view = 'editItem';
-            render();
+            navigateTo('editItem');
         }
 
         async function applyFilters() {
@@ -635,7 +981,7 @@
         }
 
         async function navigateToHistory() {
-            state.view = 'history';
+            navigateTo('history');
             state.isLoading = true;
             state.loadingMessage = 'Carregando histórico...';
             render();
@@ -645,6 +991,23 @@
             state.isLoading = false;
             state.loadingMessage = '';
             render();
+        }
+
+        async function navigateToDashboardAnalytics() {
+            navigateTo('analytics');
+            state.isLoading = true;
+            state.loadingMessage = 'Carregando analytics...';
+            render();
+            
+            await loadStatistics();
+            await loadMovements(true);
+            
+            state.isLoading = false;
+            state.loadingMessage = '';
+            render();
+            
+            // Renderiza gráficos após um pequeno delay para garantir que o DOM está pronto
+            setTimeout(() => renderCharts(), 100);
         }
 
         function changePage(delta) {
@@ -681,11 +1044,251 @@
             return filtered.slice(start, end);
         }
 
+        function getFilteredItems() {
+            let filtered = state.items;
+            
+            // Filtro por categoria
+            if (state.filters.category !== 'TODAS') {
+                filtered = filtered.filter(i => i.categoria === state.filters.category);
+            }
+            
+            // Filtro por localização
+            if (state.filters.location) {
+                const loc = state.filters.location.toLowerCase();
+                filtered = filtered.filter(i => i.localizacao?.toLowerCase().includes(loc));
+            }
+            
+            // Filtro por quantidade mínima
+            if (state.filters.minQuantity !== '') {
+                filtered = filtered.filter(i => i.quantidade >= parseInt(state.filters.minQuantity));
+            }
+            
+            // Filtro por quantidade máxima
+            if (state.filters.maxQuantity !== '') {
+                filtered = filtered.filter(i => i.quantidade <= parseInt(state.filters.maxQuantity));
+            }
+            
+            // Filtro por estoque baixo
+            if (state.filters.lowStockOnly) {
+                filtered = filtered.filter(i => i.quantidade < 10);
+            }
+            
+            // Filtro por busca de texto
+            if (state.filters.searchTerm) {
+                const term = state.filters.searchTerm.toLowerCase();
+                filtered = filtered.filter(i => 
+                    i.nome?.toLowerCase().includes(term) ||
+                    i.categoria?.toLowerCase().includes(term) ||
+                    i.localizacao?.toLowerCase().includes(term) ||
+                    i.ca?.toLowerCase().includes(term)
+                );
+            }
+            
+            return filtered;
+        }
+
         const handleSearchInput = debounce((value) => {
             state.filters.searchTerm = value;
             state.currentPage = 1;
             render();
         }, 300);
+
+        // ============================================
+        // GRÁFICOS COM CHART.JS
+        // ============================================
+        let chartsInstances = {};
+
+        function renderCharts() {
+            // Destroi gráficos anteriores
+            Object.values(chartsInstances).forEach(chart => chart.destroy());
+            chartsInstances = {};
+            
+            // Gráfico de distribuição por categoria
+            renderCategoryChart();
+            
+            // Gráfico de top itens mais repostos
+            renderTopItemsChart();
+            
+            // Gráfico de movimentações por tipo
+            renderMovementsTypeChart();
+        }
+
+        function renderCategoryChart() {
+            const ctx = document.getElementById('categoryChart');
+            if (!ctx) return;
+            
+            const labels = state.analytics.categoryDistribution.map(c => c.category);
+            const data = state.analytics.categoryDistribution.map(c => c.quantity);
+            
+            chartsInstances.categoryChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: data,
+                        backgroundColor: [
+                            'rgba(16, 185, 129, 0.8)',
+                            'rgba(59, 130, 246, 0.8)',
+                            'rgba(139, 92, 246, 0.8)',
+                            'rgba(251, 146, 60, 0.8)',
+                            'rgba(239, 68, 68, 0.8)'
+                        ],
+                        borderColor: [
+                            'rgb(16, 185, 129)',
+                            'rgb(59, 130, 246)',
+                            'rgb(139, 92, 246)',
+                            'rgb(251, 146, 60)',
+                            'rgb(239, 68, 68)'
+                        ],
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                color: 'rgb(203, 213, 225)',
+                                font: {
+                                    family: 'Work Sans'
+                                }
+                            }
+                        },
+                        title: {
+                            display: true,
+                            text: 'Distribuição por Categoria',
+                            color: 'rgb(203, 213, 225)',
+                            font: {
+                                size: 16,
+                                family: 'Work Sans',
+                                weight: 'bold'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function renderTopItemsChart() {
+            const ctx = document.getElementById('topItemsChart');
+            if (!ctx) return;
+            
+            const labels = state.analytics.topReplenishedItems.map(i => i.name.substring(0, 20));
+            const data = state.analytics.topReplenishedItems.map(i => i.count);
+            
+            chartsInstances.topItemsChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Quantidade Reposta',
+                        data: data,
+                        backgroundColor: 'rgba(59, 130, 246, 0.8)',
+                        borderColor: 'rgb(59, 130, 246)',
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    indexAxis: 'y',
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        title: {
+                            display: true,
+                            text: 'Top 5 Itens Mais Repostos',
+                            color: 'rgb(203, 213, 225)',
+                            font: {
+                                size: 16,
+                                family: 'Work Sans',
+                                weight: 'bold'
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            ticks: {
+                                color: 'rgb(148, 163, 184)'
+                            },
+                            grid: {
+                                color: 'rgba(148, 163, 184, 0.1)'
+                            }
+                        },
+                        y: {
+                            ticks: {
+                                color: 'rgb(148, 163, 184)'
+                            },
+                            grid: {
+                                color: 'rgba(148, 163, 184, 0.1)'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function renderMovementsTypeChart() {
+            const ctx = document.getElementById('movementsTypeChart');
+            if (!ctx || !state.statistics) return;
+            
+            const movTypes = state.statistics.movementsByType;
+            const labels = Object.keys(movTypes).map(type => MOVEMENT_TYPES[type]?.label || type);
+            const data = Object.values(movTypes);
+            
+            chartsInstances.movementsTypeChart = new Chart(ctx, {
+                type: 'pie',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: data,
+                        backgroundColor: [
+                            'rgba(16, 185, 129, 0.8)',
+                            'rgba(59, 130, 246, 0.8)',
+                            'rgba(139, 92, 246, 0.8)',
+                            'rgba(239, 68, 68, 0.8)',
+                            'rgba(251, 146, 60, 0.8)'
+                        ],
+                        borderColor: [
+                            'rgb(16, 185, 129)',
+                            'rgb(59, 130, 246)',
+                            'rgb(139, 92, 246)',
+                            'rgb(239, 68, 68)',
+                            'rgb(251, 146, 60)'
+                        ],
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                color: 'rgb(203, 213, 225)',
+                                font: {
+                                    family: 'Work Sans'
+                                }
+                            }
+                        },
+                        title: {
+                            display: true,
+                            text: 'Movimentações por Tipo',
+                            color: 'rgb(203, 213, 225)',
+                            font: {
+                                size: 16,
+                                family: 'Work Sans',
+                                weight: 'bold'
+                            }
+                        }
+                    }
+                }
+            });
+        }
 
         // ============================================
         // RENDERIZAÇÃO
@@ -699,6 +1302,9 @@
                     break;
                 case 'dashboard':
                     app.innerHTML = renderDashboard();
+                    break;
+                case 'analytics':
+                    app.innerHTML = renderAnalytics();
                     break;
                 case 'stock':
                     app.innerHTML = renderStock();
@@ -736,7 +1342,7 @@
                                     <input 
                                         type="text" 
                                         id="username"
-                                        class="w-full bg-slate-900 border-2 border-slate-700 rounded-lg p-4 pl-12 focus:border-emerald-500 outline-none text-lg text-white"
+                                        class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 pl-12 focus:border-emerald-500 outline-none text-lg text-white"
                                         placeholder="Digite seu usuário"
                                         ${state.isLoading ? 'disabled' : ''}
                                         required
@@ -751,7 +1357,7 @@
                                     <input 
                                         type="password" 
                                         id="password"
-                                        class="w-full bg-slate-900 border-2 border-slate-700 rounded-lg p-4 pl-12 focus:border-emerald-500 outline-none text-lg text-white"
+                                        class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 pl-12 focus:border-emerald-500 outline-none text-lg text-white"
                                         placeholder="Digite sua senha"
                                         ${state.isLoading ? 'disabled' : ''}
                                         required
@@ -769,7 +1375,7 @@
                         </form>
                         
                         <div class="mt-6 text-center text-xs text-slate-500 font-mono">
-                            <p>v2.3.0 | © 2026</p>
+                            <p>v3.0.0 | © 2026</p>
                         </div>
                     </div>
                 </div>
@@ -831,37 +1437,45 @@
                                 <i class="ph-fill ph-lightning text-amber-400"></i>
                                 Ações Rápidas
                             </h2>
-                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                                <button onclick="openMovementSelector()" class="glass p-6 rounded-lg hover:border-emerald-500 border-2 border-transparent transition-all text-left group">
-                                    <div class="w-12 h-12 bg-emerald-500/20 rounded-lg flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                            <div class="grid grid-cols-2 lg:grid-cols-5 gap-4">
+                                <button onclick="openMovementSelector()" class="glass p-6 rounded-lg hover:border-emerald-500 border-2 border-transparent transition-all text-center group">
+                                    <div class="w-12 h-12 bg-emerald-500/20 rounded-lg flex items-center justify-center mb-3 group-hover:scale-110 transition-transform mx-auto">
                                         <i class="ph-fill ph-arrows-clockwise text-emerald-400 text-2xl"></i>
                                     </div>
-                                    <h3 class="font-bold text-lg mb-1">Movimentações</h3>
-                                    <p class="text-slate-400 text-sm">Compra, reposição ou distribuição</p>
+                                    <h3 class="font-bold text-sm mb-1">Movimentações</h3>
+                                    <p class="text-slate-400 text-xs">Registrar</p>
                                 </button>
 
-                                <button onclick="state.view='stock'; render()" class="glass p-6 rounded-lg hover:border-blue-500 border-2 border-transparent transition-all text-left group">
-                                    <div class="w-12 h-12 bg-blue-500/20 rounded-lg flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                                <button onclick="navigateTo('stock')" class="glass p-6 rounded-lg hover:border-blue-500 border-2 border-transparent transition-all text-center group">
+                                    <div class="w-12 h-12 bg-blue-500/20 rounded-lg flex items-center justify-center mb-3 group-hover:scale-110 transition-transform mx-auto">
                                         <i class="ph-fill ph-warehouse text-blue-400 text-2xl"></i>
                                     </div>
-                                    <h3 class="font-bold text-lg mb-1">Ver Estoque</h3>
-                                    <p class="text-slate-400 text-sm">Visualizar inventário completo</p>
+                                    <h3 class="font-bold text-sm mb-1">Estoque</h3>
+                                    <p class="text-slate-400 text-xs">Visualizar</p>
                                 </button>
 
-                                <button onclick="navigateToHistory()" class="glass p-6 rounded-lg hover:border-purple-500 border-2 border-transparent transition-all text-left group">
-                                    <div class="w-12 h-12 bg-purple-500/20 rounded-lg flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                                <button onclick="navigateToHistory()" class="glass p-6 rounded-lg hover:border-purple-500 border-2 border-transparent transition-all text-center group">
+                                    <div class="w-12 h-12 bg-purple-500/20 rounded-lg flex items-center justify-center mb-3 group-hover:scale-110 transition-transform mx-auto">
                                         <i class="ph-fill ph-clock-counter-clockwise text-purple-400 text-2xl"></i>
                                     </div>
-                                    <h3 class="font-bold text-lg mb-1">Histórico</h3>
-                                    <p class="text-slate-400 text-sm">Ver movimentações</p>
+                                    <h3 class="font-bold text-sm mb-1">Histórico</h3>
+                                    <p class="text-slate-400 text-xs">Ver</p>
                                 </button>
 
-                                <button onclick="openNewItem()" class="glass p-6 rounded-lg hover:border-amber-500 border-2 border-transparent transition-all text-left group">
-                                    <div class="w-12 h-12 bg-amber-500/20 rounded-lg flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                                <button onclick="navigateToDashboardAnalytics()" class="glass p-6 rounded-lg hover:border-pink-500 border-2 border-transparent transition-all text-center group">
+                                    <div class="w-12 h-12 bg-pink-500/20 rounded-lg flex items-center justify-center mb-3 group-hover:scale-110 transition-transform mx-auto">
+                                        <i class="ph-fill ph-chart-line text-pink-400 text-2xl"></i>
+                                    </div>
+                                    <h3 class="font-bold text-sm mb-1">Analytics</h3>
+                                    <p class="text-slate-400 text-xs">Relatórios</p>
+                                </button>
+
+                                <button onclick="openNewItem()" class="glass p-6 rounded-lg hover:border-amber-500 border-2 border-transparent transition-all text-center group">
+                                    <div class="w-12 h-12 bg-amber-500/20 rounded-lg flex items-center justify-center mb-3 group-hover:scale-110 transition-transform mx-auto">
                                         <i class="ph-fill ph-plus-circle text-amber-400 text-2xl"></i>
                                     </div>
-                                    <h3 class="font-bold text-lg mb-1">Novo Item</h3>
-                                    <p class="text-slate-400 text-sm">Cadastrar EPI no sistema</p>
+                                    <h3 class="font-bold text-sm mb-1">Novo Item</h3>
+                                    <p class="text-slate-400 text-xs">Cadastrar</p>
                                 </button>
                             </div>
                         </div>
@@ -902,6 +1516,77 @@
             `;
         }
 
+        function renderAnalytics() {
+            return `
+                <div class="min-h-screen pb-6">
+                    ${renderHeader()}
+                    
+                    <main class="p-4 max-w-7xl mx-auto space-y-6">
+                        <h1 class="text-3xl font-bold flex items-center gap-3 fade-in">
+                            <i class="ph-fill ph-chart-line text-pink-400"></i>
+                            Analytics e Relatórios
+                        </h1>
+
+                        ${state.isLoading ? `
+                            <div class="glass p-12 rounded-xl text-center">
+                                <i class="ph ph-spinner animate-spin text-6xl text-blue-400 mb-4"></i>
+                                <p class="text-slate-400">${state.loadingMessage}</p>
+                            </div>
+                        ` : `
+                            <!-- Gráficos -->
+                            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                <div class="glass p-6 rounded-xl slide-in">
+                                    <div class="chart-container">
+                                        <canvas id="categoryChart"></canvas>
+                                    </div>
+                                </div>
+
+                                <div class="glass p-6 rounded-xl slide-in">
+                                    <div class="chart-container">
+                                        <canvas id="movementsTypeChart"></canvas>
+                                    </div>
+                                </div>
+
+                                <div class="glass p-6 rounded-xl slide-in lg:col-span-2">
+                                    <div class="chart-container">
+                                        <canvas id="topItemsChart"></canvas>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Estatísticas Detalhadas -->
+                            ${state.statistics ? `
+                                <div class="glass p-6 rounded-xl">
+                                    <h2 class="text-xl font-bold mb-4 flex items-center gap-2">
+                                        <i class="ph-fill ph-chart-bar text-blue-400"></i>
+                                        Estatísticas Detalhadas
+                                    </h2>
+                                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                        <div class="text-center p-4 bg-emerald-500/10 rounded-lg">
+                                            <p class="text-emerald-400 text-3xl font-bold font-mono">${state.statistics.totalMovements}</p>
+                                            <p class="text-slate-400 text-sm mt-1">Total Movimentações</p>
+                                        </div>
+                                        <div class="text-center p-4 bg-blue-500/10 rounded-lg">
+                                            <p class="text-blue-400 text-3xl font-bold font-mono">${state.statistics.movementsByType.COMPRA || 0}</p>
+                                            <p class="text-slate-400 text-sm mt-1">Compras</p>
+                                        </div>
+                                        <div class="text-center p-4 bg-purple-500/10 rounded-lg">
+                                            <p class="text-purple-400 text-3xl font-bold font-mono">${state.statistics.movementsByType.DISTRIBUICAO || 0}</p>
+                                            <p class="text-slate-400 text-sm mt-1">Distribuições</p>
+                                        </div>
+                                        <div class="text-center p-4 bg-amber-500/10 rounded-lg">
+                                            <p class="text-amber-400 text-3xl font-bold font-mono">${state.statistics.lowStock}</p>
+                                            <p class="text-slate-400 text-sm mt-1">Estoque Baixo</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            ` : ''}
+                        `}
+                    </main>
+                </div>
+            `;
+        }
+
         function renderMovementSelector() {
             return `
                 <div class="min-h-screen pb-6">
@@ -910,54 +1595,54 @@
                     <main class="p-4 max-w-5xl mx-auto">
                         <div class="glass p-8 rounded-xl">
                             <div class="flex items-center justify-between mb-6">
-                                <h1 class="text-3xl font-bold flex items-center gap-3">
+                                <h1 class="text-2xl md:text-3xl font-bold flex items-center gap-3">
                                     <i class="ph-fill ph-arrows-clockwise text-emerald-400"></i>
-                                    Selecione o Tipo de Movimentação
+                                    Tipo de Movimentação
                                 </h1>
-                                <button onclick="state.view='dashboard'; render()" class="text-slate-400 hover:text-white transition-all">
+                                <button onclick="goBack()" class="text-slate-400 hover:text-white transition-all">
                                     <i class="ph ph-x text-3xl"></i>
                                 </button>
                             </div>
 
-                            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6 mt-8">
                                 <!-- Compra de Estoque -->
-                                <button onclick="startMovement('COMPRA')" class="glass p-8 rounded-xl hover:border-emerald-500 border-2 border-transparent transition-all group text-left">
-                                    <div class="w-16 h-16 bg-emerald-500/20 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform mx-auto">
-                                        <i class="ph-fill ph-shopping-cart text-emerald-400 text-4xl"></i>
+                                <button onclick="startMovement('COMPRA')" class="glass p-6 md:p-8 rounded-xl hover:border-emerald-500 border-2 border-transparent transition-all group text-center">
+                                    <div class="w-12 h-12 md:w-16 md:h-16 bg-emerald-500/20 rounded-xl flex items-center justify-center mb-3 md:mb-4 group-hover:scale-110 transition-transform mx-auto">
+                                        <i class="ph-fill ph-shopping-cart text-emerald-400 text-3xl md:text-4xl"></i>
                                     </div>
-                                    <h3 class="font-bold text-xl mb-2 text-center">Compra de Estoque</h3>
-                                    <p class="text-slate-400 text-sm text-center">Registrar compra de novos itens ou reposição do fornecedor</p>
-                                    <div class="mt-4 pt-4 border-t border-slate-700">
-                                        <p class="text-xs text-emerald-400 font-semibold text-center">
-                                            <i class="ph-fill ph-arrow-up"></i> ADICIONA ao estoque
+                                    <h3 class="font-bold text-lg md:text-xl mb-2">Compra</h3>
+                                    <p class="text-slate-400 text-xs md:text-sm">Novos itens do fornecedor</p>
+                                    <div class="mt-3 md:mt-4 pt-3 md:pt-4 border-t border-slate-700">
+                                        <p class="text-xs text-emerald-400 font-semibold">
+                                            <i class="ph-fill ph-arrow-up"></i> ADICIONA
                                         </p>
                                     </div>
                                 </button>
 
-                                <!-- Reposição de Estoque -->
-                                <button onclick="startMovement('REPOSICAO')" class="glass p-8 rounded-xl hover:border-blue-500 border-2 border-transparent transition-all group text-left">
-                                    <div class="w-16 h-16 bg-blue-500/20 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform mx-auto">
-                                        <i class="ph-fill ph-arrow-clockwise text-blue-400 text-4xl"></i>
+                                <!-- Reposição -->
+                                <button onclick="startMovement('REPOSICAO')" class="glass p-6 md:p-8 rounded-xl hover:border-blue-500 border-2 border-transparent transition-all group text-center">
+                                    <div class="w-12 h-12 md:w-16 md:h-16 bg-blue-500/20 rounded-xl flex items-center justify-center mb-3 md:mb-4 group-hover:scale-110 transition-transform mx-auto">
+                                        <i class="ph-fill ph-arrow-clockwise text-blue-400 text-3xl md:text-4xl"></i>
                                     </div>
-                                    <h3 class="font-bold text-xl mb-2 text-center">Reposição</h3>
-                                    <p class="text-slate-400 text-sm text-center">Registrar reposição interna ou transferência de outros setores</p>
-                                    <div class="mt-4 pt-4 border-t border-slate-700">
-                                        <p class="text-xs text-blue-400 font-semibold text-center">
-                                            <i class="ph-fill ph-arrow-down"></i> REMOVE do estoque
+                                    <h3 class="font-bold text-lg md:text-xl mb-2">Reposição</h3>
+                                    <p class="text-slate-400 text-xs md:text-sm">Transferência interna</p>
+                                    <div class="mt-3 md:mt-4 pt-3 md:pt-4 border-t border-slate-700">
+                                        <p class="text-xs text-blue-400 font-semibold">
+                                            <i class="ph-fill ph-arrow-down"></i> REMOVE
                                         </p>
                                     </div>
                                 </button>
 
-                                <!-- Distribuição de EPI -->
-                                <button onclick="startMovement('DISTRIBUICAO')" class="glass p-8 rounded-xl hover:border-purple-500 border-2 border-transparent transition-all group text-left">
-                                    <div class="w-16 h-16 bg-purple-500/20 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform mx-auto">
-                                        <i class="ph-fill ph-hand-coins text-purple-400 text-4xl"></i>
+                                <!-- Distribuição -->
+                                <button onclick="startMovement('DISTRIBUICAO')" class="glass p-6 md:p-8 rounded-xl hover:border-purple-500 border-2 border-transparent transition-all group text-center">
+                                    <div class="w-12 h-12 md:w-16 md:h-16 bg-purple-500/20 rounded-xl flex items-center justify-center mb-3 md:mb-4 group-hover:scale-110 transition-transform mx-auto">
+                                        <i class="ph-fill ph-hand-coins text-purple-400 text-3xl md:text-4xl"></i>
                                     </div>
-                                    <h3 class="font-bold text-xl mb-2 text-center">Distribuição de EPI</h3>
-                                    <p class="text-slate-400 text-sm text-center">Registrar entrega de equipamento para colaboradores</p>
-                                    <div class="mt-4 pt-4 border-t border-slate-700">
-                                        <p class="text-xs text-purple-400 font-semibold text-center">
-                                            <i class="ph-fill ph-arrow-down"></i> REMOVE do estoque
+                                    <h3 class="font-bold text-lg md:text-xl mb-2">Distribuição</h3>
+                                    <p class="text-slate-400 text-xs md:text-sm">Entrega para colaborador</p>
+                                    <div class="mt-3 md:mt-4 pt-3 md:pt-4 border-t border-slate-700">
+                                        <p class="text-xs text-purple-400 font-semibold">
+                                            <i class="ph-fill ph-arrow-down"></i> REMOVE
                                         </p>
                                     </div>
                                 </button>
@@ -979,11 +1664,12 @@
                     ${renderHeader()}
                     
                     <main class="p-4 max-w-3xl mx-auto">
-                        <div class="glass p-8 rounded-xl">
+                        <div class="glass p-6 md:p-8 rounded-xl">
                             <div class="flex items-center justify-between mb-6">
-                                <h1 class="text-3xl font-bold flex items-center gap-3">
+                                <h1 class="text-2xl md:text-3xl font-bold flex items-center gap-3">
                                     <i class="ph-fill ph-${typeInfo.icon} text-${typeInfo.color}-400"></i>
-                                    ${typeInfo.label}
+                                    <span class="hidden md:inline">${typeInfo.label}</span>
+                                    <span class="md:hidden">${typeInfo.label.split(' ')[0]}</span>
                                 </h1>
                                 <button onclick="cancelMovement()" class="text-slate-400 hover:text-white transition-all">
                                     <i class="ph ph-x text-3xl"></i>
@@ -992,8 +1678,8 @@
 
                             ${availableItems.length === 0 ? `
                                 <div class="text-center py-12 text-slate-500">
-                                    <i class="ph ph-warning-circle text-8xl mb-4 text-amber-500"></i>
-                                    <p class="text-xl mb-4">Nenhum item disponível em estoque</p>
+                                    <i class="ph ph-warning-circle text-6xl md:text-8xl mb-4 text-amber-500"></i>
+                                    <p class="text-lg md:text-xl mb-4">Nenhum item disponível</p>
                                     <button onclick="cancelMovement()" class="bg-slate-700 hover:bg-slate-600 px-6 py-3 rounded-lg font-bold">
                                         Voltar
                                     </button>
@@ -1004,13 +1690,13 @@
                                         <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Selecione o Item *</label>
                                         <select 
                                             onchange="state.movementOperation.selectedItem = this.value; render()"
-                                            class="w-full bg-slate-900 border-2 border-slate-700 rounded-lg p-4 focus:border-${typeInfo.color}-500 outline-none text-lg text-white"
+                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-${typeInfo.color}-500 outline-none text-base md:text-lg text-white"
                                             required
                                         >
                                             <option value="">-- Escolha um item --</option>
                                             ${availableItems.map(item => `
                                                 <option value="${item.id}" ${op.selectedItem === item.id ? 'selected' : ''}>
-                                                    ${item.nome} - ${item.categoria} (Estoque: ${item.quantidade})
+                                                    ${item.nome} (${item.quantidade})
                                                 </option>
                                             `).join('')}
                                         </select>
@@ -1020,12 +1706,12 @@
                                         <div class="glass p-4 rounded-lg border-2 border-${typeInfo.color}-500/50">
                                             <div class="flex justify-between items-center">
                                                 <div>
-                                                    <p class="text-slate-400 text-sm">Item Selecionado</p>
-                                                    <p class="font-bold text-lg">${selectedItem.nome}</p>
+                                                    <p class="text-slate-400 text-sm">Selecionado</p>
+                                                    <p class="font-bold text-base md:text-lg">${selectedItem.nome}</p>
                                                 </div>
                                                 <div class="text-right">
-                                                    <p class="text-slate-400 text-sm">Em Estoque</p>
-                                                    <p class="font-bold text-2xl font-mono text-${typeInfo.color}-400">${selectedItem.quantidade}</p>
+                                                    <p class="text-slate-400 text-sm">Estoque</p>
+                                                    <p class="font-bold text-xl md:text-2xl font-mono text-${typeInfo.color}-400">${selectedItem.quantidade}</p>
                                                 </div>
                                             </div>
                                         </div>
@@ -1033,13 +1719,13 @@
 
                                     ${op.type === 'DISTRIBUICAO' ? `
                                         <div>
-                                            <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Nome do Colaborador *</label>
+                                            <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Colaborador *</label>
                                             <input 
                                                 type="text"
                                                 value="${op.employeeName}"
                                                 onchange="state.movementOperation.employeeName = this.value"
-                                                class="w-full bg-slate-900 border-2 border-slate-700 rounded-lg p-4 focus:border-${typeInfo.color}-500 outline-none text-lg text-white"
-                                                placeholder="Digite o nome completo do colaborador"
+                                                class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-${typeInfo.color}-500 outline-none text-base md:text-lg text-white"
+                                                placeholder="Nome completo"
                                                 required
                                             >
                                         </div>
@@ -1052,8 +1738,8 @@
                                                 type="text"
                                                 value="${op.supplier}"
                                                 onchange="state.movementOperation.supplier = this.value"
-                                                class="w-full bg-slate-900 border-2 border-slate-700 rounded-lg p-4 focus:border-${typeInfo.color}-500 outline-none text-lg text-white"
-                                                placeholder="Digite o nome do fornecedor"
+                                                class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-${typeInfo.color}-500 outline-none text-base md:text-lg text-white"
+                                                placeholder="Nome do fornecedor"
                                                 required
                                             >
                                         </div>
@@ -1067,7 +1753,7 @@
                                             onchange="state.movementOperation.quantity = parseInt(this.value)"
                                             min="1"
                                             ${selectedItem && (op.type === 'DISTRIBUICAO' || op.type === 'REPOSICAO') ? `max="${selectedItem.quantidade}"` : ''}
-                                            class="w-full bg-slate-900 border-2 border-slate-700 rounded-lg p-4 focus:border-${typeInfo.color}-500 outline-none text-lg text-white font-mono"
+                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-${typeInfo.color}-500 outline-none text-base md:text-lg text-white font-mono"
                                             required
                                         >
                                     </div>
@@ -1076,7 +1762,7 @@
                                         <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Observações</label>
                                         <textarea 
                                             onchange="state.movementOperation.observations = this.value"
-                                            class="w-full bg-slate-900 border-2 border-slate-700 rounded-lg p-4 focus:border-${typeInfo.color}-500 outline-none text-lg text-white"
+                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-${typeInfo.color}-500 outline-none text-base md:text-lg text-white"
                                             rows="3"
                                             placeholder="Informações adicionais (opcional)"
                                         >${op.observations}</textarea>
@@ -1087,16 +1773,16 @@
                                             type="button"
                                             onclick="cancelMovement()"
                                             class="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-4 rounded-xl transition-all"
-                                            ${state.isLoading ? 'disabled' : ''}
                                         >
                                             CANCELAR
                                         </button>
                                         <button 
                                             type="submit"
-                                            class="flex-1 bg-${typeInfo.color}-600 hover:bg-${typeInfo.color}-700 text-white font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                                            ${state.isLoading ? 'disabled' : ''}
+                                            class="flex-1 bg-${typeInfo.color}-600 hover:bg-${typeInfo.color}-700 text-white font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2"
                                         >
-                                            ${state.isLoading ? `<i class="ph ph-spinner animate-spin text-2xl"></i> ${state.loadingMessage.toUpperCase()}` : `<i class="ph ph-check-circle text-xl"></i> CONFIRMAR ${typeInfo.label.toUpperCase()}`}
+                                            <i class="ph ph-check-circle text-xl"></i>
+                                            <span class="hidden md:inline">CONFIRMAR</span>
+                                            <span class="md:hidden">OK</span>
                                         </button>
                                     </div>
                                 </form>
@@ -1108,49 +1794,116 @@
         }
 
         function renderStock() {
+            const filteredItems = getFilteredItems();
+            const categories = [...new Set(state.items.map(i => i.categoria))];
+            
             return `
                 <div class="min-h-screen pb-6">
                     ${renderHeader()}
                     
                     <main class="p-4 max-w-7xl mx-auto space-y-6">
-                        <div class="flex justify-between items-center mb-6">
-                            <h1 class="text-3xl font-bold flex items-center gap-3">
+                        <div class="flex justify-between items-center mb-6 flex-wrap gap-4">
+                            <h1 class="text-2xl md:text-3xl font-bold flex items-center gap-3">
                                 <i class="ph-fill ph-warehouse text-emerald-400"></i>
                                 Estoque de EPIs
                             </h1>
-                            <button onclick="openNewItem()" class="bg-emerald-600 hover:bg-emerald-700 px-6 py-3 rounded-lg font-bold flex items-center gap-2 transition-all">
+                            <button onclick="openNewItem()" class="bg-emerald-600 hover:bg-emerald-700 px-4 md:px-6 py-3 rounded-lg font-bold flex items-center gap-2 transition-all">
                                 <i class="ph-fill ph-plus-circle text-xl"></i>
-                                Novo Item
+                                <span class="hidden md:inline">Novo Item</span>
+                                <span class="md:inline hidden">+</span>
                             </button>
                         </div>
 
-                        ${state.items.length === 0 ? `
+                        <!-- Filtros Avançados -->
+                        <div class="glass p-4 md:p-6 rounded-xl">
+                            <h2 class="font-bold mb-4 flex items-center gap-2 text-base md:text-lg">
+                                <i class="ph ph-funnel text-blue-400"></i>
+                                Filtros Avançados
+                            </h2>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div>
+                                    <label class="text-xs font-bold text-slate-400 block mb-2 uppercase">Categoria</label>
+                                    <select 
+                                        onchange="state.filters.category = this.value; render()"
+                                        class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-3 focus:border-blue-500 outline-none text-white text-sm"
+                                    >
+                                        <option value="TODAS">Todas</option>
+                                        ${categories.map(cat => `
+                                            <option value="${cat}" ${state.filters.category === cat ? 'selected' : ''}>${cat}</option>
+                                        `).join('')}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="text-xs font-bold text-slate-400 block mb-2 uppercase">Localização</label>
+                                    <input 
+                                        type="text"
+                                        value="${state.filters.location}"
+                                        oninput="state.filters.location = this.value; render()"
+                                        class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-3 focus:border-blue-500 outline-none text-white text-sm"
+                                        placeholder="Ex: Prateleira A1"
+                                    >
+                                </div>
+                                <div class="flex items-end">
+                                    <label class="flex items-center gap-2 cursor-pointer">
+                                        <input 
+                                            type="checkbox"
+                                            ${state.filters.lowStockOnly ? 'checked' : ''}
+                                            onchange="state.filters.lowStockOnly = this.checked; render()"
+                                            class="w-5 h-5 rounded"
+                                        >
+                                        <span class="text-sm font-semibold text-amber-400">Apenas Estoque Baixo</span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="mt-4">
+                                <label class="text-xs font-bold text-slate-400 block mb-2 uppercase">Pesquisar</label>
+                                <input 
+                                    type="text"
+                                    value="${state.filters.searchTerm}"
+                                    oninput="handleSearchInput(this.value)"
+                                    class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-3 focus:border-blue-500 outline-none text-white"
+                                    placeholder="Buscar por nome, categoria, CA..."
+                                >
+                            </div>
+                        </div>
+
+                        ${filteredItems.length === 0 ? `
                             <div class="glass p-12 rounded-xl text-center">
-                                <i class="ph ph-package text-8xl text-slate-600 mb-4"></i>
-                                <p class="text-slate-400 text-xl mb-6">Nenhum item cadastrado</p>
-                                <button onclick="openNewItem()" class="bg-emerald-600 hover:bg-emerald-700 px-8 py-4 rounded-lg font-bold">
-                                    Cadastrar Primeiro Item
-                                </button>
+                                <i class="ph ph-package text-6xl md:text-8xl text-slate-600 mb-4"></i>
+                                <p class="text-slate-400 text-lg md:text-xl mb-6">Nenhum item encontrado</p>
+                                ${state.filters.searchTerm || state.filters.category !== 'TODAS' || state.filters.location || state.filters.lowStockOnly ? `
+                                    <button onclick="state.filters = {startDate: getFirstDayOfMonth(), endDate: getCurrentDate(), type: 'TODOS', searchTerm: '', category: 'TODAS', minQuantity: '', maxQuantity: '', location: '', lowStockOnly: false}; render()" class="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg font-bold">
+                                        Limpar Filtros
+                                    </button>
+                                ` : `
+                                    <button onclick="openNewItem()" class="bg-emerald-600 hover:bg-emerald-700 px-6 py-3 rounded-lg font-bold">
+                                        Cadastrar Primeiro Item
+                                    </button>
+                                `}
                             </div>
                         ` : `
+                            <div class="mb-4 text-slate-400 text-sm">
+                                Mostrando <span class="font-bold text-white">${filteredItems.length}</span> de <span class="font-bold text-white">${state.items.length}</span> itens
+                            </div>
+                            
                             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                ${state.items.map(item => `
-                                    <div class="glass p-6 rounded-xl hover:border-emerald-500 border-2 border-transparent transition-all fade-in">
+                                ${filteredItems.map(item => `
+                                    <div class="glass p-4 md:p-6 rounded-xl hover:border-emerald-500 border-2 border-transparent transition-all fade-in">
                                         <div class="flex justify-between items-start mb-4">
-                                            <div class="flex-1">
-                                                <h3 class="font-bold text-xl mb-2">${item.nome}</h3>
+                                            <div class="flex-1 pr-2">
+                                                <h3 class="font-bold text-lg md:text-xl mb-2 break-words">${item.nome}</h3>
                                                 <div class="flex gap-2 flex-wrap">
-                                                    <span class="text-xs px-3 py-1 bg-blue-500/20 text-blue-400 rounded-full font-semibold">${item.categoria}</span>
-                                                    <span class="text-xs px-3 py-1 bg-slate-500/20 text-slate-400 rounded-full font-mono">${item.unidade}</span>
-                                                    ${item.ca ? `<span class="text-xs px-3 py-1 bg-purple-500/20 text-purple-400 rounded-full font-mono">CA ${item.ca}</span>` : ''}
+                                                    <span class="text-xs px-2 md:px-3 py-1 bg-blue-500/20 text-blue-400 rounded-full font-semibold">${item.categoria}</span>
+                                                    <span class="text-xs px-2 md:px-3 py-1 bg-slate-500/20 text-slate-400 rounded-full font-mono">${item.unidade}</span>
+                                                    ${item.ca ? `<span class="text-xs px-2 md:px-3 py-1 bg-purple-500/20 text-purple-400 rounded-full font-mono">CA ${item.ca}</span>` : ''}
                                                 </div>
                                             </div>
                                         </div>
 
                                         <div class="mb-4">
                                             <div class="flex justify-between items-end mb-2">
-                                                <span class="text-slate-400 text-sm uppercase">Quantidade</span>
-                                                <span class="text-3xl font-bold font-mono ${item.quantidade < 10 ? 'text-amber-400' : 'text-emerald-400'}">${item.quantidade}</span>
+                                                <span class="text-slate-400 text-xs md:text-sm uppercase">Quantidade</span>
+                                                <span class="text-2xl md:text-3xl font-bold font-mono ${item.quantidade < 10 ? 'text-amber-400' : 'text-emerald-400'}">${item.quantidade}</span>
                                             </div>
                                             ${item.quantidade < 10 ? `
                                                 <div class="bg-amber-500/20 border border-amber-500 text-amber-400 px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-2">
@@ -1161,25 +1914,25 @@
                                         </div>
 
                                         ${item.localizacao ? `
-                                            <p class="text-slate-400 text-sm mb-2 flex items-center gap-2">
+                                            <p class="text-slate-400 text-xs md:text-sm mb-2 flex items-center gap-2">
                                                 <i class="ph ph-map-pin"></i>
                                                 ${item.localizacao}
                                             </p>
                                         ` : ''}
 
                                         ${item.validade ? `
-                                            <p class="text-slate-400 text-sm mb-4 flex items-center gap-2">
+                                            <p class="text-slate-400 text-xs md:text-sm mb-4 flex items-center gap-2">
                                                 <i class="ph ph-calendar"></i>
-                                                Validade: ${formatDate(item.validade)}
+                                                Val: ${formatDate(item.validade)}
                                             </p>
                                         ` : ''}
 
                                         <div class="flex gap-2 pt-4 border-t border-slate-700">
-                                            <button onclick='openEditItem(${JSON.stringify(item).replace(/'/g, "&#39;")})' class="flex-1 bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg font-semibold transition-all flex items-center justify-center gap-2">
+                                            <button onclick='openEditItem(${JSON.stringify(item).replace(/'/g, "&#39;")})' class="flex-1 bg-blue-600 hover:bg-blue-700 px-3 md:px-4 py-2 rounded-lg font-semibold transition-all flex items-center justify-center gap-2 text-sm">
                                                 <i class="ph ph-pencil-simple"></i>
                                                 Editar
                                             </button>
-                                            <button onclick="handleDeleteItem('${item.id}')" class="bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white px-4 py-2 rounded-lg font-semibold transition-all flex items-center justify-center gap-2 border border-red-500">
+                                            <button onclick="handleDeleteItem('${item.id}')" class="bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white px-3 md:px-4 py-2 rounded-lg font-semibold transition-all flex items-center justify-center gap-2 border border-red-500 text-sm">
                                                 <i class="ph ph-trash"></i>
                                             </button>
                                         </div>
@@ -1202,14 +1955,14 @@
                     ${renderHeader()}
                     
                     <main class="p-4 max-w-7xl mx-auto space-y-6">
-                        <h1 class="text-3xl font-bold flex items-center gap-3">
+                        <h1 class="text-2xl md:text-3xl font-bold flex items-center gap-3">
                             <i class="ph-fill ph-clock-counter-clockwise text-purple-400"></i>
                             Histórico de Movimentações
                         </h1>
 
                         <!-- Filtros -->
-                        <div class="glass p-6 rounded-xl">
-                            <h2 class="font-bold mb-4 flex items-center gap-2 text-lg">
+                        <div class="glass p-4 md:p-6 rounded-xl">
+                            <h2 class="font-bold mb-4 flex items-center gap-2 text-base md:text-lg">
                                 <i class="ph ph-funnel text-blue-400"></i>
                                 Filtros
                             </h2>
@@ -1220,7 +1973,7 @@
                                         type="date"
                                         value="${state.filters.startDate}"
                                         onchange="state.filters.startDate = this.value"
-                                        class="w-full bg-slate-900 border-2 border-slate-700 rounded-lg p-3 focus:border-blue-500 outline-none text-white"
+                                        class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-3 focus:border-blue-500 outline-none text-white text-sm"
                                     >
                                 </div>
                                 <div>
@@ -1229,14 +1982,14 @@
                                         type="date"
                                         value="${state.filters.endDate}"
                                         onchange="state.filters.endDate = this.value"
-                                        class="w-full bg-slate-900 border-2 border-slate-700 rounded-lg p-3 focus:border-blue-500 outline-none text-white"
+                                        class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-3 focus:border-blue-500 outline-none text-white text-sm"
                                     >
                                 </div>
                                 <div>
                                     <label class="text-xs font-bold text-slate-400 block mb-2 uppercase">Tipo</label>
                                     <select 
                                         onchange="state.filters.type = this.value"
-                                        class="w-full bg-slate-900 border-2 border-slate-700 rounded-lg p-3 focus:border-blue-500 outline-none text-white"
+                                        class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-3 focus:border-blue-500 outline-none text-white text-sm"
                                     >
                                         <option value="TODOS" ${state.filters.type === 'TODOS' ? 'selected' : ''}>Todos</option>
                                         ${Object.entries(MOVEMENT_TYPES).map(([code, info]) => `
@@ -1247,7 +2000,7 @@
                                 <div class="flex items-end">
                                     <button 
                                         onclick="applyFilters()"
-                                        class="w-full bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg font-bold transition-all flex items-center justify-center gap-2"
+                                        class="w-full bg-blue-600 hover:bg-blue-700 px-4 md:px-6 py-3 rounded-lg font-bold transition-all flex items-center justify-center gap-2"
                                         ${state.isLoading ? 'disabled' : ''}
                                     >
                                         <i class="ph ph-magnifying-glass"></i>
@@ -1262,21 +2015,21 @@
                                     type="text"
                                     value="${state.filters.searchTerm}"
                                     oninput="handleSearchInput(this.value)"
-                                    class="w-full bg-slate-900 border-2 border-slate-700 rounded-lg p-3 focus:border-blue-500 outline-none text-white"
-                                    placeholder="Buscar por item, colaborador, fornecedor ou usuário..."
+                                    class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-3 focus:border-blue-500 outline-none text-white"
+                                    placeholder="Buscar por item, colaborador, fornecedor..."
                                 >
                             </div>
                         </div>
 
                         <!-- Resultados -->
-                        <div class="glass p-6 rounded-xl">
-                            <div class="flex justify-between items-center mb-4">
-                                <p class="text-slate-400">
-                                    Mostrando <span class="font-bold text-white">${paginatedMovements.length}</span> de <span class="font-bold text-white">${filteredMovements.length}</span> registros
+                        <div class="glass p-4 md:p-6 rounded-xl">
+                            <div class="flex justify-between items-center mb-4 flex-wrap gap-2">
+                                <p class="text-slate-400 text-sm">
+                                    Mostrando <span class="font-bold text-white">${paginatedMovements.length}</span> de <span class="font-bold text-white">${filteredMovements.length}</span>
                                 </p>
                                 ${totalPages > 0 ? `
-                                    <p class="text-slate-400 font-mono text-sm">
-                                        Página ${state.currentPage} de ${totalPages}
+                                    <p class="text-slate-400 font-mono text-xs md:text-sm">
+                                        Pág ${state.currentPage}/${totalPages}
                                     </p>
                                 ` : ''}
                             </div>
@@ -1288,9 +2041,9 @@
                                 </div>
                             ` : filteredMovements.length === 0 ? `
                                 <div class="text-center py-12 text-slate-500">
-                                    <i class="ph ph-database text-8xl mb-4 opacity-50"></i>
-                                    <p class="text-xl">Nenhuma movimentação encontrada</p>
-                                    <p class="text-sm mt-2">Tente ajustar os filtros ou registre uma nova movimentação</p>
+                                    <i class="ph ph-database text-6xl md:text-8xl mb-4 opacity-50"></i>
+                                    <p class="text-lg md:text-xl">Nenhuma movimentação encontrada</p>
+                                    <p class="text-xs md:text-sm mt-2">Ajuste os filtros ou registre uma movimentação</p>
                                 </div>
                             ` : `
                                 <div class="space-y-2">
@@ -1298,50 +2051,44 @@
                                         const typeInfo = MOVEMENT_TYPES[movement.type] || MOVEMENT_TYPES['AJUSTE'];
                                         return `
                                             <div class="glass p-4 rounded-lg hover:border-${typeInfo.color}-500 border-2 border-transparent transition-all">
-                                                <div class="flex items-start justify-between gap-4">
-                                                    <div class="flex-1">
-                                                        <div class="flex items-center gap-3 mb-2">
+                                                <div class="flex items-start justify-between gap-4 flex-wrap md:flex-nowrap">
+                                                    <div class="flex-1 min-w-0">
+                                                        <div class="flex items-center gap-3 mb-2 flex-wrap">
                                                             <div class="w-10 h-10 ${getColorClass(typeInfo.color, 'full')} rounded-lg flex items-center justify-center flex-shrink-0">
                                                                 <i class="ph-fill ph-${typeInfo.icon} text-white text-xl"></i>
                                                             </div>
-                                                            <div>
-                                                                <h3 class="font-bold text-lg">${movement.itemName}</h3>
+                                                            <div class="min-w-0 flex-1">
+                                                                <h3 class="font-bold text-base md:text-lg truncate">${movement.itemName}</h3>
                                                                 <span class="text-xs px-2 py-1 ${getColorClass(typeInfo.color)} rounded-full font-semibold uppercase">${typeInfo.label}</span>
                                                             </div>
                                                         </div>
                                                         
-                                                        <div class="ml-13 space-y-1 text-sm text-slate-400">
+                                                        <div class="md:ml-13 space-y-1 text-xs md:text-sm text-slate-400">
                                                             ${movement.employee ? `
-                                                                <p class="flex items-center gap-2">
-                                                                    <i class="ph ph-user"></i>
+                                                                <p class="flex items-center gap-2 truncate">
+                                                                    <i class="ph ph-user flex-shrink-0"></i>
                                                                     <span class="font-semibold">Colaborador:</span> ${movement.employee}
                                                                 </p>
                                                             ` : ''}
                                                             ${movement.supplier ? `
-                                                                <p class="flex items-center gap-2">
-                                                                    <i class="ph ph-truck"></i>
+                                                                <p class="flex items-center gap-2 truncate">
+                                                                    <i class="ph ph-truck flex-shrink-0"></i>
                                                                     <span class="font-semibold">Fornecedor:</span> ${movement.supplier}
                                                                 </p>
                                                             ` : ''}
                                                             <p class="flex items-center gap-2">
-                                                                <i class="ph ph-calendar"></i>
-                                                                <span class="font-semibold">Data:</span> ${formatDate(movement.date)}
+                                                                <i class="ph ph-calendar flex-shrink-0"></i>
+                                                                ${formatDate(movement.date)}
                                                             </p>
-                                                            <p class="flex items-center gap-2">
-                                                                <i class="ph ph-user-circle"></i>
-                                                                <span class="font-semibold">Responsável:</span> ${movement.user}
+                                                            <p class="flex items-center gap-2 truncate">
+                                                                <i class="ph ph-user-circle flex-shrink-0"></i>
+                                                                ${movement.user}
                                                             </p>
-                                                            ${movement.observations ? `
-                                                                <p class="flex items-center gap-2">
-                                                                    <i class="ph ph-note"></i>
-                                                                    <span class="font-semibold">Obs:</span> ${movement.observations}
-                                                                </p>
-                                                            ` : ''}
                                                         </div>
                                                     </div>
                                                     
                                                     <div class="text-right flex-shrink-0">
-                                                        <p class="text-3xl font-bold font-mono ${typeInfo.sign === '+' ? 'text-emerald-400' : 'text-red-400'}">
+                                                        <p class="text-2xl md:text-3xl font-bold font-mono ${typeInfo.sign === '+' ? 'text-emerald-400' : 'text-red-400'}">
                                                             ${typeInfo.sign}${movement.quantity}
                                                         </p>
                                                         <p class="text-xs text-slate-500 mt-1">${formatDateTime(movement.timestamp)}</p>
@@ -1358,10 +2105,10 @@
                                         <button 
                                             onclick="changePage(-1)"
                                             ${state.currentPage === 1 ? 'disabled' : ''}
-                                            class="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                                            class="px-3 md:px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm"
                                         >
                                             <i class="ph ph-caret-left"></i>
-                                            Anterior
+                                            <span class="hidden md:inline ml-1">Anterior</span>
                                         </button>
                                         
                                         <div class="flex gap-2">
@@ -1379,7 +2126,7 @@
                                                 return `
                                                     <button 
                                                         onclick="state.currentPage = ${pageNum}; render()"
-                                                        class="w-10 h-10 rounded-lg font-bold ${state.currentPage === pageNum ? 'bg-blue-600' : 'bg-slate-700 hover:bg-slate-600'} transition-all"
+                                                        class="w-8 h-8 md:w-10 md:h-10 rounded-lg font-bold text-sm ${state.currentPage === pageNum ? 'bg-blue-600' : 'bg-slate-700 hover:bg-slate-600'} transition-all"
                                                     >
                                                         ${pageNum}
                                                     </button>
@@ -1390,9 +2137,9 @@
                                         <button 
                                             onclick="changePage(1)"
                                             ${state.currentPage === totalPages ? 'disabled' : ''}
-                                            class="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                                            class="px-3 md:px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm"
                                         >
-                                            Próxima
+                                            <span class="hidden md:inline mr-1">Próxima</span>
                                             <i class="ph ph-caret-right"></i>
                                         </button>
                                     </div>
@@ -1413,13 +2160,14 @@
                     ${renderHeader()}
                     
                     <main class="p-4 max-w-3xl mx-auto">
-                        <div class="glass p-8 rounded-xl">
+                        <div class="glass p-6 md:p-8 rounded-xl">
                             <div class="flex items-center justify-between mb-6">
-                                <h1 class="text-3xl font-bold flex items-center gap-3">
+                                <h1 class="text-2xl md:text-3xl font-bold flex items-center gap-3">
                                     <i class="ph-fill ph-${isEdit ? 'pencil-simple' : 'plus-circle'} text-amber-400"></i>
-                                    ${isEdit ? 'Editar Item' : 'Novo Item'}
+                                    <span class="hidden md:inline">${isEdit ? 'Editar Item' : 'Novo Item'}</span>
+                                    <span class="md:hidden">${isEdit ? 'Editar' : 'Novo'}</span>
                                 </h1>
-                                <button onclick="state.view='stock'; render()" class="text-slate-400 hover:text-white transition-all">
+                                <button onclick="goBack()" class="text-slate-400 hover:text-white transition-all">
                                     <i class="ph ph-x text-3xl"></i>
                                 </button>
                             </div>
@@ -1432,7 +2180,7 @@
                                             type="text"
                                             id="itemName"
                                             value="${item.nome || ''}"
-                                            class="w-full bg-slate-900 border-2 border-slate-700 rounded-lg p-4 focus:border-amber-500 outline-none text-lg text-white"
+                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-white"
                                             placeholder="Ex: Capacete de Segurança"
                                             required
                                         >
@@ -1442,7 +2190,7 @@
                                         <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Categoria *</label>
                                         <select 
                                             id="itemCategory"
-                                            class="w-full bg-slate-900 border-2 border-slate-700 rounded-lg p-4 focus:border-amber-500 outline-none text-lg text-white"
+                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-white"
                                             required
                                         >
                                             <option value="">Selecione...</option>
@@ -1457,7 +2205,7 @@
                                         <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Unidade *</label>
                                         <select 
                                             id="itemUnit"
-                                            class="w-full bg-slate-900 border-2 border-slate-700 rounded-lg p-4 focus:border-amber-500 outline-none text-lg text-white"
+                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-white"
                                             required
                                         >
                                             <option value="">Selecione...</option>
@@ -1476,18 +2224,18 @@
                                             id="itemQuantity"
                                             value="${item.quantidade || 0}"
                                             min="0"
-                                            class="w-full bg-slate-900 border-2 border-slate-700 rounded-lg p-4 focus:border-amber-500 outline-none text-lg text-white font-mono"
+                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-white font-mono"
                                             required
                                         >
                                     </div>
 
                                     <div>
-                                        <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">CA (Certificado de Aprovação)</label>
+                                        <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">CA</label>
                                         <input 
                                             type="text"
                                             id="itemCA"
                                             value="${item.ca || ''}"
-                                            class="w-full bg-slate-900 border-2 border-slate-700 rounded-lg p-4 focus:border-amber-500 outline-none text-lg text-white font-mono"
+                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-white font-mono"
                                             placeholder="Ex: 12345"
                                         >
                                     </div>
@@ -1498,7 +2246,7 @@
                                             type="date"
                                             id="itemValidity"
                                             value="${item.validade || ''}"
-                                            class="w-full bg-slate-900 border-2 border-slate-700 rounded-lg p-4 focus:border-amber-500 outline-none text-lg text-white"
+                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-white"
                                         >
                                     </div>
 
@@ -1508,7 +2256,7 @@
                                             type="text"
                                             id="itemLocation"
                                             value="${item.localizacao || ''}"
-                                            class="w-full bg-slate-900 border-2 border-slate-700 rounded-lg p-4 focus:border-amber-500 outline-none text-lg text-white"
+                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-white"
                                             placeholder="Ex: Prateleira A1"
                                         >
                                     </div>
@@ -1517,9 +2265,9 @@
                                         <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Observações</label>
                                         <textarea 
                                             id="itemObs"
-                                            class="w-full bg-slate-900 border-2 border-slate-700 rounded-lg p-4 focus:border-amber-500 outline-none text-lg text-white"
+                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-white"
                                             rows="3"
-                                            placeholder="Informações adicionais sobre o item..."
+                                            placeholder="Informações adicionais..."
                                         >${item.observacoes || ''}</textarea>
                                     </div>
                                 </div>
@@ -1527,18 +2275,17 @@
                                 <div class="flex gap-4 pt-6 border-t border-slate-700">
                                     <button 
                                         type="button"
-                                        onclick="state.view='stock'; render()"
+                                        onclick="goBack()"
                                         class="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-4 rounded-xl transition-all"
-                                        ${state.isLoading ? 'disabled' : ''}
                                     >
                                         CANCELAR
                                     </button>
                                     <button 
                                         type="submit"
-                                        class="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                                        ${state.isLoading ? 'disabled' : ''}
+                                        class="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2"
                                     >
-                                        ${state.isLoading ? `<i class="ph ph-spinner animate-spin text-2xl"></i> ${state.loadingMessage.toUpperCase()}` : `<i class="ph ph-floppy-disk text-xl"></i> ${isEdit ? 'ATUALIZAR' : 'CADASTRAR'}`}
+                                        <i class="ph ph-floppy-disk text-xl"></i>
+                                        ${isEdit ? 'ATUALIZAR' : 'CADASTRAR'}
                                     </button>
                                 </div>
                             </form>
@@ -1550,46 +2297,46 @@
 
         function renderHeader() {
             return `
-                <header class="bg-slate-900/80 border-b border-slate-800 p-4 sticky top-0 z-30 shadow-lg backdrop-blur-sm">
+                <header class="bg-slate-900 border-b border-slate-800 p-3 md:p-4 sticky top-0 z-30 shadow-lg">
                     <div class="max-w-7xl mx-auto flex justify-between items-center">
-                        <div class="flex items-center gap-4">
-                            <div class="w-12 h-12 bg-emerald-500/20 rounded-lg flex items-center justify-center">
-                                <i class="ph-fill ph-package text-emerald-400 text-2xl"></i>
+                        <div class="flex items-center gap-3 md:gap-4">
+                            <div class="w-10 h-10 md:w-12 md:h-12 bg-emerald-500/20 rounded-lg flex items-center justify-center">
+                                <i class="ph-fill ph-package text-emerald-400 text-xl md:text-2xl"></i>
                             </div>
                             <div>
-                                <h1 class="font-bold text-xl font-mono">ALMOXARIFADO</h1>
-                                <p class="text-sm text-slate-400">${state.user?.nome || 'Sistema'}</p>
+                                <h1 class="font-bold text-base md:text-xl font-mono">ALMOXARIFADO</h1>
+                                <p class="text-xs md:text-sm text-slate-400 truncate max-w-[120px] md:max-w-none">${state.user?.nome || 'Sistema'}</p>
                             </div>
                         </div>
                         
-                        <nav class="flex gap-2">
+                        <nav class="flex gap-1 md:gap-2">
                             <button 
-                                onclick="state.view='dashboard'; render()"
-                                class="px-4 py-2 rounded-lg hover:bg-slate-800 transition-all ${state.view === 'dashboard' ? 'bg-slate-800' : ''}"
+                                onclick="navigateTo('dashboard')"
+                                class="px-3 md:px-4 py-2 rounded-lg hover:bg-slate-800 transition-all ${state.view === 'dashboard' ? 'bg-slate-800' : ''}"
                                 title="Dashboard"
                             >
-                                <i class="ph-fill ph-house text-xl"></i>
+                                <i class="ph-fill ph-house text-lg md:text-xl"></i>
                             </button>
                             <button 
-                                onclick="state.view='stock'; render()"
-                                class="px-4 py-2 rounded-lg hover:bg-slate-800 transition-all ${state.view === 'stock' ? 'bg-slate-800' : ''}"
+                                onclick="navigateTo('stock')"
+                                class="px-3 md:px-4 py-2 rounded-lg hover:bg-slate-800 transition-all ${state.view === 'stock' ? 'bg-slate-800' : ''}"
                                 title="Estoque"
                             >
-                                <i class="ph-fill ph-warehouse text-xl"></i>
+                                <i class="ph-fill ph-warehouse text-lg md:text-xl"></i>
                             </button>
                             <button 
                                 onclick="navigateToHistory()"
-                                class="px-4 py-2 rounded-lg hover:bg-slate-800 transition-all ${state.view === 'history' ? 'bg-slate-800' : ''}"
+                                class="px-3 md:px-4 py-2 rounded-lg hover:bg-slate-800 transition-all ${state.view === 'history' ? 'bg-slate-800' : ''}"
                                 title="Histórico"
                             >
-                                <i class="ph-fill ph-clock-counter-clockwise text-xl"></i>
+                                <i class="ph-fill ph-clock-counter-clockwise text-lg md:text-xl"></i>
                             </button>
                             <button 
                                 onclick="handleLogout()"
-                                class="px-4 py-2 rounded-lg hover:bg-red-900/50 transition-all text-red-400"
+                                class="px-3 md:px-4 py-2 rounded-lg hover:bg-red-900/50 transition-all text-red-400"
                                 title="Sair"
                             >
-                                <i class="ph-fill ph-sign-out text-xl"></i>
+                                <i class="ph-fill ph-sign-out text-lg md:text-xl"></i>
                             </button>
                         </nav>
                     </div>
@@ -1601,15 +2348,17 @@
         // INICIALIZAÇÃO
         // ============================================
         document.addEventListener('DOMContentLoaded', () => {
-            const savedUser = localStorage.getItem('user');
+            // Tenta carregar sessão salva
+            const savedUser = loadSession();
+            
             if (savedUser) {
-                state.user = JSON.parse(savedUser);
+                state.user = savedUser;
                 state.loadingMessage = 'Carregando...';
                 state.isLoading = true;
                 render();
                 
                 loadItems().then(() => {
-                    state.view = 'dashboard';
+                    navigateTo('dashboard');
                     state.isLoading = false;
                     state.loadingMessage = '';
                     render();

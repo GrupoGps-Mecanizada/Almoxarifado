@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="pt-BR" class="dark">
+<html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -28,6 +28,9 @@
     <!-- Supabase JS SDK -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     
+    <!-- SheetJS (Exportação para Excel) -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+    
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Work+Sans:wght@300;400;600;700;800&display=swap');
         
@@ -35,8 +38,8 @@
         html, body {
             margin: 0;
             padding: 0;
-            background-color: #0f172a !important;
-            color: #f1f5f9 !important;
+            background-color: #f4f7fa !important;
+            color: #1e293b !important;
         }
         
         * {
@@ -51,15 +54,15 @@
             width: 100%;
             height: 100%;
             overflow: hidden;
-            background: #0f172a !important;
-            color: #f1f5f9 !important;
+            background: #f4f7fa !important;
+            color: #1e293b !important;
         }
         
         #app {
             height: 100%;
             overflow-y: auto;
             -webkit-overflow-scrolling: touch;
-            background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #334155 100%);
+            background: #f4f7fa;
             min-height: 100vh;
         }
         
@@ -103,27 +106,27 @@
         
         /* Custom Scrollbar */
         ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: #1e293b; }
-        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
-        ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
         
         /* Gradient Background */
         .bg-gradient-dark {
-            background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #334155 100%) !important;
+            background: #f4f7fa !important;
         }
         
         /* Força tema escuro em todos os elementos */
         html {
-            background: #0f172a !important;
+            background: #f4f7fa !important;
         }
         
         * {
-            scrollbar-color: #475569 #1e293b;
+            scrollbar-color: #94a3b8 #f1f5f9;
         }
         
         /* Garante tema escuro em inputs e selects */
         input, select, textarea {
-            color-scheme: dark;
+            color-scheme: light;
         }
         
         input::placeholder, textarea::placeholder {
@@ -132,9 +135,10 @@
         
         /* Glass Effect */
         .glass {
-            background: rgba(255, 255, 255, 0.05);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: white;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(8px);
         }
         
         /* Status Badge Animation */
@@ -221,7 +225,7 @@
         }
     </style>
 </head>
-<body class="text-gray-100">
+<body class="text-slate-800">
     <div id="app"></div>
     <div id="toast-container"></div>
 
@@ -298,7 +302,8 @@
                 employeeName: '',
                 supplier: '',
                 quantity: 1,
-                observations: ''
+                observations: '',
+                returnedOldEpi: null
             },
             
             // Edição de item
@@ -395,7 +400,7 @@
                 blue: type === 'bg' ? 'bg-blue-500/20 border-blue-500 text-blue-400' : 'bg-blue-600',
                 purple: type === 'bg' ? 'bg-purple-500/20 border-purple-500 text-purple-400' : 'bg-purple-600',
                 amber: type === 'bg' ? 'bg-amber-500/20 border-amber-500 text-amber-400' : 'bg-amber-600',
-                slate: type === 'bg' ? 'bg-slate-500/20 border-slate-500 text-slate-400' : 'bg-slate-600'
+                slate: type === 'bg' ? 'bg-slate-500/20 border-slate-500 text-slate-500' : 'bg-slate-600'
             };
             return colors[color] || colors.slate;
         }
@@ -899,6 +904,18 @@
             
             state.analytics.categoryDistribution = Object.entries(categoryDist)
                 .map(([category, quantity]) => ({ category, quantity }));
+
+            // Contagem de movimentações
+            const movementsByType = {};
+            if (state.movements) {
+                state.movements.forEach(m => {
+                    movementsByType[m.type] = (movementsByType[m.type] || 0) + 1;
+                });
+                state.statistics.totalMovements = state.movements.length;
+            } else {
+                state.statistics.totalMovements = 0;
+            }
+            state.statistics.movementsByType = movementsByType;
         }
 
         function handleLogout() {
@@ -935,6 +952,51 @@
             navigateTo('movement');
         }
 
+        function exportStockToXLSX() {
+            if (!state.items || state.items.length === 0) {
+                showToast('Nenhum item para exportar', 'info');
+                return;
+            }
+            const data = state.items.map(item => ({
+                'Nome': item.nome,
+                'Categoria': item.categoria,
+                'Quantidade': item.quantidade,
+                'Unidade': item.unidade,
+                'CA': item.ca || '-',
+                'Validade': item.validade ? formatDate(item.validade) : '-',
+                'Localização': item.localizacao || '-',
+                'Observações': item.observacoes || '-'
+            }));
+            const ws = XLSX.utils.json_to_sheet(data);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Estoque");
+            XLSX.writeFile(wb, `Estoque_EPI_${getCurrentDate()}.xlsx`);
+            showToast('Exportação concluída', 'success');
+        }
+
+        function exportMovementsToXLSX() {
+            const itemsToExport = state.movements && state.movements.length > 0 ? state.movements : (cache.movements || []);
+            if (!itemsToExport || itemsToExport.length === 0) {
+                showToast('Nenhuma movimentação para exportar', 'info');
+                return;
+            }
+            const data = itemsToExport.map(m => ({
+                'Data': formatDateTime(m.timestamp),
+                'Tipo': MOVEMENT_TYPES[m.type]?.label || m.type,
+                'Item': m.itemName,
+                'Quantidade': m.quantity,
+                'Colaborador': m.employeeName || '-',
+                'Fornecedor': m.supplier || '-',
+                'Usuário': m.userName,
+                'Observações': m.observations || '-'
+            }));
+            const ws = XLSX.utils.json_to_sheet(data);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Movimentações");
+            XLSX.writeFile(wb, `Movimentacoes_EPI_${getCurrentDate()}.xlsx`);
+            showToast('Exportação concluída', 'success');
+        }
+
         function cancelMovement() {
             state.movementOperation = {
                 active: false,
@@ -961,6 +1023,11 @@
                 return;
             }
 
+            if (op.type === 'DISTRIBUICAO' && op.returnedOldEpi === null) {
+                showToast('Informe se o EPI antigo foi devolvido', 'error');
+                return;
+            }
+
             if (op.type === 'COMPRA' && !op.supplier) {
                 showToast('Nome do fornecedor é obrigatório', 'error');
                 return;
@@ -977,6 +1044,12 @@
                 return;
             }
 
+            let finalObservations = op.observations;
+            if (op.type === 'DISTRIBUICAO') {
+                const epiStatus = op.returnedOldEpi ? '[EPI Antigo: Devolvido]' : '[EPI Antigo: Não Devolvido/Novo]';
+                finalObservations = finalObservations ? `${epiStatus}\n${finalObservations}` : epiStatus;
+            }
+
             const movement = {
                 date: getCurrentDate(),
                 type: op.type,
@@ -986,7 +1059,7 @@
                 employee: op.employeeName || '',
                 supplier: op.supplier || '',
                 user: state.user.nome,
-                observations: op.observations
+                observations: finalObservations
             };
 
             const result = await saveMovement(movement);
@@ -1401,17 +1474,17 @@
                             <i class="ph-fill ph-package text-7xl"></i>
                         </div>
                         <h1 class="text-4xl font-bold text-center mb-2 font-mono">ALMOXARIFADO</h1>
-                        <p class="text-center text-slate-400 mb-8 text-sm uppercase tracking-wider">Sistema de Controle de EPIs</p>
+                        <p class="text-center text-slate-500 mb-8 text-sm uppercase tracking-wider">Sistema de Controle de EPIs</p>
                         
                         <form onsubmit="handleLogin(event)" class="space-y-6">
                             <div>
-                                <label class="text-sm font-bold text-slate-300 block mb-2 uppercase tracking-wide">E-mail</label>
+                                <label class="text-sm font-bold text-slate-700 block mb-2 uppercase tracking-wide">E-mail</label>
                                 <div class="relative">
-                                    <i class="ph ph-envelope absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xl"></i>
+                                    <i class="ph ph-envelope absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 text-xl"></i>
                                     <input 
                                         type="email" 
                                         id="email"
-                                        class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 pl-12 focus:border-emerald-500 outline-none text-lg text-white"
+                                        class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 pl-12 focus:border-emerald-500 outline-none text-lg text-slate-800"
                                         placeholder="Digite seu e-mail"
                                         ${state.isLoading ? 'disabled' : ''}
                                         required
@@ -1420,13 +1493,13 @@
                             </div>
                             
                             <div>
-                                <label class="text-sm font-bold text-slate-300 block mb-2 uppercase tracking-wide">Senha</label>
+                                <label class="text-sm font-bold text-slate-700 block mb-2 uppercase tracking-wide">Senha</label>
                                 <div class="relative">
-                                    <i class="ph ph-lock absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xl"></i>
+                                    <i class="ph ph-lock absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 text-xl"></i>
                                     <input 
                                         type="password" 
                                         id="password"
-                                        class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 pl-12 focus:border-emerald-500 outline-none text-lg text-white"
+                                        class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 pl-12 focus:border-emerald-500 outline-none text-lg text-slate-800"
                                         placeholder="Digite sua senha"
                                         ${state.isLoading ? 'disabled' : ''}
                                         required
@@ -1436,7 +1509,7 @@
                             
                             <button 
                                 type="submit" 
-                                class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed"
+                                class="w-full bg-emerald-600 hover:bg-emerald-700  font-bold py-4 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed text-white"
                                 ${state.isLoading ? 'disabled' : ''}
                             >
                                 ${state.isLoading ? `<i class="ph ph-spinner animate-spin text-2xl"></i> ${state.loadingMessage.toUpperCase()}` : '<i class="ph ph-sign-in text-xl"></i> ENTRAR'}
@@ -1466,7 +1539,7 @@
                             <div class="glass p-6 rounded-xl border-l-4 border-emerald-500">
                                 <div class="flex items-center justify-between">
                                     <div>
-                                        <p class="text-slate-400 text-sm uppercase tracking-wide font-semibold">Total de Itens</p>
+                                        <p class="text-slate-500 text-sm uppercase tracking-wide font-semibold">Total de Itens</p>
                                         <p class="text-4xl font-bold font-mono mt-2">${totalItems}</p>
                                     </div>
                                     <div class="w-16 h-16 bg-emerald-500/20 rounded-xl flex items-center justify-center">
@@ -1478,7 +1551,7 @@
                             <div class="glass p-6 rounded-xl border-l-4 border-blue-500">
                                 <div class="flex items-center justify-between">
                                     <div>
-                                        <p class="text-slate-400 text-sm uppercase tracking-wide font-semibold">Quantidade Total</p>
+                                        <p class="text-slate-500 text-sm uppercase tracking-wide font-semibold">Quantidade Total</p>
                                         <p class="text-4xl font-bold font-mono mt-2">${totalQuantity}</p>
                                     </div>
                                     <div class="w-16 h-16 bg-blue-500/20 rounded-xl flex items-center justify-center">
@@ -1490,7 +1563,7 @@
                             <div class="glass p-6 rounded-xl border-l-4 border-amber-500">
                                 <div class="flex items-center justify-between">
                                     <div>
-                                        <p class="text-slate-400 text-sm uppercase tracking-wide font-semibold">Estoque Baixo</p>
+                                        <p class="text-slate-500 text-sm uppercase tracking-wide font-semibold">Estoque Baixo</p>
                                         <p class="text-4xl font-bold font-mono mt-2">${lowStock}</p>
                                     </div>
                                     <div class="w-16 h-16 bg-amber-500/20 rounded-xl flex items-center justify-center">
@@ -1512,7 +1585,7 @@
                                         <i class="ph-fill ph-arrows-clockwise text-emerald-400 text-2xl"></i>
                                     </div>
                                     <h3 class="font-bold text-sm mb-1">Movimentações</h3>
-                                    <p class="text-slate-400 text-xs">Registrar</p>
+                                    <p class="text-slate-500 text-xs">Registrar</p>
                                 </button>
 
                                 <button onclick="navigateTo('stock')" class="glass p-6 rounded-lg hover:border-blue-500 border-2 border-transparent transition-all text-center group">
@@ -1520,7 +1593,7 @@
                                         <i class="ph-fill ph-warehouse text-blue-400 text-2xl"></i>
                                     </div>
                                     <h3 class="font-bold text-sm mb-1">Estoque</h3>
-                                    <p class="text-slate-400 text-xs">Visualizar</p>
+                                    <p class="text-slate-500 text-xs">Visualizar</p>
                                 </button>
 
                                 <button onclick="navigateToHistory()" class="glass p-6 rounded-lg hover:border-purple-500 border-2 border-transparent transition-all text-center group">
@@ -1528,7 +1601,7 @@
                                         <i class="ph-fill ph-clock-counter-clockwise text-purple-400 text-2xl"></i>
                                     </div>
                                     <h3 class="font-bold text-sm mb-1">Histórico</h3>
-                                    <p class="text-slate-400 text-xs">Ver</p>
+                                    <p class="text-slate-500 text-xs">Ver</p>
                                 </button>
 
                                 <button onclick="navigateToDashboardAnalytics()" class="glass p-6 rounded-lg hover:border-pink-500 border-2 border-transparent transition-all text-center group">
@@ -1536,7 +1609,7 @@
                                         <i class="ph-fill ph-chart-line text-pink-400 text-2xl"></i>
                                     </div>
                                     <h3 class="font-bold text-sm mb-1">Analytics</h3>
-                                    <p class="text-slate-400 text-xs">Relatórios</p>
+                                    <p class="text-slate-500 text-xs">Relatórios</p>
                                 </button>
 
                                 <button onclick="openNewItem()" class="glass p-6 rounded-lg hover:border-amber-500 border-2 border-transparent transition-all text-center group">
@@ -1544,7 +1617,7 @@
                                         <i class="ph-fill ph-plus-circle text-amber-400 text-2xl"></i>
                                     </div>
                                     <h3 class="font-bold text-sm mb-1">Novo Item</h3>
-                                    <p class="text-slate-400 text-xs">Cadastrar</p>
+                                    <p class="text-slate-500 text-xs">Cadastrar</p>
                                 </button>
                             </div>
                         </div>
@@ -1568,7 +1641,7 @@
                                                 <h3 class="font-bold text-lg">${item.nome}</h3>
                                                 <div class="flex gap-2 mt-1">
                                                     <span class="text-xs px-2 py-1 bg-blue-500/20 text-blue-400 rounded-full font-semibold">${item.categoria}</span>
-                                                    <span class="text-xs px-2 py-1 bg-slate-500/20 text-slate-400 rounded-full font-mono">${item.unidade}</span>
+                                                    <span class="text-xs px-2 py-1 bg-slate-500/20 text-slate-500 rounded-full font-mono">${item.unidade}</span>
                                                 </div>
                                             </div>
                                             <div class="text-right">
@@ -1599,7 +1672,7 @@
                         ${state.isLoading ? `
                             <div class="glass p-12 rounded-xl text-center">
                                 <i class="ph ph-spinner animate-spin text-6xl text-blue-400 mb-4"></i>
-                                <p class="text-slate-400">${state.loadingMessage}</p>
+                                <p class="text-slate-500">${state.loadingMessage}</p>
                             </div>
                         ` : `
                             <!-- Gráficos -->
@@ -1633,19 +1706,19 @@
                                     <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
                                         <div class="text-center p-4 bg-emerald-500/10 rounded-lg">
                                             <p class="text-emerald-400 text-3xl font-bold font-mono">${state.statistics.totalMovements}</p>
-                                            <p class="text-slate-400 text-sm mt-1">Total Movimentações</p>
+                                            <p class="text-slate-500 text-sm mt-1">Total Movimentações</p>
                                         </div>
                                         <div class="text-center p-4 bg-blue-500/10 rounded-lg">
                                             <p class="text-blue-400 text-3xl font-bold font-mono">${state.statistics.movementsByType.COMPRA || 0}</p>
-                                            <p class="text-slate-400 text-sm mt-1">Compras</p>
+                                            <p class="text-slate-500 text-sm mt-1">Compras</p>
                                         </div>
                                         <div class="text-center p-4 bg-purple-500/10 rounded-lg">
                                             <p class="text-purple-400 text-3xl font-bold font-mono">${state.statistics.movementsByType.DISTRIBUICAO || 0}</p>
-                                            <p class="text-slate-400 text-sm mt-1">Distribuições</p>
+                                            <p class="text-slate-500 text-sm mt-1">Distribuições</p>
                                         </div>
                                         <div class="text-center p-4 bg-amber-500/10 rounded-lg">
                                             <p class="text-amber-400 text-3xl font-bold font-mono">${state.statistics.lowStock}</p>
-                                            <p class="text-slate-400 text-sm mt-1">Estoque Baixo</p>
+                                            <p class="text-slate-500 text-sm mt-1">Estoque Baixo</p>
                                         </div>
                                     </div>
                                 </div>
@@ -1668,7 +1741,7 @@
                                     <i class="ph-fill ph-arrows-clockwise text-emerald-400"></i>
                                     Tipo de Movimentação
                                 </h1>
-                                <button onclick="goBack()" class="text-slate-400 hover:text-white transition-all">
+                                <button onclick="goBack()" class="text-slate-500 hover:text-red-500 transition-all">
                                     <i class="ph ph-x text-3xl"></i>
                                 </button>
                             </div>
@@ -1680,8 +1753,8 @@
                                         <i class="ph-fill ph-shopping-cart text-emerald-400 text-3xl md:text-4xl"></i>
                                     </div>
                                     <h3 class="font-bold text-lg md:text-xl mb-2">Compra</h3>
-                                    <p class="text-slate-400 text-xs md:text-sm">Novos itens do fornecedor</p>
-                                    <div class="mt-3 md:mt-4 pt-3 md:pt-4 border-t border-slate-700">
+                                    <p class="text-slate-500 text-xs md:text-sm">Novos itens do fornecedor</p>
+                                    <div class="mt-3 md:mt-4 pt-3 md:pt-4 border-t border-slate-200">
                                         <p class="text-xs text-emerald-400 font-semibold">
                                             <i class="ph-fill ph-arrow-up"></i> ADICIONA
                                         </p>
@@ -1694,8 +1767,8 @@
                                         <i class="ph-fill ph-arrow-clockwise text-blue-400 text-3xl md:text-4xl"></i>
                                     </div>
                                     <h3 class="font-bold text-lg md:text-xl mb-2">Reposição</h3>
-                                    <p class="text-slate-400 text-xs md:text-sm">Transferência interna</p>
-                                    <div class="mt-3 md:mt-4 pt-3 md:pt-4 border-t border-slate-700">
+                                    <p class="text-slate-500 text-xs md:text-sm">Transferência interna</p>
+                                    <div class="mt-3 md:mt-4 pt-3 md:pt-4 border-t border-slate-200">
                                         <p class="text-xs text-blue-400 font-semibold">
                                             <i class="ph-fill ph-arrow-down"></i> REMOVE
                                         </p>
@@ -1708,8 +1781,8 @@
                                         <i class="ph-fill ph-hand-coins text-purple-400 text-3xl md:text-4xl"></i>
                                     </div>
                                     <h3 class="font-bold text-lg md:text-xl mb-2">Distribuição</h3>
-                                    <p class="text-slate-400 text-xs md:text-sm">Entrega para colaborador</p>
-                                    <div class="mt-3 md:mt-4 pt-3 md:pt-4 border-t border-slate-700">
+                                    <p class="text-slate-500 text-xs md:text-sm">Entrega para colaborador</p>
+                                    <div class="mt-3 md:mt-4 pt-3 md:pt-4 border-t border-slate-200">
                                         <p class="text-xs text-purple-400 font-semibold">
                                             <i class="ph-fill ph-arrow-down"></i> REMOVE
                                         </p>
@@ -1740,7 +1813,7 @@
                                     <span class="hidden md:inline">${typeInfo.label}</span>
                                     <span class="md:hidden">${typeInfo.label.split(' ')[0]}</span>
                                 </h1>
-                                <button onclick="cancelMovement()" class="text-slate-400 hover:text-white transition-all">
+                                <button onclick="cancelMovement()" class="text-slate-500 hover:text-red-500 transition-all">
                                     <i class="ph ph-x text-3xl"></i>
                                 </button>
                             </div>
@@ -1749,17 +1822,17 @@
                                 <div class="text-center py-12 text-slate-500">
                                     <i class="ph ph-warning-circle text-6xl md:text-8xl mb-4 text-amber-500"></i>
                                     <p class="text-lg md:text-xl mb-4">Nenhum item disponível</p>
-                                    <button onclick="cancelMovement()" class="bg-slate-700 hover:bg-slate-600 px-6 py-3 rounded-lg font-bold">
+                                    <button onclick="cancelMovement()" class="bg-slate-200 hover:bg-slate-300 px-6 py-3 rounded-lg font-bold">
                                         Voltar
                                     </button>
                                 </div>
                             ` : `
                                 <form onsubmit="event.preventDefault(); confirmMovement();" class="space-y-6">
                                     <div>
-                                        <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Selecione o Item *</label>
+                                        <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Selecione o Item *</label>
                                         <select 
                                             onchange="state.movementOperation.selectedItem = this.value; render()"
-                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-${typeInfo.color}-500 outline-none text-base md:text-lg text-white"
+                                            class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-${typeInfo.color}-500 outline-none text-base md:text-lg text-slate-800"
                                             required
                                         >
                                             <option value="">-- Escolha um item --</option>
@@ -1775,11 +1848,11 @@
                                         <div class="glass p-4 rounded-lg border-2 border-${typeInfo.color}-500/50">
                                             <div class="flex justify-between items-center">
                                                 <div>
-                                                    <p class="text-slate-400 text-sm">Selecionado</p>
+                                                    <p class="text-slate-500 text-sm">Selecionado</p>
                                                     <p class="font-bold text-base md:text-lg">${selectedItem.nome}</p>
                                                 </div>
                                                 <div class="text-right">
-                                                    <p class="text-slate-400 text-sm">Estoque</p>
+                                                    <p class="text-slate-500 text-sm">Estoque</p>
                                                     <p class="font-bold text-xl md:text-2xl font-mono text-${typeInfo.color}-400">${selectedItem.quantidade}</p>
                                                 </div>
                                             </div>
@@ -1788,26 +1861,38 @@
 
                                     ${op.type === 'DISTRIBUICAO' ? `
                                         <div>
-                                            <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Colaborador *</label>
+                                            <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Colaborador *</label>
                                             <input 
                                                 type="text"
                                                 value="${op.employeeName}"
                                                 onchange="state.movementOperation.employeeName = this.value"
-                                                class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-${typeInfo.color}-500 outline-none text-base md:text-lg text-white"
+                                                class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-${typeInfo.color}-500 outline-none text-base md:text-lg text-slate-800"
                                                 placeholder="Nome completo"
                                                 required
                                             >
+                                        </div>
+                                        <div>
+                                            <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Devolveu EPI Antigo? *</label>
+                                            <select 
+                                                onchange="state.movementOperation.returnedOldEpi = this.value === 'true'"
+                                                class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-${typeInfo.color}-500 outline-none text-base md:text-lg text-slate-800"
+                                                required
+                                            >
+                                                <option value="" disabled ${op.returnedOldEpi === null ? 'selected' : ''}>-- Selecione --</option>
+                                                <option value="true" ${op.returnedOldEpi === true ? 'selected' : ''}>Sim, devolveu</option>
+                                                <option value="false" ${op.returnedOldEpi === false ? 'selected' : ''}>Não devolveu / Primeira vez</option>
+                                            </select>
                                         </div>
                                     ` : ''}
 
                                     ${op.type === 'COMPRA' ? `
                                         <div>
-                                            <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Fornecedor *</label>
+                                            <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Fornecedor *</label>
                                             <input 
                                                 type="text"
                                                 value="${op.supplier}"
                                                 onchange="state.movementOperation.supplier = this.value"
-                                                class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-${typeInfo.color}-500 outline-none text-base md:text-lg text-white"
+                                                class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-${typeInfo.color}-500 outline-none text-base md:text-lg text-slate-800"
                                                 placeholder="Nome do fornecedor"
                                                 required
                                             >
@@ -1815,23 +1900,23 @@
                                     ` : ''}
 
                                     <div>
-                                        <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Quantidade *</label>
+                                        <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Quantidade *</label>
                                         <input 
                                             type="number"
                                             value="${op.quantity}"
                                             onchange="state.movementOperation.quantity = parseInt(this.value)"
                                             min="1"
                                             ${selectedItem && (op.type === 'DISTRIBUICAO' || op.type === 'REPOSICAO') ? `max="${selectedItem.quantidade}"` : ''}
-                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-${typeInfo.color}-500 outline-none text-base md:text-lg text-white font-mono"
+                                            class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-${typeInfo.color}-500 outline-none text-base md:text-lg text-slate-800 font-mono"
                                             required
                                         >
                                     </div>
 
                                     <div>
-                                        <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Observações</label>
+                                        <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Observações</label>
                                         <textarea 
                                             onchange="state.movementOperation.observations = this.value"
-                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-${typeInfo.color}-500 outline-none text-base md:text-lg text-white"
+                                            class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-${typeInfo.color}-500 outline-none text-base md:text-lg text-slate-800"
                                             rows="3"
                                             placeholder="Informações adicionais (opcional)"
                                         >${op.observations}</textarea>
@@ -1841,13 +1926,13 @@
                                         <button 
                                             type="button"
                                             onclick="cancelMovement()"
-                                            class="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-4 rounded-xl transition-all"
+                                            class="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-4 rounded-xl transition-all"
                                         >
                                             CANCELAR
                                         </button>
                                         <button 
                                             type="submit"
-                                            class="flex-1 bg-${typeInfo.color}-600 hover:bg-${typeInfo.color}-700 text-white font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2"
+                                            class="flex-1 bg-${typeInfo.color}-600 hover:bg-${typeInfo.color}-700 text-slate-800 font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2"
                                         >
                                             <i class="ph ph-check-circle text-xl"></i>
                                             <span class="hidden md:inline">CONFIRMAR</span>
@@ -1876,11 +1961,17 @@
                                 <i class="ph-fill ph-warehouse text-emerald-400"></i>
                                 Estoque de EPIs
                             </h1>
-                            <button onclick="openNewItem()" class="bg-emerald-600 hover:bg-emerald-700 px-4 md:px-6 py-3 rounded-lg font-bold flex items-center gap-2 transition-all">
-                                <i class="ph-fill ph-plus-circle text-xl"></i>
-                                <span class="hidden md:inline">Novo Item</span>
-                                <span class="md:inline hidden">+</span>
-                            </button>
+                            <div class="flex gap-2">
+                                <button onclick="exportStockToXLSX()" class="bg-blue-600 hover:bg-blue-700 px-4 md:px-6 py-3 rounded-lg font-bold flex items-center gap-2 transition-all text-white">
+                                    <i class="ph-fill ph-download-simple text-xl"></i>
+                                    <span class="hidden md:inline">Exportar Excel</span>
+                                </button>
+                                <button onclick="openNewItem()" class="bg-emerald-600 hover:bg-emerald-700 px-4 md:px-6 py-3 rounded-lg font-bold flex items-center gap-2 transition-all text-white">
+                                    <i class="ph-fill ph-plus-circle text-xl"></i>
+                                    <span class="hidden md:inline">Novo Item</span>
+                                    <span class="md:inline hidden">+</span>
+                                </button>
+                            </div>
                         </div>
 
                         <!-- Filtros Avançados -->
@@ -1891,10 +1982,10 @@
                             </h2>
                             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div>
-                                    <label class="text-xs font-bold text-slate-400 block mb-2 uppercase">Categoria</label>
+                                    <label class="text-xs font-bold text-slate-500 block mb-2 uppercase">Categoria</label>
                                     <select 
                                         onchange="state.filters.category = this.value; render()"
-                                        class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-3 focus:border-blue-500 outline-none text-white text-sm"
+                                        class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-3 focus:border-blue-500 outline-none text-slate-800 text-sm"
                                     >
                                         <option value="TODAS">Todas</option>
                                         ${categories.map(cat => `
@@ -1903,12 +1994,12 @@
                                     </select>
                                 </div>
                                 <div>
-                                    <label class="text-xs font-bold text-slate-400 block mb-2 uppercase">Localização</label>
+                                    <label class="text-xs font-bold text-slate-500 block mb-2 uppercase">Localização</label>
                                     <input 
                                         type="text"
                                         value="${state.filters.location}"
                                         oninput="state.filters.location = this.value; render()"
-                                        class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-3 focus:border-blue-500 outline-none text-white text-sm"
+                                        class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-3 focus:border-blue-500 outline-none text-slate-800 text-sm"
                                         placeholder="Ex: Prateleira A1"
                                     >
                                 </div>
@@ -1925,12 +2016,12 @@
                                 </div>
                             </div>
                             <div class="mt-4">
-                                <label class="text-xs font-bold text-slate-400 block mb-2 uppercase">Pesquisar</label>
+                                <label class="text-xs font-bold text-slate-500 block mb-2 uppercase">Pesquisar</label>
                                 <input 
                                     type="text"
                                     value="${state.filters.searchTerm}"
                                     oninput="handleSearchInput(this.value)"
-                                    class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-3 focus:border-blue-500 outline-none text-white"
+                                    class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-3 focus:border-blue-500 outline-none text-slate-800"
                                     placeholder="Buscar por nome, categoria, CA..."
                                 >
                             </div>
@@ -1939,20 +2030,20 @@
                         ${filteredItems.length === 0 ? `
                             <div class="glass p-12 rounded-xl text-center">
                                 <i class="ph ph-package text-6xl md:text-8xl text-slate-600 mb-4"></i>
-                                <p class="text-slate-400 text-lg md:text-xl mb-6">Nenhum item encontrado</p>
+                                <p class="text-slate-500 text-lg md:text-xl mb-6">Nenhum item encontrado</p>
                                 ${state.filters.searchTerm || state.filters.category !== 'TODAS' || state.filters.location || state.filters.lowStockOnly ? `
-                                    <button onclick="state.filters = {startDate: getFirstDayOfMonth(), endDate: getCurrentDate(), type: 'TODOS', searchTerm: '', category: 'TODAS', minQuantity: '', maxQuantity: '', location: '', lowStockOnly: false}; render()" class="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg font-bold">
+                                    <button onclick="state.filters = {startDate: getFirstDayOfMonth(), endDate: getCurrentDate(), type: 'TODOS', searchTerm: '', category: 'TODAS', minQuantity: '', maxQuantity: '', location: '', lowStockOnly: false}; render()" class="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg font-bold text-white">
                                         Limpar Filtros
                                     </button>
                                 ` : `
-                                    <button onclick="openNewItem()" class="bg-emerald-600 hover:bg-emerald-700 px-6 py-3 rounded-lg font-bold">
+                                    <button onclick="openNewItem()" class="bg-emerald-600 hover:bg-emerald-700 px-6 py-3 rounded-lg font-bold text-white">
                                         Cadastrar Primeiro Item
                                     </button>
                                 `}
                             </div>
                         ` : `
-                            <div class="mb-4 text-slate-400 text-sm">
-                                Mostrando <span class="font-bold text-white">${filteredItems.length}</span> de <span class="font-bold text-white">${state.items.length}</span> itens
+                            <div class="mb-4 text-slate-500 text-sm">
+                                Mostrando <span class="font-bold text-slate-800">${filteredItems.length}</span> de <span class="font-bold text-slate-800">${state.items.length}</span> itens
                             </div>
                             
                             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1963,7 +2054,7 @@
                                                 <h3 class="font-bold text-lg md:text-xl mb-2 break-words">${item.nome}</h3>
                                                 <div class="flex gap-2 flex-wrap">
                                                     <span class="text-xs px-2 md:px-3 py-1 bg-blue-500/20 text-blue-400 rounded-full font-semibold">${item.categoria}</span>
-                                                    <span class="text-xs px-2 md:px-3 py-1 bg-slate-500/20 text-slate-400 rounded-full font-mono">${item.unidade}</span>
+                                                    <span class="text-xs px-2 md:px-3 py-1 bg-slate-500/20 text-slate-500 rounded-full font-mono">${item.unidade}</span>
                                                     ${item.ca ? `<span class="text-xs px-2 md:px-3 py-1 bg-purple-500/20 text-purple-400 rounded-full font-mono">CA ${item.ca}</span>` : ''}
                                                 </div>
                                             </div>
@@ -1971,7 +2062,7 @@
 
                                         <div class="mb-4">
                                             <div class="flex justify-between items-end mb-2">
-                                                <span class="text-slate-400 text-xs md:text-sm uppercase">Quantidade</span>
+                                                <span class="text-slate-500 text-xs md:text-sm uppercase">Quantidade</span>
                                                 <span class="text-2xl md:text-3xl font-bold font-mono ${item.quantidade < 10 ? 'text-amber-400' : 'text-emerald-400'}">${item.quantidade}</span>
                                             </div>
                                             ${item.quantidade < 10 ? `
@@ -1983,25 +2074,25 @@
                                         </div>
 
                                         ${item.localizacao ? `
-                                            <p class="text-slate-400 text-xs md:text-sm mb-2 flex items-center gap-2">
+                                            <p class="text-slate-500 text-xs md:text-sm mb-2 flex items-center gap-2">
                                                 <i class="ph ph-map-pin"></i>
                                                 ${item.localizacao}
                                             </p>
                                         ` : ''}
 
                                         ${item.validade ? `
-                                            <p class="text-slate-400 text-xs md:text-sm mb-4 flex items-center gap-2">
+                                            <p class="text-slate-500 text-xs md:text-sm mb-4 flex items-center gap-2">
                                                 <i class="ph ph-calendar"></i>
                                                 Val: ${formatDate(item.validade)}
                                             </p>
                                         ` : ''}
 
-                                        <div class="flex gap-2 pt-4 border-t border-slate-700">
-                                            <button onclick='openEditItem(${JSON.stringify(item).replace(/'/g, "&#39;")})' class="flex-1 bg-blue-600 hover:bg-blue-700 px-3 md:px-4 py-2 rounded-lg font-semibold transition-all flex items-center justify-center gap-2 text-sm">
+                                        <div class="flex gap-2 pt-4 border-t border-slate-200">
+                                            <button onclick='openEditItem(${JSON.stringify(item).replace(/'/g, "&#39;")})' class="flex-1 bg-blue-600 hover:bg-blue-700 px-3 md:px-4 py-2 rounded-lg font-semibold transition-all flex items-center justify-center gap-2 text-sm text-white">
                                                 <i class="ph ph-pencil-simple"></i>
                                                 Editar
                                             </button>
-                                            <button onclick="handleDeleteItem('${item.id}')" class="bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white px-3 md:px-4 py-2 rounded-lg font-semibold transition-all flex items-center justify-center gap-2 border border-red-500 text-sm">
+                                            <button onclick="handleDeleteItem('${item.id}')" class="bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-red-500 px-3 md:px-4 py-2 rounded-lg font-semibold transition-all flex items-center justify-center gap-2 border border-red-500 text-sm text-white">
                                                 <i class="ph ph-trash"></i>
                                             </button>
                                         </div>
@@ -2024,10 +2115,16 @@
                     ${renderHeader()}
                     
                     <main class="p-4 max-w-7xl mx-auto space-y-6">
-                        <h1 class="text-2xl md:text-3xl font-bold flex items-center gap-3">
-                            <i class="ph-fill ph-clock-counter-clockwise text-purple-400"></i>
-                            Histórico de Movimentações
-                        </h1>
+                        <div class="flex justify-between items-center mb-6 flex-wrap gap-4">
+                            <h1 class="text-2xl md:text-3xl font-bold flex items-center gap-3">
+                                <i class="ph-fill ph-clock-counter-clockwise text-purple-400"></i>
+                                Histórico de Movimentações
+                            </h1>
+                            <button onclick="exportMovementsToXLSX()" class="bg-blue-600 hover:bg-blue-700 px-4 md:px-6 py-3 rounded-lg font-bold flex items-center gap-2 transition-all text-white">
+                                <i class="ph-fill ph-download-simple text-xl"></i>
+                                <span class="hidden md:inline">Exportar Excel</span>
+                            </button>
+                        </div>
 
                         <!-- Filtros -->
                         <div class="glass p-4 md:p-6 rounded-xl">
@@ -2037,28 +2134,28 @@
                             </h2>
                             <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
                                 <div>
-                                    <label class="text-xs font-bold text-slate-400 block mb-2 uppercase">Data Inicial</label>
+                                    <label class="text-xs font-bold text-slate-500 block mb-2 uppercase">Data Inicial</label>
                                     <input 
                                         type="date"
                                         value="${state.filters.startDate}"
                                         onchange="state.filters.startDate = this.value"
-                                        class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-3 focus:border-blue-500 outline-none text-white text-sm"
+                                        class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-3 focus:border-blue-500 outline-none text-slate-800 text-sm"
                                     >
                                 </div>
                                 <div>
-                                    <label class="text-xs font-bold text-slate-400 block mb-2 uppercase">Data Final</label>
+                                    <label class="text-xs font-bold text-slate-500 block mb-2 uppercase">Data Final</label>
                                     <input 
                                         type="date"
                                         value="${state.filters.endDate}"
                                         onchange="state.filters.endDate = this.value"
-                                        class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-3 focus:border-blue-500 outline-none text-white text-sm"
+                                        class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-3 focus:border-blue-500 outline-none text-slate-800 text-sm"
                                     >
                                 </div>
                                 <div>
-                                    <label class="text-xs font-bold text-slate-400 block mb-2 uppercase">Tipo</label>
+                                    <label class="text-xs font-bold text-slate-500 block mb-2 uppercase">Tipo</label>
                                     <select 
                                         onchange="state.filters.type = this.value"
-                                        class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-3 focus:border-blue-500 outline-none text-white text-sm"
+                                        class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-3 focus:border-blue-500 outline-none text-slate-800 text-sm"
                                     >
                                         <option value="TODOS" ${state.filters.type === 'TODOS' ? 'selected' : ''}>Todos</option>
                                         ${Object.entries(MOVEMENT_TYPES).map(([code, info]) => `
@@ -2069,7 +2166,7 @@
                                 <div class="flex items-end">
                                     <button 
                                         onclick="applyFilters()"
-                                        class="w-full bg-blue-600 hover:bg-blue-700 px-4 md:px-6 py-3 rounded-lg font-bold transition-all flex items-center justify-center gap-2"
+                                        class="w-full bg-blue-600 hover:bg-blue-700 px-4 md:px-6 py-3 rounded-lg font-bold transition-all flex items-center justify-center gap-2 text-white"
                                         ${state.isLoading ? 'disabled' : ''}
                                     >
                                         <i class="ph ph-magnifying-glass"></i>
@@ -2079,12 +2176,12 @@
                             </div>
 
                             <div class="mt-4">
-                                <label class="text-xs font-bold text-slate-400 block mb-2 uppercase">Pesquisar</label>
+                                <label class="text-xs font-bold text-slate-500 block mb-2 uppercase">Pesquisar</label>
                                 <input 
                                     type="text"
                                     value="${state.filters.searchTerm}"
                                     oninput="handleSearchInput(this.value)"
-                                    class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-3 focus:border-blue-500 outline-none text-white"
+                                    class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-3 focus:border-blue-500 outline-none text-slate-800"
                                     placeholder="Buscar por item, colaborador, fornecedor..."
                                 >
                             </div>
@@ -2093,11 +2190,11 @@
                         <!-- Resultados -->
                         <div class="glass p-4 md:p-6 rounded-xl">
                             <div class="flex justify-between items-center mb-4 flex-wrap gap-2">
-                                <p class="text-slate-400 text-sm">
-                                    Mostrando <span class="font-bold text-white">${paginatedMovements.length}</span> de <span class="font-bold text-white">${filteredMovements.length}</span>
+                                <p class="text-slate-500 text-sm">
+                                    Mostrando <span class="font-bold text-slate-800">${paginatedMovements.length}</span> de <span class="font-bold text-slate-800">${filteredMovements.length}</span>
                                 </p>
                                 ${totalPages > 0 ? `
-                                    <p class="text-slate-400 font-mono text-xs md:text-sm">
+                                    <p class="text-slate-500 font-mono text-xs md:text-sm">
                                         Pág ${state.currentPage}/${totalPages}
                                     </p>
                                 ` : ''}
@@ -2106,7 +2203,7 @@
                             ${state.isLoading ? `
                                 <div class="text-center py-12">
                                     <i class="ph ph-spinner animate-spin text-6xl text-blue-400"></i>
-                                    <p class="text-slate-400 mt-4">${state.loadingMessage}</p>
+                                    <p class="text-slate-500 mt-4">${state.loadingMessage}</p>
                                 </div>
                             ` : filteredMovements.length === 0 ? `
                                 <div class="text-center py-12 text-slate-500">
@@ -2124,7 +2221,7 @@
                                                     <div class="flex-1 min-w-0">
                                                         <div class="flex items-center gap-3 mb-2 flex-wrap">
                                                             <div class="w-10 h-10 ${getColorClass(typeInfo.color, 'full')} rounded-lg flex items-center justify-center flex-shrink-0">
-                                                                <i class="ph-fill ph-${typeInfo.icon} text-white text-xl"></i>
+                                                                <i class="ph-fill ph-${typeInfo.icon} text-slate-800 text-xl"></i>
                                                             </div>
                                                             <div class="min-w-0 flex-1">
                                                                 <h3 class="font-bold text-base md:text-lg truncate">${movement.itemName}</h3>
@@ -2132,7 +2229,7 @@
                                                             </div>
                                                         </div>
                                                         
-                                                        <div class="md:ml-13 space-y-1 text-xs md:text-sm text-slate-400">
+                                                        <div class="md:ml-13 space-y-1 text-xs md:text-sm text-slate-500">
                                                             ${movement.employee ? `
                                                                 <p class="flex items-center gap-2 truncate">
                                                                     <i class="ph ph-user flex-shrink-0"></i>
@@ -2170,11 +2267,11 @@
 
                                 <!-- Paginação -->
                                 ${totalPages > 1 ? `
-                                    <div class="flex justify-center items-center gap-2 mt-6 pt-6 border-t border-slate-700 flex-wrap">
+                                    <div class="flex justify-center items-center gap-2 mt-6 pt-6 border-t border-slate-200 flex-wrap">
                                         <button 
                                             onclick="changePage(-1)"
                                             ${state.currentPage === 1 ? 'disabled' : ''}
-                                            class="px-3 md:px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm"
+                                            class="px-3 md:px-4 py-2 bg-slate-200 hover:bg-slate-300 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm"
                                         >
                                             <i class="ph ph-caret-left"></i>
                                             <span class="hidden md:inline ml-1">Anterior</span>
@@ -2195,7 +2292,7 @@
                                                 return `
                                                     <button 
                                                         onclick="state.currentPage = ${pageNum}; render()"
-                                                        class="w-8 h-8 md:w-10 md:h-10 rounded-lg font-bold text-sm ${state.currentPage === pageNum ? 'bg-blue-600' : 'bg-slate-700 hover:bg-slate-600'} transition-all"
+                                                        class="w-8 h-8 md:w-10 md:h-10 rounded-lg font-bold text-sm ${state.currentPage === pageNum ? 'bg-blue-600' : 'bg-slate-200 hover:bg-slate-300'} transition-all text-white"
                                                     >
                                                         ${pageNum}
                                                     </button>
@@ -2206,7 +2303,7 @@
                                         <button 
                                             onclick="changePage(1)"
                                             ${state.currentPage === totalPages ? 'disabled' : ''}
-                                            class="px-3 md:px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm"
+                                            class="px-3 md:px-4 py-2 bg-slate-200 hover:bg-slate-300 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm"
                                         >
                                             <span class="hidden md:inline mr-1">Próxima</span>
                                             <i class="ph ph-caret-right"></i>
@@ -2236,7 +2333,7 @@
                                     <span class="hidden md:inline">${isEdit ? 'Editar Item' : 'Novo Item'}</span>
                                     <span class="md:hidden">${isEdit ? 'Editar' : 'Novo'}</span>
                                 </h1>
-                                <button onclick="goBack()" class="text-slate-400 hover:text-white transition-all">
+                                <button onclick="goBack()" class="text-slate-500 hover:text-red-500 transition-all">
                                     <i class="ph ph-x text-3xl"></i>
                                 </button>
                             </div>
@@ -2244,22 +2341,22 @@
                             <form onsubmit="handleSaveItem(event)" class="space-y-6">
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                                     <div class="md:col-span-2">
-                                        <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Nome do Item *</label>
+                                        <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Nome do Item *</label>
                                         <input 
                                             type="text"
                                             id="itemName"
                                             value="${item.nome || ''}"
-                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-white"
+                                            class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-slate-800"
                                             placeholder="Ex: Capacete de Segurança"
                                             required
                                         >
                                     </div>
 
                                     <div>
-                                        <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Categoria *</label>
+                                        <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Categoria *</label>
                                         <select 
                                             id="itemCategory"
-                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-white"
+                                            class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-slate-800"
                                             required
                                         >
                                             <option value="">Selecione...</option>
@@ -2271,10 +2368,10 @@
                                     </div>
 
                                     <div>
-                                        <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Unidade *</label>
+                                        <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Unidade *</label>
                                         <select 
                                             id="itemUnit"
-                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-white"
+                                            class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-slate-800"
                                             required
                                         >
                                             <option value="">Selecione...</option>
@@ -2287,71 +2384,71 @@
                                     </div>
 
                                     <div>
-                                        <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Quantidade *</label>
+                                        <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Quantidade *</label>
                                         <input 
                                             type="number"
                                             id="itemQuantity"
                                             value="${item.quantidade || 0}"
                                             min="0"
-                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-white font-mono"
+                                            class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-slate-800 font-mono"
                                             required
                                         >
                                     </div>
 
                                     <div>
-                                        <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">CA</label>
+                                        <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">CA</label>
                                         <input 
                                             type="text"
                                             id="itemCA"
                                             value="${item.ca || ''}"
-                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-white font-mono"
+                                            class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-slate-800 font-mono"
                                             placeholder="Ex: 12345"
                                         >
                                     </div>
 
                                     <div>
-                                        <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Validade</label>
+                                        <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Validade</label>
                                         <input 
                                             type="date"
                                             id="itemValidity"
                                             value="${item.validade || ''}"
-                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-white"
+                                            class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-slate-800"
                                         >
                                     </div>
 
                                     <div>
-                                        <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Localização</label>
+                                        <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Localização</label>
                                         <input 
                                             type="text"
                                             id="itemLocation"
                                             value="${item.localizacao || ''}"
-                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-white"
+                                            class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-slate-800"
                                             placeholder="Ex: Prateleira A1"
                                         >
                                     </div>
 
                                     <div class="md:col-span-2">
-                                        <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Observações</label>
+                                        <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Observações</label>
                                         <textarea 
                                             id="itemObs"
-                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-white"
+                                            class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-slate-800"
                                             rows="3"
                                             placeholder="Informações adicionais..."
                                         >${item.observacoes || ''}</textarea>
                                     </div>
                                 </div>
 
-                                <div class="flex gap-4 pt-6 border-t border-slate-700">
+                                <div class="flex gap-4 pt-6 border-t border-slate-200">
                                     <button 
                                         type="button"
                                         onclick="goBack()"
-                                        class="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-4 rounded-xl transition-all"
+                                        class="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-4 rounded-xl transition-all"
                                     >
                                         CANCELAR
                                     </button>
                                     <button 
                                         type="submit"
-                                        class="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2"
+                                        class="flex-1 bg-amber-600 hover:bg-amber-700  font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2 text-white"
                                     >
                                         <i class="ph ph-floppy-disk text-xl"></i>
                                         ${isEdit ? 'ATUALIZAR' : 'CADASTRAR'}
@@ -2366,43 +2463,43 @@
 
         function renderHeader() {
             return `
-                <header class="bg-slate-900 border-b border-slate-800 p-3 md:p-4 sticky top-0 z-30 shadow-lg">
+                <header class="bg-white border-b border-slate-200 p-3 md:p-4 sticky top-0 z-30 shadow-sm">
                     <div class="max-w-7xl mx-auto flex justify-between items-center">
                         <div class="flex items-center gap-3 md:gap-4">
-                            <div class="w-10 h-10 md:w-12 md:h-12 bg-emerald-500/20 rounded-lg flex items-center justify-center">
-                                <i class="ph-fill ph-package text-emerald-400 text-xl md:text-2xl"></i>
+                            <div class="w-10 h-10 md:w-12 md:h-12 bg-emerald-500/10 rounded-lg flex items-center justify-center">
+                                <i class="ph-fill ph-package text-emerald-600 text-xl md:text-2xl"></i>
                             </div>
                             <div>
-                                <h1 class="font-bold text-base md:text-xl font-mono">ALMOXARIFADO</h1>
-                                <p class="text-xs md:text-sm text-slate-400 truncate max-w-[120px] md:max-w-none">${state.user?.nome || 'Sistema'}</p>
+                                <h1 class="font-bold text-base md:text-xl font-mono text-slate-800">ALMOXARIFADO</h1>
+                                <p class="text-xs md:text-sm text-slate-500 truncate max-w-[120px] md:max-w-none">${state.user?.nome || 'Sistema'}</p>
                             </div>
                         </div>
                         
                         <nav class="flex gap-1 md:gap-2">
                             <button 
                                 onclick="navigateTo('dashboard')"
-                                class="px-3 md:px-4 py-2 rounded-lg hover:bg-slate-800 transition-all ${state.view === 'dashboard' ? 'bg-slate-800' : ''}"
+                                class="px-3 md:px-4 py-2 rounded-lg hover:bg-slate-100 transition-all ${state.view === 'dashboard' ? 'bg-slate-100 text-emerald-600' : 'text-slate-600'}"
                                 title="Dashboard"
                             >
                                 <i class="ph-fill ph-house text-lg md:text-xl"></i>
                             </button>
                             <button 
                                 onclick="navigateTo('stock')"
-                                class="px-3 md:px-4 py-2 rounded-lg hover:bg-slate-800 transition-all ${state.view === 'stock' ? 'bg-slate-800' : ''}"
+                                class="px-3 md:px-4 py-2 rounded-lg hover:bg-slate-100 transition-all ${state.view === 'stock' ? 'bg-slate-100 text-emerald-600' : 'text-slate-600'}"
                                 title="Estoque"
                             >
                                 <i class="ph-fill ph-warehouse text-lg md:text-xl"></i>
                             </button>
                             <button 
                                 onclick="navigateToHistory()"
-                                class="px-3 md:px-4 py-2 rounded-lg hover:bg-slate-800 transition-all ${state.view === 'history' ? 'bg-slate-800' : ''}"
+                                class="px-3 md:px-4 py-2 rounded-lg hover:bg-slate-100 transition-all ${state.view === 'history' ? 'bg-slate-100 text-emerald-600' : 'text-slate-600'}"
                                 title="Histórico"
                             >
                                 <i class="ph-fill ph-clock-counter-clockwise text-lg md:text-xl"></i>
                             </button>
                             <button 
                                 onclick="handleLogout()"
-                                class="px-3 md:px-4 py-2 rounded-lg hover:bg-red-900/50 transition-all text-red-400"
+                                class="px-3 md:px-4 py-2 rounded-lg hover:bg-red-50 transition-all text-red-500 hover:text-red-600"
                                 title="Sair"
                             >
                                 <i class="ph-fill ph-sign-out text-lg md:text-xl"></i>

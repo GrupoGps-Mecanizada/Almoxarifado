@@ -25,6 +25,9 @@
     <!-- Chart.js para gráficos -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     
+    <!-- Supabase JS SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Work+Sans:wght@300;400;600;700;800&display=swap');
         
@@ -224,9 +227,15 @@
 
     <script>
         // ============================================
-        // CONFIGURAÇÃO
+        // CONFIGURAÇÃO SUPABASE
         // ============================================
-        const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyncVvza7PTzk4E6nM8uSAWrAmHfVvT5GXWxleFnoXr6uSdqx6S0qPEV8z7jV3Wj_mpvw/exec';
+        const SUPABASE_URL = 'https://mgcjidryrjqiceielmzp.supabase.co';
+        const SUPABASE_ANON_KEY = 'sb_publishable_1FBWf1mb1o5_J60VDlsfaA_IOsIFq6e';
+        const sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        
+        // ============================================
+        // CACHE E ESTADO
+        // ============================================
         
         // Cache otimizado
         const cache = {
@@ -519,11 +528,30 @@
         // ============================================
         // SERVIÇOS / API COM OPTIMISTIC UI
         // ============================================
-        async function login(username, password) {
+        async function login(email, password) {
             try {
-                const response = await fetch(`${GOOGLE_SCRIPT_URL}?action=login&username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`);
-                const data = await response.json();
-                return data;
+                const { data, error } = await sbClient.auth.signInWithPassword({
+                    email: email,
+                    password: password
+                });
+                
+                if (error) throw error;
+                
+                // Busca o perfil para obter o nome
+                const { data: profile, error: profileError } = await sbClient
+                    .from('profiles')
+                    .select('nome')
+                    .eq('id', data.user.id)
+                    .single();
+                
+                return { 
+                    success: true, 
+                    user: { 
+                        id: data.user.id, 
+                        nome: profile?.nome || data.user.email,
+                        email: data.user.email
+                    } 
+                };
             } catch (error) {
                 console.error('Erro no login:', error);
                 return { success: false, error: error.message };
@@ -536,15 +564,17 @@
             }
 
             try {
-                const response = await fetch(`${GOOGLE_SCRIPT_URL}?action=getItems`);
-                const data = await response.json();
+                const { data, error } = await sbClient
+                    .from('items')
+                    .select('*')
+                    .order('nome');
                 
-                if (data.success) {
-                    cache.items = data.items;
-                    cache.itemsTimestamp = Date.now();
-                }
+                if (error) throw error;
                 
-                return data;
+                cache.items = data;
+                cache.itemsTimestamp = Date.now();
+                
+                return { success: true, items: data };
             } catch (error) {
                 console.error('Erro ao buscar itens:', error);
                 return { success: false, error: error.message };
@@ -552,8 +582,9 @@
         }
 
         async function saveItem(item) {
-            // Optimistic UI - atualiza a interface imediatamente
+            // Optimistic UI
             const isNew = !state.items.find(i => i.id === item.id);
+            const originalItems = [...state.items];
             
             if (isNew) {
                 state.items.push(item);
@@ -566,33 +597,32 @@
             showToast(isNew ? 'Item cadastrado!' : 'Item atualizado!', 'success', 2000);
             
             try {
-                const response = await fetch(GOOGLE_SCRIPT_URL, {
-                    method: 'POST',
-                    body: JSON.stringify({ action: 'saveItem', item: item })
-                });
-                const data = await response.json();
+                const { error } = await sbClient
+                    .from('items')
+                    .upsert({
+                        id: item.id,
+                        nome: item.nome,
+                        categoria: item.categoria,
+                        quantidade: item.quantidade,
+                        unidade: item.unidade,
+                        ca: item.ca,
+                        validade: item.validade,
+                        localizacao: item.localizacao,
+                        observacoes: item.observacoes,
+                        updated_at: new Date().toISOString()
+                    });
                 
-                if (data.success) {
-                    cache.items = null;
-                    cache.itemsTimestamp = null;
-                    // Recarrega em background para garantir sincronização
-                    loadItems(true);
-                } else {
-                    // Reverte em caso de erro
-                    if (isNew) {
-                        state.items = state.items.filter(i => i.id !== item.id);
-                    } else {
-                        loadItems(true);
-                    }
-                    showToast('Erro ao salvar item', 'error');
-                }
+                if (error) throw error;
                 
-                return data;
+                cache.items = null;
+                cache.itemsTimestamp = null;
+                loadItems(true);
+                return { success: true };
             } catch (error) {
                 console.error('Erro ao salvar item:', error);
-                // Reverte em caso de erro
-                loadItems(true);
-                showToast('Erro ao salvar item', 'error');
+                state.items = originalItems;
+                render();
+                showToast('Erro ao salvar item: ' + error.message, 'error');
                 return { success: false, error: error.message };
             }
         }
@@ -605,83 +635,87 @@
             showToast('Item excluído!', 'success', 2000);
             
             try {
-                const response = await fetch(GOOGLE_SCRIPT_URL, {
-                    method: 'POST',
-                    body: JSON.stringify({ action: 'deleteItem', itemId: itemId })
-                });
-                const data = await response.json();
+                const { error } = await sbClient
+                    .from('items')
+                    .delete()
+                    .eq('id', itemId);
                 
-                if (data.success) {
-                    cache.items = null;
-                    cache.itemsTimestamp = null;
-                } else {
-                    // Reverte em caso de erro
-                    state.items.push(itemBackup);
-                    render();
-                    showToast('Erro ao excluir item', 'error');
-                }
+                if (error) throw error;
                 
-                return data;
+                cache.items = null;
+                cache.itemsTimestamp = null;
+                return { success: true };
             } catch (error) {
                 console.error('Erro ao deletar item:', error);
-                // Reverte em caso de erro
                 state.items.push(itemBackup);
                 render();
-                showToast('Erro ao excluir item', 'error');
+                showToast('Erro ao excluir item: ' + error.message, 'error');
                 return { success: false, error: error.message };
             }
         }
 
         async function saveMovement(movement) {
-            // Optimistic UI - atualiza estoque imediatamente
+            // Optimistic UI
             const item = state.items.find(i => i.id === movement.itemId);
-            if (item) {
-                const oldQuantity = item.quantidade;
-                
-                // Atualiza quantidade baseado no tipo
-                if (movement.type === 'COMPRA') {
-                    item.quantidade += movement.quantity;
-                } else if (['DISTRIBUICAO', 'SAIDA', 'REPOSICAO'].includes(movement.type)) {
-                    item.quantidade -= movement.quantity;
-                } else if (movement.type === 'AJUSTE') {
-                    item.quantidade = movement.quantity;
-                }
-                
-                render();
-                showToast('Movimentação registrada!', 'success', 2000);
-                
-                try {
-                    const response = await fetch(GOOGLE_SCRIPT_URL, {
-                        method: 'POST',
-                        body: JSON.stringify({ action: 'saveMovement', movement: movement })
+            if (!item) return;
+
+            const oldQuantity = item.quantidade;
+            
+            if (movement.type === 'COMPRA') {
+                item.quantidade += movement.quantity;
+            } else if (['DISTRIBUICAO', 'SAIDA', 'REPOSICAO'].includes(movement.type)) {
+                item.quantidade -= movement.quantity;
+            } else if (movement.type === 'AJUSTE') {
+                item.quantidade = movement.quantity;
+            }
+            
+            render();
+            showToast('Movimentação registrada!', 'success', 2000);
+            
+            try {
+                // 1. Salva a movimentação
+                const { error: moveError } = await sbClient
+                    .from('movements')
+                    .insert({
+                        date: movement.date,
+                        type: movement.type,
+                        item_id: movement.itemId,
+                        item_name: movement.itemName,
+                        quantity: movement.quantity,
+                        employee: movement.employeeName,
+                        supplier: movement.supplier,
+                        user_name: state.user.nome,
+                        observations: movement.observations
                     });
-                    const data = await response.json();
-                    
-                    if (data.success) {
-                        cache.movements = null;
-                        cache.movementsTimestamp = null;
-                        cache.items = null;
-                        cache.itemsTimestamp = null;
-                        cache.statistics = null;
-                        cache.statisticsTimestamp = null;
-                        // Recarrega em background
-                        loadItems(true);
-                    } else {
-                        // Reverte em caso de erro
-                        item.quantidade = oldQuantity;
-                        render();
-                        showToast('Erro ao registrar movimentação', 'error');
-                    }
-                    
-                    return data;
-                } catch (error) {
-                    console.error('Erro ao salvar movimentação:', error);
-                    // Reverte em caso de erro
-                    item.quantidade = oldQuantity;
-                    render();
-                    showToast('Erro ao registrar movimentação', 'error');
-                    return { success: false, error: error.message };
-                }
+                
+                if (moveError) throw moveError;
+                
+                // 2. Atualiza o estoque no item
+                const { error: itemError } = await sbClient
+                    .from('items')
+                    .update({ 
+                        quantidade: item.quantidade,
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', item.id);
+                
+                if (itemError) throw itemError;
+                
+                cache.movements = null;
+                cache.movementsTimestamp = null;
+                cache.items = null;
+                cache.itemsTimestamp = null;
+                cache.statistics = null;
+                cache.statisticsTimestamp = null;
+                
+                loadItems(true);
+                return { success: true };
+            } catch (error) {
+                console.error('Erro ao salvar movimentação:', error);
+                item.quantidade = oldQuantity;
+                render();
+                showToast('Erro ao registrar movimentação: ' + error.message, 'error');
+                return { success: false, error: error.message };
             }
         }
 
@@ -692,23 +726,40 @@
             }
 
             try {
-                const params = new URLSearchParams({
-                    action: 'getMovements',
-                    startDate: filters.startDate,
-                    endDate: filters.endDate,
-                    type: filters.type
-                });
+                let query = sbClient
+                    .from('movements')
+                    .select('*')
+                    .gte('date', filters.startDate)
+                    .lte('date', filters.endDate);
                 
-                const response = await fetch(`${GOOGLE_SCRIPT_URL}?${params}`);
-                const data = await response.json();
-                
-                if (data.success) {
-                    cache.movements = data.movements;
-                    cache.movementsFilterKey = filterKey;
-                    cache.movementsTimestamp = Date.now();
+                if (filters.type !== 'TODOS') {
+                    query = query.eq('type', filters.type);
                 }
                 
-                return data;
+                const { data, error } = await query.order('timestamp', { ascending: false });
+                
+                if (error) throw error;
+                
+                // Mapeia para o formato esperado pelo frontend
+                const movements = data.map(m => ({
+                    id: m.id,
+                    date: m.date,
+                    type: m.type,
+                    itemId: m.item_id,
+                    itemName: m.item_name,
+                    quantity: m.quantity,
+                    employeeName: m.employee,
+                    supplier: m.supplier,
+                    userName: m.user_name,
+                    observations: m.observations,
+                    timestamp: m.timestamp
+                }));
+                
+                cache.movements = movements;
+                cache.movementsFilterKey = filterKey;
+                cache.movementsTimestamp = Date.now();
+                
+                return { success: true, movements: movements };
             } catch (error) {
                 console.error('Erro ao buscar movimentações:', error);
                 return { success: false, error: error.message };
@@ -721,15 +772,33 @@
             }
 
             try {
-                const response = await fetch(`${GOOGLE_SCRIPT_URL}?action=getStatistics`);
-                const data = await response.json();
+                // Busca resumo rápido
+                const { count: totalItems } = await sbClient
+                    .from('items')
+                    .select('*', { count: 'exact', head: true });
                 
-                if (data.success) {
-                    cache.statistics = data.statistics;
-                    cache.statisticsTimestamp = Date.now();
-                }
+                const { data: stockData } = await sbClient
+                    .from('items')
+                    .select('quantidade');
                 
-                return data;
+                const totalStock = stockData.reduce((acc, curr) => acc + (curr.quantidade || 0), 0);
+                
+                const { count: lowStock } = await sbClient
+                    .from('items')
+                    .select('*', { count: 'exact', head: true })
+                    .lt('quantidade', 10); // Exemplo de estoque baixo
+
+                const statistics = {
+                    totalItems,
+                    totalStock,
+                    lowStock,
+                    lastUpdate: new Date().toISOString()
+                };
+                
+                cache.statistics = statistics;
+                cache.statisticsTimestamp = Date.now();
+                
+                return { success: true, statistics };
             } catch (error) {
                 console.error('Erro ao buscar estatísticas:', error);
                 return { success: false, error: error.message };
@@ -741,10 +810,10 @@
         // ============================================
         async function handleLogin(e) {
             e.preventDefault();
-            const username = document.getElementById('username').value;
+            const email = document.getElementById('email').value;
             const password = document.getElementById('password').value;
 
-            if (!username || !password) {
+            if (!email || !password) {
                 showToast('Preencha todos os campos', 'error');
                 return;
             }
@@ -753,7 +822,7 @@
             state.loadingMessage = 'Autenticando...';
             render();
 
-            const result = await login(username, password);
+            const result = await login(email, password);
 
             if (result.success) {
                 state.user = result.user;
@@ -1336,14 +1405,14 @@
                         
                         <form onsubmit="handleLogin(event)" class="space-y-6">
                             <div>
-                                <label class="text-sm font-bold text-slate-300 block mb-2 uppercase tracking-wide">Usuário</label>
+                                <label class="text-sm font-bold text-slate-300 block mb-2 uppercase tracking-wide">E-mail</label>
                                 <div class="relative">
-                                    <i class="ph ph-user absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xl"></i>
+                                    <i class="ph ph-envelope absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xl"></i>
                                     <input 
-                                        type="text" 
-                                        id="username"
+                                        type="email" 
+                                        id="email"
                                         class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 pl-12 focus:border-emerald-500 outline-none text-lg text-white"
-                                        placeholder="Digite seu usuário"
+                                        placeholder="Digite seu e-mail"
                                         ${state.isLoading ? 'disabled' : ''}
                                         required
                                     >

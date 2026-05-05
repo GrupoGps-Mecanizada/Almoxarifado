@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="pt-BR" class="dark">
+<html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -25,6 +25,12 @@
     <!-- Chart.js para gráficos -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     
+    <!-- Supabase JS SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <!-- SheetJS (Exportação para Excel) -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+    
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Work+Sans:wght@300;400;600;700;800&display=swap');
         
@@ -32,8 +38,8 @@
         html, body {
             margin: 0;
             padding: 0;
-            background-color: #0f172a !important;
-            color: #f1f5f9 !important;
+            background-color: #f4f7fa !important;
+            color: #1e293b !important;
         }
         
         * {
@@ -48,15 +54,15 @@
             width: 100%;
             height: 100%;
             overflow: hidden;
-            background: #0f172a !important;
-            color: #f1f5f9 !important;
+            background: #f4f7fa !important;
+            color: #1e293b !important;
         }
         
         #app {
             height: 100%;
             overflow-y: auto;
             -webkit-overflow-scrolling: touch;
-            background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #334155 100%);
+            background: #f4f7fa;
             min-height: 100vh;
         }
         
@@ -100,27 +106,27 @@
         
         /* Custom Scrollbar */
         ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: #1e293b; }
-        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
-        ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
         
         /* Gradient Background */
         .bg-gradient-dark {
-            background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #334155 100%) !important;
+            background: #f4f7fa !important;
         }
         
         /* Força tema escuro em todos os elementos */
         html {
-            background: #0f172a !important;
+            background: #f4f7fa !important;
         }
         
         * {
-            scrollbar-color: #475569 #1e293b;
+            scrollbar-color: #94a3b8 #f1f5f9;
         }
         
         /* Garante tema escuro em inputs e selects */
         input, select, textarea {
-            color-scheme: dark;
+            color-scheme: light;
         }
         
         input::placeholder, textarea::placeholder {
@@ -129,9 +135,10 @@
         
         /* Glass Effect */
         .glass {
-            background: rgba(255, 255, 255, 0.05);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: white;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(8px);
         }
         
         /* Status Badge Animation */
@@ -218,15 +225,21 @@
         }
     </style>
 </head>
-<body class="text-gray-100">
+<body class="text-slate-800">
     <div id="app"></div>
     <div id="toast-container"></div>
 
     <script>
         // ============================================
-        // CONFIGURAÇÃO
+        // CONFIGURAÇÃO SUPABASE
         // ============================================
-        const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyncVvza7PTzk4E6nM8uSAWrAmHfVvT5GXWxleFnoXr6uSdqx6S0qPEV8z7jV3Wj_mpvw/exec';
+        const SUPABASE_URL = 'https://mgcjidryrjqiceielmzp.supabase.co';
+        const SUPABASE_ANON_KEY = 'sb_publishable_1FBWf1mb1o5_J60VDlsfaA_IOsIFq6e';
+        const sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        
+        // ============================================
+        // CACHE E ESTADO
+        // ============================================
         
         // Cache otimizado
         const cache = {
@@ -289,7 +302,8 @@
                 employeeName: '',
                 supplier: '',
                 quantity: 1,
-                observations: ''
+                observations: '',
+                returnedOldEpi: null
             },
             
             // Edição de item
@@ -386,7 +400,7 @@
                 blue: type === 'bg' ? 'bg-blue-500/20 border-blue-500 text-blue-400' : 'bg-blue-600',
                 purple: type === 'bg' ? 'bg-purple-500/20 border-purple-500 text-purple-400' : 'bg-purple-600',
                 amber: type === 'bg' ? 'bg-amber-500/20 border-amber-500 text-amber-400' : 'bg-amber-600',
-                slate: type === 'bg' ? 'bg-slate-500/20 border-slate-500 text-slate-400' : 'bg-slate-600'
+                slate: type === 'bg' ? 'bg-slate-500/20 border-slate-500 text-slate-500' : 'bg-slate-600'
             };
             return colors[color] || colors.slate;
         }
@@ -519,11 +533,30 @@
         // ============================================
         // SERVIÇOS / API COM OPTIMISTIC UI
         // ============================================
-        async function login(username, password) {
+        async function login(email, password) {
             try {
-                const response = await fetch(`${GOOGLE_SCRIPT_URL}?action=login&username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`);
-                const data = await response.json();
-                return data;
+                const { data, error } = await sbClient.auth.signInWithPassword({
+                    email: email,
+                    password: password
+                });
+                
+                if (error) throw error;
+                
+                // Busca o perfil para obter o nome
+                const { data: profile, error: profileError } = await sbClient
+                    .from('profiles')
+                    .select('nome')
+                    .eq('id', data.user.id)
+                    .single();
+                
+                return { 
+                    success: true, 
+                    user: { 
+                        id: data.user.id, 
+                        nome: profile?.nome || data.user.email,
+                        email: data.user.email
+                    } 
+                };
             } catch (error) {
                 console.error('Erro no login:', error);
                 return { success: false, error: error.message };
@@ -536,15 +569,17 @@
             }
 
             try {
-                const response = await fetch(`${GOOGLE_SCRIPT_URL}?action=getItems`);
-                const data = await response.json();
+                const { data, error } = await sbClient
+                    .from('items')
+                    .select('*')
+                    .order('nome');
                 
-                if (data.success) {
-                    cache.items = data.items;
-                    cache.itemsTimestamp = Date.now();
-                }
+                if (error) throw error;
                 
-                return data;
+                cache.items = data;
+                cache.itemsTimestamp = Date.now();
+                
+                return { success: true, items: data };
             } catch (error) {
                 console.error('Erro ao buscar itens:', error);
                 return { success: false, error: error.message };
@@ -552,8 +587,9 @@
         }
 
         async function saveItem(item) {
-            // Optimistic UI - atualiza a interface imediatamente
+            // Optimistic UI
             const isNew = !state.items.find(i => i.id === item.id);
+            const originalItems = [...state.items];
             
             if (isNew) {
                 state.items.push(item);
@@ -566,33 +602,34 @@
             showToast(isNew ? 'Item cadastrado!' : 'Item atualizado!', 'success', 2000);
             
             try {
-                const response = await fetch(GOOGLE_SCRIPT_URL, {
-                    method: 'POST',
-                    body: JSON.stringify({ action: 'saveItem', item: item })
-                });
-                const data = await response.json();
+                const { error } = await sbClient
+                    .from('items')
+                    .upsert({
+                        id: item.id,
+                        nome: item.nome,
+                        categoria: item.categoria || null,
+                        quantidade: item.quantidade || 0,
+                        unidade: item.unidade || null,
+                        ca: item.ca || null,
+                        validade: item.validade || null,
+                        localizacao: item.localizacao || null,
+                        observacoes: item.observacoes || null,
+                        tamanhos: (item.tamanhos && Object.keys(item.tamanhos).length > 0) ? item.tamanhos : null,
+                        unidades_por_caixa: item.unidades_por_caixa || 1,
+                        updated_at: new Date().toISOString()
+                    });
                 
-                if (data.success) {
-                    cache.items = null;
-                    cache.itemsTimestamp = null;
-                    // Recarrega em background para garantir sincronização
-                    loadItems(true);
-                } else {
-                    // Reverte em caso de erro
-                    if (isNew) {
-                        state.items = state.items.filter(i => i.id !== item.id);
-                    } else {
-                        loadItems(true);
-                    }
-                    showToast('Erro ao salvar item', 'error');
-                }
+                if (error) throw error;
                 
-                return data;
+                cache.items = null;
+                cache.itemsTimestamp = null;
+                loadItems(true);
+                return { success: true };
             } catch (error) {
                 console.error('Erro ao salvar item:', error);
-                // Reverte em caso de erro
-                loadItems(true);
-                showToast('Erro ao salvar item', 'error');
+                state.items = originalItems;
+                render();
+                showToast('Erro ao salvar item: ' + error.message, 'error');
                 return { success: false, error: error.message };
             }
         }
@@ -605,83 +642,96 @@
             showToast('Item excluído!', 'success', 2000);
             
             try {
-                const response = await fetch(GOOGLE_SCRIPT_URL, {
-                    method: 'POST',
-                    body: JSON.stringify({ action: 'deleteItem', itemId: itemId })
-                });
-                const data = await response.json();
+                const { error } = await sbClient
+                    .from('items')
+                    .delete()
+                    .eq('id', itemId);
                 
-                if (data.success) {
-                    cache.items = null;
-                    cache.itemsTimestamp = null;
-                } else {
-                    // Reverte em caso de erro
-                    state.items.push(itemBackup);
-                    render();
-                    showToast('Erro ao excluir item', 'error');
-                }
+                if (error) throw error;
                 
-                return data;
+                cache.items = null;
+                cache.itemsTimestamp = null;
+                return { success: true };
             } catch (error) {
                 console.error('Erro ao deletar item:', error);
-                // Reverte em caso de erro
                 state.items.push(itemBackup);
                 render();
-                showToast('Erro ao excluir item', 'error');
+                showToast('Erro ao excluir item: ' + error.message, 'error');
                 return { success: false, error: error.message };
             }
         }
 
         async function saveMovement(movement) {
-            // Optimistic UI - atualiza estoque imediatamente
+            // Optimistic UI
             const item = state.items.find(i => i.id === movement.itemId);
-            if (item) {
-                const oldQuantity = item.quantidade;
-                
-                // Atualiza quantidade baseado no tipo
-                if (movement.type === 'COMPRA') {
-                    item.quantidade += movement.quantity;
-                } else if (['DISTRIBUICAO', 'SAIDA', 'REPOSICAO'].includes(movement.type)) {
-                    item.quantidade -= movement.quantity;
-                } else if (movement.type === 'AJUSTE') {
-                    item.quantidade = movement.quantity;
-                }
-                
-                render();
-                showToast('Movimentação registrada!', 'success', 2000);
-                
-                try {
-                    const response = await fetch(GOOGLE_SCRIPT_URL, {
-                        method: 'POST',
-                        body: JSON.stringify({ action: 'saveMovement', movement: movement })
+            if (!item) return;
+
+            const oldQuantity = item.quantidade;
+            const oldTamanhos = item.tamanhos ? JSON.parse(JSON.stringify(item.tamanhos)) : null;
+            
+            if (movement.type === 'COMPRA') {
+                item.quantidade += movement.quantity;
+                if (movement.size && item.tamanhos) item.tamanhos[movement.size] = (item.tamanhos[movement.size] || 0) + movement.quantity;
+            } else if (['DISTRIBUICAO', 'SAIDA', 'REPOSICAO'].includes(movement.type)) {
+                item.quantidade -= movement.quantity;
+                if (movement.size && item.tamanhos) item.tamanhos[movement.size] -= movement.quantity;
+            } else if (movement.type === 'AJUSTE') {
+                item.quantidade = movement.quantity;
+                if (movement.size && item.tamanhos) item.tamanhos[movement.size] = movement.quantity;
+            }
+            
+            render();
+            showToast('Movimentação registrada!', 'success', 2000);
+            
+            try {
+                // 1. Salva a movimentação
+                const { error: moveError } = await sbClient
+                    .from('movements')
+                    .insert({
+                        date: movement.date,
+                        type: movement.type,
+                        item_id: movement.itemId,
+                        item_name: movement.itemName,
+                        size: movement.size || null,
+                        quantity: movement.quantity,
+                        employee: movement.employeeName,
+                        supplier: movement.supplier,
+                        user_name: state.user.nome,
+                        observations: movement.observations
                     });
-                    const data = await response.json();
-                    
-                    if (data.success) {
-                        cache.movements = null;
-                        cache.movementsTimestamp = null;
-                        cache.items = null;
-                        cache.itemsTimestamp = null;
-                        cache.statistics = null;
-                        cache.statisticsTimestamp = null;
-                        // Recarrega em background
-                        loadItems(true);
-                    } else {
-                        // Reverte em caso de erro
-                        item.quantidade = oldQuantity;
-                        render();
-                        showToast('Erro ao registrar movimentação', 'error');
-                    }
-                    
-                    return data;
-                } catch (error) {
-                    console.error('Erro ao salvar movimentação:', error);
-                    // Reverte em caso de erro
-                    item.quantidade = oldQuantity;
-                    render();
-                    showToast('Erro ao registrar movimentação', 'error');
-                    return { success: false, error: error.message };
-                }
+                
+                if (moveError) throw moveError;
+                
+                // 2. Atualiza o estoque no item
+                const updateData = { 
+                    quantidade: item.quantidade,
+                    updated_at: new Date().toISOString()
+                };
+                if (item.tamanhos) updateData.tamanhos = item.tamanhos;
+
+                const { error: itemError } = await sbClient
+                    .from('items')
+                    .update(updateData)
+                    .eq('id', item.id);
+                
+                if (itemError) throw itemError;
+                
+                cache.movements = null;
+                cache.movementsTimestamp = null;
+                cache.items = null;
+                cache.itemsTimestamp = null;
+                cache.statistics = null;
+                cache.statisticsTimestamp = null;
+                
+                loadItems(true);
+                return { success: true };
+            } catch (error) {
+                console.error('Erro ao salvar movimentação:', error);
+                item.quantidade = oldQuantity;
+                if (oldTamanhos) item.tamanhos = oldTamanhos;
+                render();
+                showToast('Erro ao registrar movimentação: ' + error.message, 'error');
+                return { success: false, error: error.message };
             }
         }
 
@@ -692,23 +742,43 @@
             }
 
             try {
-                const params = new URLSearchParams({
-                    action: 'getMovements',
-                    startDate: filters.startDate,
-                    endDate: filters.endDate,
-                    type: filters.type
-                });
+                let query = sbClient
+                    .from('movements')
+                    .select('*')
+                    .gte('date', filters.startDate)
+                    .lte('date', filters.endDate);
                 
-                const response = await fetch(`${GOOGLE_SCRIPT_URL}?${params}`);
-                const data = await response.json();
-                
-                if (data.success) {
-                    cache.movements = data.movements;
-                    cache.movementsFilterKey = filterKey;
-                    cache.movementsTimestamp = Date.now();
+                if (filters.type !== 'TODOS') {
+                    query = query.eq('type', filters.type);
                 }
                 
-                return data;
+                const { data, error } = await query.order('timestamp', { ascending: false });
+                
+                if (error) throw error;
+                
+                // Mapeia para o formato esperado pelo frontend
+                const movements = data.map(m => ({
+                    id: m.id,
+                    date: m.date,
+                    type: m.type,
+                    itemId: m.item_id,
+                    itemName: m.item_name,
+                    size: m.size,
+                    quantity: m.quantity,
+                    employee: m.employee,
+                    employeeName: m.employee,
+                    supplier: m.supplier,
+                    user_name: m.user_name,
+                    userName: m.user_name,
+                    observations: m.observations,
+                    timestamp: m.timestamp
+                }));
+                
+                cache.movements = movements;
+                cache.movementsFilterKey = filterKey;
+                cache.movementsTimestamp = Date.now();
+                
+                return { success: true, movements: movements };
             } catch (error) {
                 console.error('Erro ao buscar movimentações:', error);
                 return { success: false, error: error.message };
@@ -721,15 +791,33 @@
             }
 
             try {
-                const response = await fetch(`${GOOGLE_SCRIPT_URL}?action=getStatistics`);
-                const data = await response.json();
+                // Busca resumo rápido
+                const { count: totalItems } = await sbClient
+                    .from('items')
+                    .select('*', { count: 'exact', head: true });
                 
-                if (data.success) {
-                    cache.statistics = data.statistics;
-                    cache.statisticsTimestamp = Date.now();
-                }
+                const { data: stockData } = await sbClient
+                    .from('items')
+                    .select('quantidade');
                 
-                return data;
+                const totalStock = stockData.reduce((acc, curr) => acc + (curr.quantidade || 0), 0);
+                
+                const { count: lowStock } = await sbClient
+                    .from('items')
+                    .select('*', { count: 'exact', head: true })
+                    .lt('quantidade', 10); // Exemplo de estoque baixo
+
+                const statistics = {
+                    totalItems,
+                    totalStock,
+                    lowStock,
+                    lastUpdate: new Date().toISOString()
+                };
+                
+                cache.statistics = statistics;
+                cache.statisticsTimestamp = Date.now();
+                
+                return { success: true, statistics };
             } catch (error) {
                 console.error('Erro ao buscar estatísticas:', error);
                 return { success: false, error: error.message };
@@ -741,10 +829,10 @@
         // ============================================
         async function handleLogin(e) {
             e.preventDefault();
-            const username = document.getElementById('username').value;
+            const email = document.getElementById('email').value;
             const password = document.getElementById('password').value;
 
-            if (!username || !password) {
+            if (!email || !password) {
                 showToast('Preencha todos os campos', 'error');
                 return;
             }
@@ -753,7 +841,7 @@
             state.loadingMessage = 'Autenticando...';
             render();
 
-            const result = await login(username, password);
+            const result = await login(email, password);
 
             if (result.success) {
                 state.user = result.user;
@@ -830,6 +918,18 @@
             
             state.analytics.categoryDistribution = Object.entries(categoryDist)
                 .map(([category, quantity]) => ({ category, quantity }));
+
+            // Contagem de movimentações
+            const movementsByType = {};
+            if (state.movements) {
+                state.movements.forEach(m => {
+                    movementsByType[m.type] = (movementsByType[m.type] || 0) + 1;
+                });
+                state.statistics.totalMovements = state.movements.length;
+            } else {
+                state.statistics.totalMovements = 0;
+            }
+            state.statistics.movementsByType = movementsByType;
         }
 
         function handleLogout() {
@@ -866,11 +966,60 @@
             navigateTo('movement');
         }
 
+        function exportStockToXLSX() {
+            if (!state.items || state.items.length === 0) {
+                showToast('Nenhum item para exportar', 'info');
+                return;
+            }
+            const data = state.items.map(item => ({
+                'Nome': item.nome,
+                'Categoria': item.categoria,
+                'Quantidade Total': item.quantidade,
+                'Unidade': item.unidade,
+                'Unidades por Caixa': item.unidades_por_caixa || 1,
+                'Tamanhos': item.tamanhos ? Object.entries(item.tamanhos).map(([s,q]) => `${s}:${q}`).join(' | ') : '-',
+                'CA': item.ca || '-',
+                'Validade': item.validade ? formatDate(item.validade) : '-',
+                'Localização': item.localizacao || '-',
+                'Observações': item.observacoes || '-'
+            }));
+            const ws = XLSX.utils.json_to_sheet(data);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Estoque");
+            XLSX.writeFile(wb, `Estoque_EPI_${getCurrentDate()}.xlsx`);
+            showToast('Exportação concluída', 'success');
+        }
+
+        function exportMovementsToXLSX() {
+            const itemsToExport = state.movements && state.movements.length > 0 ? state.movements : (cache.movements || []);
+            if (!itemsToExport || itemsToExport.length === 0) {
+                showToast('Nenhuma movimentação para exportar', 'info');
+                return;
+            }
+            const data = itemsToExport.map(m => ({
+                'Data': formatDateTime(m.timestamp),
+                'Tipo': MOVEMENT_TYPES[m.type]?.label || m.type,
+                'Item': m.item_name || m.itemName || '-',
+                'Tamanho': m.size || '-',
+                'Quantidade': m.quantity,
+                'Colaborador': m.employee || '-',
+                'Fornecedor': m.supplier || '-',
+                'Usuário': m.user_name || m.user || '-',
+                'Observações': m.observations || '-'
+            }));
+            const ws = XLSX.utils.json_to_sheet(data);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Movimentações");
+            XLSX.writeFile(wb, `Movimentacoes_EPI_${getCurrentDate()}.xlsx`);
+            showToast('Exportação concluída', 'success');
+        }
+
         function cancelMovement() {
             state.movementOperation = {
                 active: false,
                 type: null,
                 selectedItem: null,
+                size: null,
                 employeeName: '',
                 supplier: '',
                 quantity: 1,
@@ -892,6 +1041,11 @@
                 return;
             }
 
+            if (op.type === 'DISTRIBUICAO' && op.returnedOldEpi === null) {
+                showToast('Informe se o EPI antigo foi devolvido', 'error');
+                return;
+            }
+
             if (op.type === 'COMPRA' && !op.supplier) {
                 showToast('Nome do fornecedor é obrigatório', 'error');
                 return;
@@ -903,21 +1057,38 @@
                 return;
             }
 
-            if (['DISTRIBUICAO', 'SAIDA', 'REPOSICAO'].includes(op.type) && item.quantidade < op.quantity) {
-                showToast('Quantidade em estoque insuficiente', 'error');
+            if (item.tamanhos && Object.keys(item.tamanhos).length > 0 && !op.size) {
+                showToast('Selecione um tamanho', 'error');
                 return;
+            }
+
+            if (['DISTRIBUICAO', 'SAIDA', 'REPOSICAO'].includes(op.type)) {
+                if (op.size && item.tamanhos[op.size] < op.quantity) {
+                    showToast(`Estoque insuficiente para o tamanho ${op.size}`, 'error');
+                    return;
+                } else if (!op.size && item.quantidade < op.quantity) {
+                    showToast('Quantidade em estoque insuficiente', 'error');
+                    return;
+                }
+            }
+
+            let finalObservations = op.observations;
+            if (op.type === 'DISTRIBUICAO') {
+                const epiStatus = op.returnedOldEpi ? '[EPI Antigo: Devolvido]' : '[EPI Antigo: Não Devolvido/Novo]';
+                finalObservations = finalObservations ? `${epiStatus}\n${finalObservations}` : epiStatus;
             }
 
             const movement = {
                 date: getCurrentDate(),
                 type: op.type,
                 itemId: item.id,
-                itemName: item.nome,
+                itemName: op.size ? `${item.nome} (Tam: ${op.size})` : item.nome,
+                size: op.size,
                 quantity: op.quantity,
-                employee: op.employeeName || '',
+                employeeName: op.employeeName || '',
                 supplier: op.supplier || '',
                 user: state.user.nome,
-                observations: op.observations
+                observations: finalObservations
             };
 
             const result = await saveMovement(movement);
@@ -927,15 +1098,68 @@
             }
         }
 
+        function toggleSizesSection(show) {
+            const sizesArea = document.getElementById('sizesConfigArea');
+            const singleQtyArea = document.getElementById('singleQuantityArea');
+            const itemQuantityInput = document.getElementById('itemQuantity');
+            
+            if (show) {
+                sizesArea.classList.remove('hidden');
+                sizesArea.classList.add('block');
+                singleQtyArea.classList.add('hidden');
+                singleQtyArea.classList.remove('block');
+                itemQuantityInput.required = false;
+            } else {
+                sizesArea.classList.add('hidden');
+                sizesArea.classList.remove('block');
+                singleQtyArea.classList.remove('hidden');
+                singleQtyArea.classList.add('block');
+                itemQuantityInput.required = true;
+            }
+        }
+
+        function addSizeRow() {
+            const list = document.getElementById('sizesList');
+            const row = document.createElement('div');
+            row.className = 'flex gap-3 items-center size-row mb-2';
+            row.innerHTML = `
+                <input type="text" class="size-name w-1/2 bg-white border border-slate-300 rounded p-2 focus:border-amber-500 outline-none" placeholder="Ex: 40 ou M" required>
+                <input type="number" class="size-qty w-1/3 bg-white border border-slate-300 rounded p-2 font-mono focus:border-amber-500 outline-none" placeholder="Qtd" value="0" required min="0">
+                <button type="button" onclick="this.parentElement.remove()" class="text-red-500 hover:text-red-700 p-2"><i class="ph-bold ph-trash"></i></button>
+            `;
+            list.appendChild(row);
+        }
+
         async function handleSaveItem(e) {
             e.preventDefault();
             
+            const hasSizes = document.getElementById('hasSizes')?.checked;
+            let tamanhos = null;
+            let quantidade = 0;
+
+            if (hasSizes) {
+                tamanhos = {};
+                const rows = document.querySelectorAll('.size-row');
+                rows.forEach(row => {
+                    const name = row.querySelector('.size-name').value.trim();
+                    const qty = parseInt(row.querySelector('.size-qty').value) || 0;
+                    if (name) {
+                        tamanhos[name] = qty;
+                        quantidade += qty;
+                    }
+                });
+            } else {
+                quantidade = parseInt(document.getElementById('itemQuantity').value);
+            }
+
             const itemData = {
                 id: state.editingItem?.id || 'ITEM-' + Date.now(),
                 nome: document.getElementById('itemName').value,
                 categoria: document.getElementById('itemCategory').value,
-                quantidade: parseInt(document.getElementById('itemQuantity').value),
+                quantidade: quantidade,
                 unidade: document.getElementById('itemUnit').value,
+                unidades_por_caixa: parseInt(document.getElementById('itemUnitsPerBox')?.value) || 1,
+                tamanhos: tamanhos,
                 ca: document.getElementById('itemCA').value,
                 validade: document.getElementById('itemValidity').value,
                 localizacao: document.getElementById('itemLocation').value,
@@ -1332,18 +1556,18 @@
                             <i class="ph-fill ph-package text-7xl"></i>
                         </div>
                         <h1 class="text-4xl font-bold text-center mb-2 font-mono">ALMOXARIFADO</h1>
-                        <p class="text-center text-slate-400 mb-8 text-sm uppercase tracking-wider">Sistema de Controle de EPIs</p>
+                        <p class="text-center text-slate-500 mb-8 text-sm uppercase tracking-wider">Sistema de Controle de EPIs</p>
                         
                         <form onsubmit="handleLogin(event)" class="space-y-6">
                             <div>
-                                <label class="text-sm font-bold text-slate-300 block mb-2 uppercase tracking-wide">Usuário</label>
+                                <label class="text-sm font-bold text-slate-700 block mb-2 uppercase tracking-wide">E-mail</label>
                                 <div class="relative">
-                                    <i class="ph ph-user absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xl"></i>
+                                    <i class="ph ph-envelope absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 text-xl"></i>
                                     <input 
-                                        type="text" 
-                                        id="username"
-                                        class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 pl-12 focus:border-emerald-500 outline-none text-lg text-white"
-                                        placeholder="Digite seu usuário"
+                                        type="email" 
+                                        id="email"
+                                        class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 pl-12 focus:border-emerald-500 outline-none text-lg text-slate-800"
+                                        placeholder="Digite seu e-mail"
                                         ${state.isLoading ? 'disabled' : ''}
                                         required
                                     >
@@ -1351,13 +1575,13 @@
                             </div>
                             
                             <div>
-                                <label class="text-sm font-bold text-slate-300 block mb-2 uppercase tracking-wide">Senha</label>
+                                <label class="text-sm font-bold text-slate-700 block mb-2 uppercase tracking-wide">Senha</label>
                                 <div class="relative">
-                                    <i class="ph ph-lock absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xl"></i>
+                                    <i class="ph ph-lock absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 text-xl"></i>
                                     <input 
                                         type="password" 
                                         id="password"
-                                        class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 pl-12 focus:border-emerald-500 outline-none text-lg text-white"
+                                        class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 pl-12 focus:border-emerald-500 outline-none text-lg text-slate-800"
                                         placeholder="Digite sua senha"
                                         ${state.isLoading ? 'disabled' : ''}
                                         required
@@ -1367,7 +1591,7 @@
                             
                             <button 
                                 type="submit" 
-                                class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed"
+                                class="w-full bg-emerald-600 hover:bg-emerald-700  font-bold py-4 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed text-white"
                                 ${state.isLoading ? 'disabled' : ''}
                             >
                                 ${state.isLoading ? `<i class="ph ph-spinner animate-spin text-2xl"></i> ${state.loadingMessage.toUpperCase()}` : '<i class="ph ph-sign-in text-xl"></i> ENTRAR'}
@@ -1397,7 +1621,7 @@
                             <div class="glass p-6 rounded-xl border-l-4 border-emerald-500">
                                 <div class="flex items-center justify-between">
                                     <div>
-                                        <p class="text-slate-400 text-sm uppercase tracking-wide font-semibold">Total de Itens</p>
+                                        <p class="text-slate-500 text-sm uppercase tracking-wide font-semibold">Total de Itens</p>
                                         <p class="text-4xl font-bold font-mono mt-2">${totalItems}</p>
                                     </div>
                                     <div class="w-16 h-16 bg-emerald-500/20 rounded-xl flex items-center justify-center">
@@ -1409,7 +1633,7 @@
                             <div class="glass p-6 rounded-xl border-l-4 border-blue-500">
                                 <div class="flex items-center justify-between">
                                     <div>
-                                        <p class="text-slate-400 text-sm uppercase tracking-wide font-semibold">Quantidade Total</p>
+                                        <p class="text-slate-500 text-sm uppercase tracking-wide font-semibold">Quantidade Total</p>
                                         <p class="text-4xl font-bold font-mono mt-2">${totalQuantity}</p>
                                     </div>
                                     <div class="w-16 h-16 bg-blue-500/20 rounded-xl flex items-center justify-center">
@@ -1421,7 +1645,7 @@
                             <div class="glass p-6 rounded-xl border-l-4 border-amber-500">
                                 <div class="flex items-center justify-between">
                                     <div>
-                                        <p class="text-slate-400 text-sm uppercase tracking-wide font-semibold">Estoque Baixo</p>
+                                        <p class="text-slate-500 text-sm uppercase tracking-wide font-semibold">Estoque Baixo</p>
                                         <p class="text-4xl font-bold font-mono mt-2">${lowStock}</p>
                                     </div>
                                     <div class="w-16 h-16 bg-amber-500/20 rounded-xl flex items-center justify-center">
@@ -1443,7 +1667,7 @@
                                         <i class="ph-fill ph-arrows-clockwise text-emerald-400 text-2xl"></i>
                                     </div>
                                     <h3 class="font-bold text-sm mb-1">Movimentações</h3>
-                                    <p class="text-slate-400 text-xs">Registrar</p>
+                                    <p class="text-slate-500 text-xs">Registrar</p>
                                 </button>
 
                                 <button onclick="navigateTo('stock')" class="glass p-6 rounded-lg hover:border-blue-500 border-2 border-transparent transition-all text-center group">
@@ -1451,7 +1675,7 @@
                                         <i class="ph-fill ph-warehouse text-blue-400 text-2xl"></i>
                                     </div>
                                     <h3 class="font-bold text-sm mb-1">Estoque</h3>
-                                    <p class="text-slate-400 text-xs">Visualizar</p>
+                                    <p class="text-slate-500 text-xs">Visualizar</p>
                                 </button>
 
                                 <button onclick="navigateToHistory()" class="glass p-6 rounded-lg hover:border-purple-500 border-2 border-transparent transition-all text-center group">
@@ -1459,7 +1683,7 @@
                                         <i class="ph-fill ph-clock-counter-clockwise text-purple-400 text-2xl"></i>
                                     </div>
                                     <h3 class="font-bold text-sm mb-1">Histórico</h3>
-                                    <p class="text-slate-400 text-xs">Ver</p>
+                                    <p class="text-slate-500 text-xs">Ver</p>
                                 </button>
 
                                 <button onclick="navigateToDashboardAnalytics()" class="glass p-6 rounded-lg hover:border-pink-500 border-2 border-transparent transition-all text-center group">
@@ -1467,7 +1691,7 @@
                                         <i class="ph-fill ph-chart-line text-pink-400 text-2xl"></i>
                                     </div>
                                     <h3 class="font-bold text-sm mb-1">Analytics</h3>
-                                    <p class="text-slate-400 text-xs">Relatórios</p>
+                                    <p class="text-slate-500 text-xs">Relatórios</p>
                                 </button>
 
                                 <button onclick="openNewItem()" class="glass p-6 rounded-lg hover:border-amber-500 border-2 border-transparent transition-all text-center group">
@@ -1475,7 +1699,7 @@
                                         <i class="ph-fill ph-plus-circle text-amber-400 text-2xl"></i>
                                     </div>
                                     <h3 class="font-bold text-sm mb-1">Novo Item</h3>
-                                    <p class="text-slate-400 text-xs">Cadastrar</p>
+                                    <p class="text-slate-500 text-xs">Cadastrar</p>
                                 </button>
                             </div>
                         </div>
@@ -1499,7 +1723,7 @@
                                                 <h3 class="font-bold text-lg">${item.nome}</h3>
                                                 <div class="flex gap-2 mt-1">
                                                     <span class="text-xs px-2 py-1 bg-blue-500/20 text-blue-400 rounded-full font-semibold">${item.categoria}</span>
-                                                    <span class="text-xs px-2 py-1 bg-slate-500/20 text-slate-400 rounded-full font-mono">${item.unidade}</span>
+                                                    <span class="text-xs px-2 py-1 bg-slate-500/20 text-slate-500 rounded-full font-mono">${item.unidade}</span>
                                                 </div>
                                             </div>
                                             <div class="text-right">
@@ -1530,7 +1754,7 @@
                         ${state.isLoading ? `
                             <div class="glass p-12 rounded-xl text-center">
                                 <i class="ph ph-spinner animate-spin text-6xl text-blue-400 mb-4"></i>
-                                <p class="text-slate-400">${state.loadingMessage}</p>
+                                <p class="text-slate-500">${state.loadingMessage}</p>
                             </div>
                         ` : `
                             <!-- Gráficos -->
@@ -1564,19 +1788,19 @@
                                     <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
                                         <div class="text-center p-4 bg-emerald-500/10 rounded-lg">
                                             <p class="text-emerald-400 text-3xl font-bold font-mono">${state.statistics.totalMovements}</p>
-                                            <p class="text-slate-400 text-sm mt-1">Total Movimentações</p>
+                                            <p class="text-slate-500 text-sm mt-1">Total Movimentações</p>
                                         </div>
                                         <div class="text-center p-4 bg-blue-500/10 rounded-lg">
                                             <p class="text-blue-400 text-3xl font-bold font-mono">${state.statistics.movementsByType.COMPRA || 0}</p>
-                                            <p class="text-slate-400 text-sm mt-1">Compras</p>
+                                            <p class="text-slate-500 text-sm mt-1">Compras</p>
                                         </div>
                                         <div class="text-center p-4 bg-purple-500/10 rounded-lg">
                                             <p class="text-purple-400 text-3xl font-bold font-mono">${state.statistics.movementsByType.DISTRIBUICAO || 0}</p>
-                                            <p class="text-slate-400 text-sm mt-1">Distribuições</p>
+                                            <p class="text-slate-500 text-sm mt-1">Distribuições</p>
                                         </div>
                                         <div class="text-center p-4 bg-amber-500/10 rounded-lg">
                                             <p class="text-amber-400 text-3xl font-bold font-mono">${state.statistics.lowStock}</p>
-                                            <p class="text-slate-400 text-sm mt-1">Estoque Baixo</p>
+                                            <p class="text-slate-500 text-sm mt-1">Estoque Baixo</p>
                                         </div>
                                     </div>
                                 </div>
@@ -1599,7 +1823,7 @@
                                     <i class="ph-fill ph-arrows-clockwise text-emerald-400"></i>
                                     Tipo de Movimentação
                                 </h1>
-                                <button onclick="goBack()" class="text-slate-400 hover:text-white transition-all">
+                                <button onclick="goBack()" class="text-slate-500 hover:text-red-500 transition-all">
                                     <i class="ph ph-x text-3xl"></i>
                                 </button>
                             </div>
@@ -1611,8 +1835,8 @@
                                         <i class="ph-fill ph-shopping-cart text-emerald-400 text-3xl md:text-4xl"></i>
                                     </div>
                                     <h3 class="font-bold text-lg md:text-xl mb-2">Compra</h3>
-                                    <p class="text-slate-400 text-xs md:text-sm">Novos itens do fornecedor</p>
-                                    <div class="mt-3 md:mt-4 pt-3 md:pt-4 border-t border-slate-700">
+                                    <p class="text-slate-500 text-xs md:text-sm">Novos itens do fornecedor</p>
+                                    <div class="mt-3 md:mt-4 pt-3 md:pt-4 border-t border-slate-200">
                                         <p class="text-xs text-emerald-400 font-semibold">
                                             <i class="ph-fill ph-arrow-up"></i> ADICIONA
                                         </p>
@@ -1625,8 +1849,8 @@
                                         <i class="ph-fill ph-arrow-clockwise text-blue-400 text-3xl md:text-4xl"></i>
                                     </div>
                                     <h3 class="font-bold text-lg md:text-xl mb-2">Reposição</h3>
-                                    <p class="text-slate-400 text-xs md:text-sm">Transferência interna</p>
-                                    <div class="mt-3 md:mt-4 pt-3 md:pt-4 border-t border-slate-700">
+                                    <p class="text-slate-500 text-xs md:text-sm">Transferência interna</p>
+                                    <div class="mt-3 md:mt-4 pt-3 md:pt-4 border-t border-slate-200">
                                         <p class="text-xs text-blue-400 font-semibold">
                                             <i class="ph-fill ph-arrow-down"></i> REMOVE
                                         </p>
@@ -1639,8 +1863,8 @@
                                         <i class="ph-fill ph-hand-coins text-purple-400 text-3xl md:text-4xl"></i>
                                     </div>
                                     <h3 class="font-bold text-lg md:text-xl mb-2">Distribuição</h3>
-                                    <p class="text-slate-400 text-xs md:text-sm">Entrega para colaborador</p>
-                                    <div class="mt-3 md:mt-4 pt-3 md:pt-4 border-t border-slate-700">
+                                    <p class="text-slate-500 text-xs md:text-sm">Entrega para colaborador</p>
+                                    <div class="mt-3 md:mt-4 pt-3 md:pt-4 border-t border-slate-200">
                                         <p class="text-xs text-purple-400 font-semibold">
                                             <i class="ph-fill ph-arrow-down"></i> REMOVE
                                         </p>
@@ -1671,7 +1895,7 @@
                                     <span class="hidden md:inline">${typeInfo.label}</span>
                                     <span class="md:hidden">${typeInfo.label.split(' ')[0]}</span>
                                 </h1>
-                                <button onclick="cancelMovement()" class="text-slate-400 hover:text-white transition-all">
+                                <button onclick="cancelMovement()" class="text-slate-500 hover:text-red-500 transition-all">
                                     <i class="ph ph-x text-3xl"></i>
                                 </button>
                             </div>
@@ -1680,17 +1904,17 @@
                                 <div class="text-center py-12 text-slate-500">
                                     <i class="ph ph-warning-circle text-6xl md:text-8xl mb-4 text-amber-500"></i>
                                     <p class="text-lg md:text-xl mb-4">Nenhum item disponível</p>
-                                    <button onclick="cancelMovement()" class="bg-slate-700 hover:bg-slate-600 px-6 py-3 rounded-lg font-bold">
+                                    <button onclick="cancelMovement()" class="bg-slate-200 hover:bg-slate-300 px-6 py-3 rounded-lg font-bold">
                                         Voltar
                                     </button>
                                 </div>
                             ` : `
                                 <form onsubmit="event.preventDefault(); confirmMovement();" class="space-y-6">
                                     <div>
-                                        <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Selecione o Item *</label>
+                                        <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Selecione o Item *</label>
                                         <select 
-                                            onchange="state.movementOperation.selectedItem = this.value; render()"
-                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-${typeInfo.color}-500 outline-none text-base md:text-lg text-white"
+                                            onchange="state.movementOperation.selectedItem = this.value; state.movementOperation.size = null; render()"
+                                            class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-${typeInfo.color}-500 outline-none text-base md:text-lg text-slate-800"
                                             required
                                         >
                                             <option value="">-- Escolha um item --</option>
@@ -1706,39 +1930,69 @@
                                         <div class="glass p-4 rounded-lg border-2 border-${typeInfo.color}-500/50">
                                             <div class="flex justify-between items-center">
                                                 <div>
-                                                    <p class="text-slate-400 text-sm">Selecionado</p>
+                                                    <p class="text-slate-500 text-sm">Selecionado</p>
                                                     <p class="font-bold text-base md:text-lg">${selectedItem.nome}</p>
                                                 </div>
                                                 <div class="text-right">
-                                                    <p class="text-slate-400 text-sm">Estoque</p>
+                                                    <p class="text-slate-500 text-sm">Estoque Total</p>
                                                     <p class="font-bold text-xl md:text-2xl font-mono text-${typeInfo.color}-400">${selectedItem.quantidade}</p>
                                                 </div>
                                             </div>
                                         </div>
                                     ` : ''}
 
+                                    ${selectedItem && selectedItem.tamanhos && Object.keys(selectedItem.tamanhos).length > 0 ? `
+                                        <div>
+                                            <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Tamanho *</label>
+                                            <select 
+                                                onchange="state.movementOperation.size = this.value; render()"
+                                                class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-${typeInfo.color}-500 outline-none text-base md:text-lg text-slate-800"
+                                                required
+                                            >
+                                                <option value="">-- Selecione o tamanho --</option>
+                                                ${Object.entries(selectedItem.tamanhos).map(([size, qty]) => `
+                                                    <option value="${size}" ${op.size === size ? 'selected' : ''}>
+                                                        ${size} (Estoque: ${qty})
+                                                    </option>
+                                                `).join('')}
+                                            </select>
+                                        </div>
+                                    ` : ''}
+
                                     ${op.type === 'DISTRIBUICAO' ? `
                                         <div>
-                                            <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Colaborador *</label>
+                                            <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Colaborador *</label>
                                             <input 
                                                 type="text"
                                                 value="${op.employeeName}"
                                                 onchange="state.movementOperation.employeeName = this.value"
-                                                class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-${typeInfo.color}-500 outline-none text-base md:text-lg text-white"
+                                                class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-${typeInfo.color}-500 outline-none text-base md:text-lg text-slate-800"
                                                 placeholder="Nome completo"
                                                 required
                                             >
+                                        </div>
+                                        <div>
+                                            <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Devolveu EPI Antigo? *</label>
+                                            <select 
+                                                onchange="state.movementOperation.returnedOldEpi = this.value === 'true'"
+                                                class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-${typeInfo.color}-500 outline-none text-base md:text-lg text-slate-800"
+                                                required
+                                            >
+                                                <option value="" disabled ${op.returnedOldEpi === null ? 'selected' : ''}>-- Selecione --</option>
+                                                <option value="true" ${op.returnedOldEpi === true ? 'selected' : ''}>Sim, devolveu</option>
+                                                <option value="false" ${op.returnedOldEpi === false ? 'selected' : ''}>Não devolveu / Primeira vez</option>
+                                            </select>
                                         </div>
                                     ` : ''}
 
                                     ${op.type === 'COMPRA' ? `
                                         <div>
-                                            <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Fornecedor *</label>
+                                            <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Fornecedor *</label>
                                             <input 
                                                 type="text"
                                                 value="${op.supplier}"
                                                 onchange="state.movementOperation.supplier = this.value"
-                                                class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-${typeInfo.color}-500 outline-none text-base md:text-lg text-white"
+                                                class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-${typeInfo.color}-500 outline-none text-base md:text-lg text-slate-800"
                                                 placeholder="Nome do fornecedor"
                                                 required
                                             >
@@ -1746,23 +2000,23 @@
                                     ` : ''}
 
                                     <div>
-                                        <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Quantidade *</label>
+                                        <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Quantidade *</label>
                                         <input 
                                             type="number"
                                             value="${op.quantity}"
                                             onchange="state.movementOperation.quantity = parseInt(this.value)"
                                             min="1"
                                             ${selectedItem && (op.type === 'DISTRIBUICAO' || op.type === 'REPOSICAO') ? `max="${selectedItem.quantidade}"` : ''}
-                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-${typeInfo.color}-500 outline-none text-base md:text-lg text-white font-mono"
+                                            class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-${typeInfo.color}-500 outline-none text-base md:text-lg text-slate-800 font-mono"
                                             required
                                         >
                                     </div>
 
                                     <div>
-                                        <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Observações</label>
+                                        <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Observações</label>
                                         <textarea 
                                             onchange="state.movementOperation.observations = this.value"
-                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-${typeInfo.color}-500 outline-none text-base md:text-lg text-white"
+                                            class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-${typeInfo.color}-500 outline-none text-base md:text-lg text-slate-800"
                                             rows="3"
                                             placeholder="Informações adicionais (opcional)"
                                         >${op.observations}</textarea>
@@ -1772,13 +2026,13 @@
                                         <button 
                                             type="button"
                                             onclick="cancelMovement()"
-                                            class="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-4 rounded-xl transition-all"
+                                            class="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-4 rounded-xl transition-all"
                                         >
                                             CANCELAR
                                         </button>
                                         <button 
                                             type="submit"
-                                            class="flex-1 bg-${typeInfo.color}-600 hover:bg-${typeInfo.color}-700 text-white font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2"
+                                            class="flex-1 bg-${typeInfo.color}-600 hover:bg-${typeInfo.color}-700 text-slate-800 font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2"
                                         >
                                             <i class="ph ph-check-circle text-xl"></i>
                                             <span class="hidden md:inline">CONFIRMAR</span>
@@ -1807,11 +2061,17 @@
                                 <i class="ph-fill ph-warehouse text-emerald-400"></i>
                                 Estoque de EPIs
                             </h1>
-                            <button onclick="openNewItem()" class="bg-emerald-600 hover:bg-emerald-700 px-4 md:px-6 py-3 rounded-lg font-bold flex items-center gap-2 transition-all">
-                                <i class="ph-fill ph-plus-circle text-xl"></i>
-                                <span class="hidden md:inline">Novo Item</span>
-                                <span class="md:inline hidden">+</span>
-                            </button>
+                            <div class="flex gap-2">
+                                <button onclick="exportStockToXLSX()" class="bg-blue-600 hover:bg-blue-700 px-4 md:px-6 py-3 rounded-lg font-bold flex items-center gap-2 transition-all text-white">
+                                    <i class="ph-fill ph-download-simple text-xl"></i>
+                                    <span class="hidden md:inline">Exportar Excel</span>
+                                </button>
+                                <button onclick="openNewItem()" class="bg-emerald-600 hover:bg-emerald-700 px-4 md:px-6 py-3 rounded-lg font-bold flex items-center gap-2 transition-all text-white">
+                                    <i class="ph-fill ph-plus-circle text-xl"></i>
+                                    <span class="hidden md:inline">Novo Item</span>
+                                    <span class="md:inline hidden">+</span>
+                                </button>
+                            </div>
                         </div>
 
                         <!-- Filtros Avançados -->
@@ -1822,10 +2082,10 @@
                             </h2>
                             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div>
-                                    <label class="text-xs font-bold text-slate-400 block mb-2 uppercase">Categoria</label>
+                                    <label class="text-xs font-bold text-slate-500 block mb-2 uppercase">Categoria</label>
                                     <select 
                                         onchange="state.filters.category = this.value; render()"
-                                        class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-3 focus:border-blue-500 outline-none text-white text-sm"
+                                        class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-3 focus:border-blue-500 outline-none text-slate-800 text-sm"
                                     >
                                         <option value="TODAS">Todas</option>
                                         ${categories.map(cat => `
@@ -1834,12 +2094,12 @@
                                     </select>
                                 </div>
                                 <div>
-                                    <label class="text-xs font-bold text-slate-400 block mb-2 uppercase">Localização</label>
+                                    <label class="text-xs font-bold text-slate-500 block mb-2 uppercase">Localização</label>
                                     <input 
                                         type="text"
                                         value="${state.filters.location}"
                                         oninput="state.filters.location = this.value; render()"
-                                        class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-3 focus:border-blue-500 outline-none text-white text-sm"
+                                        class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-3 focus:border-blue-500 outline-none text-slate-800 text-sm"
                                         placeholder="Ex: Prateleira A1"
                                     >
                                 </div>
@@ -1856,12 +2116,12 @@
                                 </div>
                             </div>
                             <div class="mt-4">
-                                <label class="text-xs font-bold text-slate-400 block mb-2 uppercase">Pesquisar</label>
+                                <label class="text-xs font-bold text-slate-500 block mb-2 uppercase">Pesquisar</label>
                                 <input 
                                     type="text"
                                     value="${state.filters.searchTerm}"
                                     oninput="handleSearchInput(this.value)"
-                                    class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-3 focus:border-blue-500 outline-none text-white"
+                                    class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-3 focus:border-blue-500 outline-none text-slate-800"
                                     placeholder="Buscar por nome, categoria, CA..."
                                 >
                             </div>
@@ -1870,20 +2130,20 @@
                         ${filteredItems.length === 0 ? `
                             <div class="glass p-12 rounded-xl text-center">
                                 <i class="ph ph-package text-6xl md:text-8xl text-slate-600 mb-4"></i>
-                                <p class="text-slate-400 text-lg md:text-xl mb-6">Nenhum item encontrado</p>
+                                <p class="text-slate-500 text-lg md:text-xl mb-6">Nenhum item encontrado</p>
                                 ${state.filters.searchTerm || state.filters.category !== 'TODAS' || state.filters.location || state.filters.lowStockOnly ? `
-                                    <button onclick="state.filters = {startDate: getFirstDayOfMonth(), endDate: getCurrentDate(), type: 'TODOS', searchTerm: '', category: 'TODAS', minQuantity: '', maxQuantity: '', location: '', lowStockOnly: false}; render()" class="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg font-bold">
+                                    <button onclick="state.filters = {startDate: getFirstDayOfMonth(), endDate: getCurrentDate(), type: 'TODOS', searchTerm: '', category: 'TODAS', minQuantity: '', maxQuantity: '', location: '', lowStockOnly: false}; render()" class="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg font-bold text-white">
                                         Limpar Filtros
                                     </button>
                                 ` : `
-                                    <button onclick="openNewItem()" class="bg-emerald-600 hover:bg-emerald-700 px-6 py-3 rounded-lg font-bold">
+                                    <button onclick="openNewItem()" class="bg-emerald-600 hover:bg-emerald-700 px-6 py-3 rounded-lg font-bold text-white">
                                         Cadastrar Primeiro Item
                                     </button>
                                 `}
                             </div>
                         ` : `
-                            <div class="mb-4 text-slate-400 text-sm">
-                                Mostrando <span class="font-bold text-white">${filteredItems.length}</span> de <span class="font-bold text-white">${state.items.length}</span> itens
+                            <div class="mb-4 text-slate-500 text-sm">
+                                Mostrando <span class="font-bold text-slate-800">${filteredItems.length}</span> de <span class="font-bold text-slate-800">${state.items.length}</span> itens
                             </div>
                             
                             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1894,7 +2154,7 @@
                                                 <h3 class="font-bold text-lg md:text-xl mb-2 break-words">${item.nome}</h3>
                                                 <div class="flex gap-2 flex-wrap">
                                                     <span class="text-xs px-2 md:px-3 py-1 bg-blue-500/20 text-blue-400 rounded-full font-semibold">${item.categoria}</span>
-                                                    <span class="text-xs px-2 md:px-3 py-1 bg-slate-500/20 text-slate-400 rounded-full font-mono">${item.unidade}</span>
+                                                    <span class="text-xs px-2 md:px-3 py-1 bg-slate-500/20 text-slate-500 rounded-full font-mono">${item.unidade}</span>
                                                     ${item.ca ? `<span class="text-xs px-2 md:px-3 py-1 bg-purple-500/20 text-purple-400 rounded-full font-mono">CA ${item.ca}</span>` : ''}
                                                 </div>
                                             </div>
@@ -1902,11 +2162,29 @@
 
                                         <div class="mb-4">
                                             <div class="flex justify-between items-end mb-2">
-                                                <span class="text-slate-400 text-xs md:text-sm uppercase">Quantidade</span>
-                                                <span class="text-2xl md:text-3xl font-bold font-mono ${item.quantidade < 10 ? 'text-amber-400' : 'text-emerald-400'}">${item.quantidade}</span>
+                                                <span class="text-slate-500 text-xs md:text-sm uppercase">Quantidade Total</span>
+                                                <span class="text-2xl md:text-3xl font-bold font-mono ${item.quantidade < 10 ? 'text-amber-500' : 'text-emerald-600'}">${item.quantidade}</span>
                                             </div>
+                                            
+                                            ${item.tamanhos && Object.keys(item.tamanhos).length > 0 ? `
+                                                <div class="mt-3 flex flex-wrap gap-2">
+                                                    ${Object.entries(item.tamanhos).map(([size, qty]) => `
+                                                        <div class="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs">
+                                                            <span class="font-bold text-slate-700">${size}:</span> 
+                                                            <span class="font-mono ${qty > 0 ? 'text-emerald-600' : 'text-red-500'}">${qty}</span>
+                                                        </div>
+                                                    `).join('')}
+                                                </div>
+                                            ` : ''}
+
+                                            ${item.unidades_por_caixa && item.unidades_por_caixa > 1 ? `
+                                                <div class="mt-2 text-xs text-slate-500 font-semibold">
+                                                    <i class="ph ph-package"></i> ${item.unidades_por_caixa} unidades por caixa
+                                                </div>
+                                            ` : ''}
+
                                             ${item.quantidade < 10 ? `
-                                                <div class="bg-amber-500/20 border border-amber-500 text-amber-400 px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-2">
+                                                <div class="mt-3 bg-amber-50 border border-amber-200 text-amber-600 px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-2">
                                                     <i class="ph-fill ph-warning"></i>
                                                     ESTOQUE BAIXO
                                                 </div>
@@ -1914,25 +2192,25 @@
                                         </div>
 
                                         ${item.localizacao ? `
-                                            <p class="text-slate-400 text-xs md:text-sm mb-2 flex items-center gap-2">
+                                            <p class="text-slate-500 text-xs md:text-sm mb-2 flex items-center gap-2">
                                                 <i class="ph ph-map-pin"></i>
                                                 ${item.localizacao}
                                             </p>
                                         ` : ''}
 
                                         ${item.validade ? `
-                                            <p class="text-slate-400 text-xs md:text-sm mb-4 flex items-center gap-2">
+                                            <p class="text-slate-500 text-xs md:text-sm mb-4 flex items-center gap-2">
                                                 <i class="ph ph-calendar"></i>
                                                 Val: ${formatDate(item.validade)}
                                             </p>
                                         ` : ''}
 
-                                        <div class="flex gap-2 pt-4 border-t border-slate-700">
-                                            <button onclick='openEditItem(${JSON.stringify(item).replace(/'/g, "&#39;")})' class="flex-1 bg-blue-600 hover:bg-blue-700 px-3 md:px-4 py-2 rounded-lg font-semibold transition-all flex items-center justify-center gap-2 text-sm">
+                                        <div class="flex gap-2 pt-4 border-t border-slate-200">
+                                            <button onclick='openEditItem(${JSON.stringify(item).replace(/'/g, "&#39;")})' class="flex-1 bg-blue-600 hover:bg-blue-700 px-3 md:px-4 py-2 rounded-lg font-semibold transition-all flex items-center justify-center gap-2 text-sm text-white">
                                                 <i class="ph ph-pencil-simple"></i>
                                                 Editar
                                             </button>
-                                            <button onclick="handleDeleteItem('${item.id}')" class="bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white px-3 md:px-4 py-2 rounded-lg font-semibold transition-all flex items-center justify-center gap-2 border border-red-500 text-sm">
+                                            <button onclick="handleDeleteItem('${item.id}')" class="bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-red-500 px-3 md:px-4 py-2 rounded-lg font-semibold transition-all flex items-center justify-center gap-2 border border-red-500 text-sm text-white">
                                                 <i class="ph ph-trash"></i>
                                             </button>
                                         </div>
@@ -1955,10 +2233,16 @@
                     ${renderHeader()}
                     
                     <main class="p-4 max-w-7xl mx-auto space-y-6">
-                        <h1 class="text-2xl md:text-3xl font-bold flex items-center gap-3">
-                            <i class="ph-fill ph-clock-counter-clockwise text-purple-400"></i>
-                            Histórico de Movimentações
-                        </h1>
+                        <div class="flex justify-between items-center mb-6 flex-wrap gap-4">
+                            <h1 class="text-2xl md:text-3xl font-bold flex items-center gap-3">
+                                <i class="ph-fill ph-clock-counter-clockwise text-purple-400"></i>
+                                Histórico de Movimentações
+                            </h1>
+                            <button onclick="exportMovementsToXLSX()" class="bg-blue-600 hover:bg-blue-700 px-4 md:px-6 py-3 rounded-lg font-bold flex items-center gap-2 transition-all text-white">
+                                <i class="ph-fill ph-download-simple text-xl"></i>
+                                <span class="hidden md:inline">Exportar Excel</span>
+                            </button>
+                        </div>
 
                         <!-- Filtros -->
                         <div class="glass p-4 md:p-6 rounded-xl">
@@ -1968,28 +2252,28 @@
                             </h2>
                             <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
                                 <div>
-                                    <label class="text-xs font-bold text-slate-400 block mb-2 uppercase">Data Inicial</label>
+                                    <label class="text-xs font-bold text-slate-500 block mb-2 uppercase">Data Inicial</label>
                                     <input 
                                         type="date"
                                         value="${state.filters.startDate}"
                                         onchange="state.filters.startDate = this.value"
-                                        class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-3 focus:border-blue-500 outline-none text-white text-sm"
+                                        class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-3 focus:border-blue-500 outline-none text-slate-800 text-sm"
                                     >
                                 </div>
                                 <div>
-                                    <label class="text-xs font-bold text-slate-400 block mb-2 uppercase">Data Final</label>
+                                    <label class="text-xs font-bold text-slate-500 block mb-2 uppercase">Data Final</label>
                                     <input 
                                         type="date"
                                         value="${state.filters.endDate}"
                                         onchange="state.filters.endDate = this.value"
-                                        class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-3 focus:border-blue-500 outline-none text-white text-sm"
+                                        class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-3 focus:border-blue-500 outline-none text-slate-800 text-sm"
                                     >
                                 </div>
                                 <div>
-                                    <label class="text-xs font-bold text-slate-400 block mb-2 uppercase">Tipo</label>
+                                    <label class="text-xs font-bold text-slate-500 block mb-2 uppercase">Tipo</label>
                                     <select 
                                         onchange="state.filters.type = this.value"
-                                        class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-3 focus:border-blue-500 outline-none text-white text-sm"
+                                        class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-3 focus:border-blue-500 outline-none text-slate-800 text-sm"
                                     >
                                         <option value="TODOS" ${state.filters.type === 'TODOS' ? 'selected' : ''}>Todos</option>
                                         ${Object.entries(MOVEMENT_TYPES).map(([code, info]) => `
@@ -2000,7 +2284,7 @@
                                 <div class="flex items-end">
                                     <button 
                                         onclick="applyFilters()"
-                                        class="w-full bg-blue-600 hover:bg-blue-700 px-4 md:px-6 py-3 rounded-lg font-bold transition-all flex items-center justify-center gap-2"
+                                        class="w-full bg-blue-600 hover:bg-blue-700 px-4 md:px-6 py-3 rounded-lg font-bold transition-all flex items-center justify-center gap-2 text-white"
                                         ${state.isLoading ? 'disabled' : ''}
                                     >
                                         <i class="ph ph-magnifying-glass"></i>
@@ -2010,12 +2294,12 @@
                             </div>
 
                             <div class="mt-4">
-                                <label class="text-xs font-bold text-slate-400 block mb-2 uppercase">Pesquisar</label>
+                                <label class="text-xs font-bold text-slate-500 block mb-2 uppercase">Pesquisar</label>
                                 <input 
                                     type="text"
                                     value="${state.filters.searchTerm}"
                                     oninput="handleSearchInput(this.value)"
-                                    class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-3 focus:border-blue-500 outline-none text-white"
+                                    class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-3 focus:border-blue-500 outline-none text-slate-800"
                                     placeholder="Buscar por item, colaborador, fornecedor..."
                                 >
                             </div>
@@ -2024,11 +2308,11 @@
                         <!-- Resultados -->
                         <div class="glass p-4 md:p-6 rounded-xl">
                             <div class="flex justify-between items-center mb-4 flex-wrap gap-2">
-                                <p class="text-slate-400 text-sm">
-                                    Mostrando <span class="font-bold text-white">${paginatedMovements.length}</span> de <span class="font-bold text-white">${filteredMovements.length}</span>
+                                <p class="text-slate-500 text-sm">
+                                    Mostrando <span class="font-bold text-slate-800">${paginatedMovements.length}</span> de <span class="font-bold text-slate-800">${filteredMovements.length}</span>
                                 </p>
                                 ${totalPages > 0 ? `
-                                    <p class="text-slate-400 font-mono text-xs md:text-sm">
+                                    <p class="text-slate-500 font-mono text-xs md:text-sm">
                                         Pág ${state.currentPage}/${totalPages}
                                     </p>
                                 ` : ''}
@@ -2037,7 +2321,7 @@
                             ${state.isLoading ? `
                                 <div class="text-center py-12">
                                     <i class="ph ph-spinner animate-spin text-6xl text-blue-400"></i>
-                                    <p class="text-slate-400 mt-4">${state.loadingMessage}</p>
+                                    <p class="text-slate-500 mt-4">${state.loadingMessage}</p>
                                 </div>
                             ` : filteredMovements.length === 0 ? `
                                 <div class="text-center py-12 text-slate-500">
@@ -2055,7 +2339,7 @@
                                                     <div class="flex-1 min-w-0">
                                                         <div class="flex items-center gap-3 mb-2 flex-wrap">
                                                             <div class="w-10 h-10 ${getColorClass(typeInfo.color, 'full')} rounded-lg flex items-center justify-center flex-shrink-0">
-                                                                <i class="ph-fill ph-${typeInfo.icon} text-white text-xl"></i>
+                                                                <i class="ph-fill ph-${typeInfo.icon} text-slate-800 text-xl"></i>
                                                             </div>
                                                             <div class="min-w-0 flex-1">
                                                                 <h3 class="font-bold text-base md:text-lg truncate">${movement.itemName}</h3>
@@ -2063,7 +2347,7 @@
                                                             </div>
                                                         </div>
                                                         
-                                                        <div class="md:ml-13 space-y-1 text-xs md:text-sm text-slate-400">
+                                                        <div class="md:ml-13 space-y-1 text-xs md:text-sm text-slate-500">
                                                             ${movement.employee ? `
                                                                 <p class="flex items-center gap-2 truncate">
                                                                     <i class="ph ph-user flex-shrink-0"></i>
@@ -2082,8 +2366,14 @@
                                                             </p>
                                                             <p class="flex items-center gap-2 truncate">
                                                                 <i class="ph ph-user-circle flex-shrink-0"></i>
-                                                                ${movement.user}
+                                                                ${movement.user_name || movement.user || '-'}
                                                             </p>
+                                                            ${movement.observations ? `
+                                                                <p class="flex items-start gap-2 mt-1 text-slate-600">
+                                                                    <i class="ph ph-note flex-shrink-0 mt-0.5"></i>
+                                                                    <span style="white-space:pre-wrap">${movement.observations}</span>
+                                                                </p>
+                                                            ` : ''}
                                                         </div>
                                                     </div>
                                                     
@@ -2101,11 +2391,11 @@
 
                                 <!-- Paginação -->
                                 ${totalPages > 1 ? `
-                                    <div class="flex justify-center items-center gap-2 mt-6 pt-6 border-t border-slate-700 flex-wrap">
+                                    <div class="flex justify-center items-center gap-2 mt-6 pt-6 border-t border-slate-200 flex-wrap">
                                         <button 
                                             onclick="changePage(-1)"
                                             ${state.currentPage === 1 ? 'disabled' : ''}
-                                            class="px-3 md:px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm"
+                                            class="px-3 md:px-4 py-2 bg-slate-200 hover:bg-slate-300 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm"
                                         >
                                             <i class="ph ph-caret-left"></i>
                                             <span class="hidden md:inline ml-1">Anterior</span>
@@ -2126,7 +2416,7 @@
                                                 return `
                                                     <button 
                                                         onclick="state.currentPage = ${pageNum}; render()"
-                                                        class="w-8 h-8 md:w-10 md:h-10 rounded-lg font-bold text-sm ${state.currentPage === pageNum ? 'bg-blue-600' : 'bg-slate-700 hover:bg-slate-600'} transition-all"
+                                                        class="w-8 h-8 md:w-10 md:h-10 rounded-lg font-bold text-sm ${state.currentPage === pageNum ? 'bg-blue-600' : 'bg-slate-200 hover:bg-slate-300'} transition-all text-white"
                                                     >
                                                         ${pageNum}
                                                     </button>
@@ -2137,7 +2427,7 @@
                                         <button 
                                             onclick="changePage(1)"
                                             ${state.currentPage === totalPages ? 'disabled' : ''}
-                                            class="px-3 md:px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm"
+                                            class="px-3 md:px-4 py-2 bg-slate-200 hover:bg-slate-300 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm"
                                         >
                                             <span class="hidden md:inline mr-1">Próxima</span>
                                             <i class="ph ph-caret-right"></i>
@@ -2167,7 +2457,7 @@
                                     <span class="hidden md:inline">${isEdit ? 'Editar Item' : 'Novo Item'}</span>
                                     <span class="md:hidden">${isEdit ? 'Editar' : 'Novo'}</span>
                                 </h1>
-                                <button onclick="goBack()" class="text-slate-400 hover:text-white transition-all">
+                                <button onclick="goBack()" class="text-slate-500 hover:text-red-500 transition-all">
                                     <i class="ph ph-x text-3xl"></i>
                                 </button>
                             </div>
@@ -2175,22 +2465,22 @@
                             <form onsubmit="handleSaveItem(event)" class="space-y-6">
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                                     <div class="md:col-span-2">
-                                        <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Nome do Item *</label>
+                                        <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Nome do Item *</label>
                                         <input 
                                             type="text"
                                             id="itemName"
                                             value="${item.nome || ''}"
-                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-white"
+                                            class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-slate-800"
                                             placeholder="Ex: Capacete de Segurança"
                                             required
                                         >
                                     </div>
 
                                     <div>
-                                        <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Categoria *</label>
+                                        <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Categoria *</label>
                                         <select 
                                             id="itemCategory"
-                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-white"
+                                            class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-slate-800"
                                             required
                                         >
                                             <option value="">Selecione...</option>
@@ -2202,87 +2492,140 @@
                                     </div>
 
                                     <div>
-                                        <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Unidade *</label>
-                                        <select 
-                                            id="itemUnit"
-                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-white"
-                                            required
-                                        >
-                                            <option value="">Selecione...</option>
-                                            <option value="UN" ${item.unidade === 'UN' ? 'selected' : ''}>Unidade (UN)</option>
-                                            <option value="PAR" ${item.unidade === 'PAR' ? 'selected' : ''}>Par (PAR)</option>
-                                            <option value="CX" ${item.unidade === 'CX' ? 'selected' : ''}>Caixa (CX)</option>
-                                            <option value="KG" ${item.unidade === 'KG' ? 'selected' : ''}>Quilograma (KG)</option>
-                                            <option value="LT" ${item.unidade === 'LT' ? 'selected' : ''}>Litro (LT)</option>
-                                        </select>
+                                        <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Unidade *</label>
+                                        <div class="flex gap-2">
+                                            <select 
+                                                id="itemUnit"
+                                                class="w-2/3 bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-slate-800"
+                                                required
+                                            >
+                                                <option value="">Selecione...</option>
+                                                <option value="UN" ${item.unidade === 'UN' ? 'selected' : ''}>Unidade (UN)</option>
+                                                <option value="PAR" ${item.unidade === 'PAR' ? 'selected' : ''}>Par (PAR)</option>
+                                                <option value="CX" ${item.unidade === 'CX' ? 'selected' : ''}>Caixa (CX)</option>
+                                                <option value="KG" ${item.unidade === 'KG' ? 'selected' : ''}>Quilograma (KG)</option>
+                                                <option value="LT" ${item.unidade === 'LT' ? 'selected' : ''}>Litro (LT)</option>
+                                            </select>
+                                            <div class="w-1/3 flex flex-col">
+                                                <input 
+                                                    type="number"
+                                                    id="itemUnitsPerBox"
+                                                    value="${item.unidades_por_caixa || 1}"
+                                                    min="1"
+                                                    class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-slate-800 font-mono"
+                                                    title="Unidades por caixa"
+                                                    placeholder="Unid/CX"
+                                                    required
+                                                >
+                                            </div>
+                                        </div>
                                     </div>
 
-                                    <div>
-                                        <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Quantidade *</label>
+                                    <div class="md:col-span-2">
+                                        <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Variações de Tamanho</label>
+                                        <div class="bg-slate-50 border-2 border-slate-200 rounded-lg p-4">
+                                            <div class="flex items-center justify-between mb-4">
+                                                <span class="text-sm text-slate-600">Este item possui numeração ou tamanhos? (ex: 38, 40, P, M, G)</span>
+                                                <label class="relative inline-flex items-center cursor-pointer">
+                                                    <input type="checkbox" id="hasSizes" class="sr-only peer" ${item.tamanhos && Object.keys(item.tamanhos).length > 0 ? 'checked' : ''} onchange="toggleSizesSection(this.checked)">
+                                                    <div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                                                </label>
+                                            </div>
+                                            
+                                            <div id="sizesConfigArea" class="${item.tamanhos && Object.keys(item.tamanhos).length > 0 ? 'block' : 'hidden'}">
+                                                <div id="sizesList" class="space-y-3 mb-3">
+                                                    ${(() => {
+                                                        if (item.tamanhos && Object.keys(item.tamanhos).length > 0) {
+                                                            return Object.entries(item.tamanhos).map(([size, qty]) => `
+                                                                <div class="flex gap-3 items-center size-row mb-2">
+                                                                    <input type="text" class="size-name w-1/2 bg-white border border-slate-300 rounded p-2 focus:border-amber-500 outline-none" placeholder="Ex: 40 ou M" value="${size}" required>
+                                                                    <input type="number" class="size-qty w-1/3 bg-white border border-slate-300 rounded p-2 font-mono focus:border-amber-500 outline-none" placeholder="Qtd" value="${qty}" required min="0">
+                                                                    <button type="button" onclick="this.parentElement.remove()" class="text-red-500 hover:text-red-700 p-2"><i class="ph-bold ph-trash"></i></button>
+                                                                </div>
+                                                            `).join('');
+                                                        }
+                                                        return `
+                                                            <div class="flex gap-3 items-center size-row mb-2">
+                                                                <input type="text" class="size-name w-1/2 bg-white border border-slate-300 rounded p-2 focus:border-amber-500 outline-none" placeholder="Ex: 40 ou M" required>
+                                                                <input type="number" class="size-qty w-1/3 bg-white border border-slate-300 rounded p-2 font-mono focus:border-amber-500 outline-none" placeholder="Qtd" value="0" required min="0">
+                                                                <button type="button" onclick="this.parentElement.remove()" class="text-red-500 hover:text-red-700 p-2"><i class="ph-bold ph-trash"></i></button>
+                                                            </div>
+                                                        `;
+                                                    })()}
+                                                </div>
+                                                <button type="button" onclick="addSizeRow()" class="text-emerald-600 text-sm font-bold flex items-center gap-2 hover:text-emerald-700">
+                                                    <i class="ph-bold ph-plus"></i> Adicionar Tamanho
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div id="singleQuantityArea" class="md:col-span-2 ${item.tamanhos && Object.keys(item.tamanhos).length > 0 ? 'hidden' : 'block'}">
+                                        <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Quantidade Total *</label>
                                         <input 
                                             type="number"
                                             id="itemQuantity"
                                             value="${item.quantidade || 0}"
                                             min="0"
-                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-white font-mono"
-                                            required
+                                            class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-slate-800 font-mono"
+                                            ${!(item.tamanhos && Object.keys(item.tamanhos).length > 0) ? 'required' : ''}
                                         >
                                     </div>
 
                                     <div>
-                                        <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">CA</label>
+                                        <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">CA</label>
                                         <input 
                                             type="text"
                                             id="itemCA"
                                             value="${item.ca || ''}"
-                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-white font-mono"
+                                            class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-slate-800 font-mono"
                                             placeholder="Ex: 12345"
                                         >
                                     </div>
 
                                     <div>
-                                        <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Validade</label>
+                                        <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Validade</label>
                                         <input 
                                             type="date"
                                             id="itemValidity"
                                             value="${item.validade || ''}"
-                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-white"
+                                            class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-slate-800"
                                         >
                                     </div>
 
                                     <div>
-                                        <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Localização</label>
+                                        <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Localização</label>
                                         <input 
                                             type="text"
                                             id="itemLocation"
                                             value="${item.localizacao || ''}"
-                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-white"
+                                            class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-slate-800"
                                             placeholder="Ex: Prateleira A1"
                                         >
                                     </div>
 
                                     <div class="md:col-span-2">
-                                        <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Observações</label>
+                                        <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Observações</label>
                                         <textarea 
                                             id="itemObs"
-                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-white"
+                                            class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-slate-800"
                                             rows="3"
                                             placeholder="Informações adicionais..."
                                         >${item.observacoes || ''}</textarea>
                                     </div>
                                 </div>
 
-                                <div class="flex gap-4 pt-6 border-t border-slate-700">
+                                <div class="flex gap-4 pt-6 border-t border-slate-200">
                                     <button 
                                         type="button"
                                         onclick="goBack()"
-                                        class="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-4 rounded-xl transition-all"
+                                        class="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-4 rounded-xl transition-all"
                                     >
                                         CANCELAR
                                     </button>
                                     <button 
                                         type="submit"
-                                        class="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2"
+                                        class="flex-1 bg-amber-600 hover:bg-amber-700  font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2 text-white"
                                     >
                                         <i class="ph ph-floppy-disk text-xl"></i>
                                         ${isEdit ? 'ATUALIZAR' : 'CADASTRAR'}
@@ -2297,43 +2640,43 @@
 
         function renderHeader() {
             return `
-                <header class="bg-slate-900 border-b border-slate-800 p-3 md:p-4 sticky top-0 z-30 shadow-lg">
+                <header class="bg-white border-b border-slate-200 p-3 md:p-4 sticky top-0 z-30 shadow-sm">
                     <div class="max-w-7xl mx-auto flex justify-between items-center">
                         <div class="flex items-center gap-3 md:gap-4">
-                            <div class="w-10 h-10 md:w-12 md:h-12 bg-emerald-500/20 rounded-lg flex items-center justify-center">
-                                <i class="ph-fill ph-package text-emerald-400 text-xl md:text-2xl"></i>
+                            <div class="w-10 h-10 md:w-12 md:h-12 bg-emerald-500/10 rounded-lg flex items-center justify-center">
+                                <i class="ph-fill ph-package text-emerald-600 text-xl md:text-2xl"></i>
                             </div>
                             <div>
-                                <h1 class="font-bold text-base md:text-xl font-mono">ALMOXARIFADO</h1>
-                                <p class="text-xs md:text-sm text-slate-400 truncate max-w-[120px] md:max-w-none">${state.user?.nome || 'Sistema'}</p>
+                                <h1 class="font-bold text-base md:text-xl font-mono text-slate-800">ALMOXARIFADO</h1>
+                                <p class="text-xs md:text-sm text-slate-500 truncate max-w-[120px] md:max-w-none">${state.user?.nome || 'Sistema'}</p>
                             </div>
                         </div>
                         
                         <nav class="flex gap-1 md:gap-2">
                             <button 
                                 onclick="navigateTo('dashboard')"
-                                class="px-3 md:px-4 py-2 rounded-lg hover:bg-slate-800 transition-all ${state.view === 'dashboard' ? 'bg-slate-800' : ''}"
+                                class="px-3 md:px-4 py-2 rounded-lg hover:bg-slate-100 transition-all ${state.view === 'dashboard' ? 'bg-slate-100 text-emerald-600' : 'text-slate-600'}"
                                 title="Dashboard"
                             >
                                 <i class="ph-fill ph-house text-lg md:text-xl"></i>
                             </button>
                             <button 
                                 onclick="navigateTo('stock')"
-                                class="px-3 md:px-4 py-2 rounded-lg hover:bg-slate-800 transition-all ${state.view === 'stock' ? 'bg-slate-800' : ''}"
+                                class="px-3 md:px-4 py-2 rounded-lg hover:bg-slate-100 transition-all ${state.view === 'stock' ? 'bg-slate-100 text-emerald-600' : 'text-slate-600'}"
                                 title="Estoque"
                             >
                                 <i class="ph-fill ph-warehouse text-lg md:text-xl"></i>
                             </button>
                             <button 
                                 onclick="navigateToHistory()"
-                                class="px-3 md:px-4 py-2 rounded-lg hover:bg-slate-800 transition-all ${state.view === 'history' ? 'bg-slate-800' : ''}"
+                                class="px-3 md:px-4 py-2 rounded-lg hover:bg-slate-100 transition-all ${state.view === 'history' ? 'bg-slate-100 text-emerald-600' : 'text-slate-600'}"
                                 title="Histórico"
                             >
                                 <i class="ph-fill ph-clock-counter-clockwise text-lg md:text-xl"></i>
                             </button>
                             <button 
                                 onclick="handleLogout()"
-                                class="px-3 md:px-4 py-2 rounded-lg hover:bg-red-900/50 transition-all text-red-400"
+                                class="px-3 md:px-4 py-2 rounded-lg hover:bg-red-50 transition-all text-red-500 hover:text-red-600"
                                 title="Sair"
                             >
                                 <i class="ph-fill ph-sign-out text-lg md:text-xl"></i>

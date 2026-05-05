@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -9,10 +10,10 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    
+
     <!-- Phosphor Icons -->
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
-    
+
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -21,33 +22,34 @@
             darkMode: 'class',
         }
     </script>
-    
+
     <!-- Chart.js para gráficos -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    
+
     <!-- Supabase JS SDK -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    
+
     <!-- SheetJS (Exportação para Excel) -->
     <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
-    
+
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Work+Sans:wght@300;400;600;700;800&display=swap');
-        
+
         /* Reset e força tema escuro */
-        html, body {
+        html,
+        body {
             margin: 0;
             padding: 0;
             background-color: #f4f7fa !important;
             color: #1e293b !important;
         }
-        
+
         * {
             -webkit-tap-highlight-color: transparent;
             -webkit-touch-callout: none;
         }
-        
-        body { 
+
+        body {
             overscroll-behavior-y: none;
             font-family: 'Work Sans', sans-serif;
             position: fixed;
@@ -57,7 +59,7 @@
             background: #f4f7fa !important;
             color: #1e293b !important;
         }
-        
+
         #app {
             height: 100%;
             overflow-y: auto;
@@ -65,74 +67,140 @@
             background: #f4f7fa;
             min-height: 100vh;
         }
-        
-        .font-mono { font-family: 'Space Mono', monospace; }
-        
-        .animate-spin { animation: spin 1s linear infinite; }
-        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        
-        .fade-in { animation: fadeIn 0.3s ease-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        
-        .slide-in { animation: slideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
-        @keyframes slideIn { from { opacity: 0; transform: translateX(-20px); } to { opacity: 1; transform: translateX(0); } }
-        
+
+        .font-mono {
+            font-family: 'Space Mono', monospace;
+        }
+
+        .animate-spin {
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            from {
+                transform: rotate(0deg);
+            }
+
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .fade-in {
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .slide-in {
+            animation: slideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(-20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
         /* Skeleton Loading */
         @keyframes shimmer {
-            0% { background-position: -1000px 0; }
-            100% { background-position: 1000px 0; }
+            0% {
+                background-position: -1000px 0;
+            }
+
+            100% {
+                background-position: 1000px 0;
+            }
         }
-        
+
         .skeleton {
             background: linear-gradient(90deg, #1e293b 25%, #334155 50%, #1e293b 75%);
             background-size: 1000px 100%;
             animation: shimmer 2s infinite;
         }
-        
+
         /* Optimistic UI */
         .optimistic-update {
             opacity: 0.6;
             pointer-events: none;
         }
-        
+
         .success-flash {
             animation: successFlash 0.5s ease-out;
         }
-        
+
         @keyframes successFlash {
-            0%, 100% { background-color: transparent; }
-            50% { background-color: rgba(16, 185, 129, 0.2); }
+
+            0%,
+            100% {
+                background-color: transparent;
+            }
+
+            50% {
+                background-color: rgba(16, 185, 129, 0.2);
+            }
         }
-        
+
         /* Custom Scrollbar */
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: #f1f5f9; }
-        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
-        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-        
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+
         /* Gradient Background */
         .bg-gradient-dark {
             background: #f4f7fa !important;
         }
-        
+
         /* Força tema escuro em todos os elementos */
         html {
             background: #f4f7fa !important;
         }
-        
+
         * {
             scrollbar-color: #94a3b8 #f1f5f9;
         }
-        
+
         /* Garante tema escuro em inputs e selects */
-        input, select, textarea {
+        input,
+        select,
+        textarea {
             color-scheme: light;
         }
-        
-        input::placeholder, textarea::placeholder {
+
+        input::placeholder,
+        textarea::placeholder {
             color: #94a3b8;
         }
-        
+
         /* Glass Effect */
         .glass {
             background: white;
@@ -140,13 +208,13 @@
             box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
             backdrop-filter: blur(8px);
         }
-        
+
         /* Status Badge Animation */
         .status-badge {
             position: relative;
             overflow: hidden;
         }
-        
+
         .status-badge::before {
             content: '';
             position: absolute;
@@ -154,14 +222,14 @@
             left: -100%;
             width: 100%;
             height: 100%;
-            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
             transition: left 0.5s;
         }
-        
+
         .status-badge:hover::before {
             left: 100%;
         }
-        
+
         /* Toast Notifications */
         .toast {
             position: fixed;
@@ -170,20 +238,38 @@
             z-index: 9999;
             padding: 16px 24px;
             border-radius: 12px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
             animation: slideInRight 0.3s ease-out;
             max-width: 90%;
         }
-        
+
         @keyframes slideInRight {
-            from { transform: translateX(400px); opacity: 0; }
-            to { transform: translateX(0); opacity: 1; }
+            from {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
         }
-        
-        .toast-success { background: #10b981; color: white; }
-        .toast-error { background: #ef4444; color: white; }
-        .toast-info { background: #3b82f6; color: white; }
-        
+
+        .toast-success {
+            background: #10b981;
+            color: white;
+        }
+
+        .toast-error {
+            background: #ef4444;
+            color: white;
+        }
+
+        .toast-info {
+            background: #3b82f6;
+            color: white;
+        }
+
         /* Pull to Refresh Indicator */
         .ptr-indicator {
             position: absolute;
@@ -198,18 +284,18 @@
             transition: transform 0.3s;
             z-index: 1000;
         }
-        
+
         .ptr-indicator.active {
             transform: translateX(-50%) translateY(0);
         }
-        
+
         /* Chart Container */
         .chart-container {
             position: relative;
             height: 300px;
             width: 100%;
         }
-        
+
         /* Mobile optimizations */
         @media (max-width: 640px) {
             .toast {
@@ -218,13 +304,14 @@
                 left: 10px;
                 max-width: calc(100% - 20px);
             }
-            
+
             .chart-container {
                 height: 250px;
             }
         }
     </style>
 </head>
+
 <body class="text-slate-800">
     <div id="app"></div>
     <div id="toast-container"></div>
@@ -236,11 +323,11 @@
         const SUPABASE_URL = 'https://mgcjidryrjqiceielmzp.supabase.co';
         const SUPABASE_ANON_KEY = 'sb_publishable_1FBWf1mb1o5_J60VDlsfaA_IOsIFq6e';
         const sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-        
+
         // ============================================
         // CACHE E ESTADO
         // ============================================
-        
+
         // Cache otimizado
         const cache = {
             movements: null,
@@ -276,11 +363,11 @@
             selectedDate: getCurrentDate(),
             isLoading: false,
             loadingMessage: '',
-            
+
             // Paginação
             currentPage: 1,
             itemsPerPage: 50,
-            
+
             // Filtros avançados
             filters: {
                 startDate: getFirstDayOfMonth(),
@@ -293,7 +380,7 @@
                 location: '',
                 lowStockOnly: false
             },
-            
+
             // Operação de movimentação
             movementOperation: {
                 active: false,
@@ -305,10 +392,10 @@
                 observations: '',
                 returnedOldEpi: null
             },
-            
+
             // Edição de item
             editingItem: null,
-            
+
             // Estatísticas e Analytics
             statistics: null,
             analytics: {
@@ -357,8 +444,8 @@
                 } else {
                     date = new Date(dateStr);
                 }
-                
-                return date.toLocaleDateString('pt-BR', { 
+
+                return date.toLocaleDateString('pt-BR', {
                     day: '2-digit',
                     month: '2-digit',
                     year: 'numeric'
@@ -431,7 +518,7 @@
                 </div>
             `;
             container.appendChild(toast);
-            
+
             setTimeout(() => {
                 toast.style.animation = 'slideInRight 0.3s ease-out reverse';
                 setTimeout(() => container.removeChild(toast), 300);
@@ -508,11 +595,11 @@
         function loadSession() {
             const sessionData = localStorage.getItem('epi_session');
             if (!sessionData) return null;
-            
+
             try {
                 const session = JSON.parse(sessionData);
                 const now = Date.now();
-                
+
                 // Verifica se a sessão ainda é válida
                 if (session.timestamp + session.expiresIn > now) {
                     return session.user;
@@ -539,23 +626,23 @@
                     email: email,
                     password: password
                 });
-                
+
                 if (error) throw error;
-                
+
                 // Busca o perfil para obter o nome
                 const { data: profile, error: profileError } = await sbClient
                     .from('profiles')
                     .select('nome')
                     .eq('id', data.user.id)
                     .single();
-                
-                return { 
-                    success: true, 
-                    user: { 
-                        id: data.user.id, 
+
+                return {
+                    success: true,
+                    user: {
+                        id: data.user.id,
                         nome: profile?.nome || data.user.email,
                         email: data.user.email
-                    } 
+                    }
                 };
             } catch (error) {
                 console.error('Erro no login:', error);
@@ -573,12 +660,12 @@
                     .from('items')
                     .select('*')
                     .order('nome');
-                
+
                 if (error) throw error;
-                
+
                 cache.items = data;
                 cache.itemsTimestamp = Date.now();
-                
+
                 return { success: true, items: data };
             } catch (error) {
                 console.error('Erro ao buscar itens:', error);
@@ -590,37 +677,24 @@
             // Optimistic UI
             const isNew = !state.items.find(i => i.id === item.id);
             const originalItems = [...state.items];
-            
+
             if (isNew) {
                 state.items.push(item);
             } else {
                 const index = state.items.findIndex(i => i.id === item.id);
                 state.items[index] = item;
             }
-            
+
             render();
             showToast(isNew ? 'Item cadastrado!' : 'Item atualizado!', 'success', 2000);
-            
+
             try {
                 const { error } = await sbClient
                     .from('items')
-                    .upsert({
-                        id: item.id,
-                        nome: item.nome,
-                        categoria: item.categoria || null,
-                        quantidade: item.quantidade || 0,
-                        unidade: item.unidade || null,
-                        ca: item.ca || null,
-                        validade: item.validade || null,
-                        localizacao: item.localizacao || null,
-                        observacoes: item.observacoes || null,
-                        tamanhos: (item.tamanhos && Object.keys(item.tamanhos).length > 0) ? item.tamanhos : null,
-                        unidades_por_caixa: item.unidades_por_caixa || 1,
-                        updated_at: new Date().toISOString()
-                    });
-                
+                    .upsert(item);
+
                 if (error) throw error;
-                
+
                 cache.items = null;
                 cache.itemsTimestamp = null;
                 loadItems(true);
@@ -640,15 +714,15 @@
             state.items = state.items.filter(i => i.id !== itemId);
             render();
             showToast('Item excluído!', 'success', 2000);
-            
+
             try {
                 const { error } = await sbClient
                     .from('items')
                     .delete()
                     .eq('id', itemId);
-                
+
                 if (error) throw error;
-                
+
                 cache.items = null;
                 cache.itemsTimestamp = null;
                 return { success: true };
@@ -664,74 +738,69 @@
         async function saveMovement(movement) {
             // Optimistic UI
             const item = state.items.find(i => i.id === movement.itemId);
-            if (!item) return;
+            if (item) {
+                const oldQuantity = item.quantidade;
+                const oldTamanhos = item.tamanhos ? JSON.parse(JSON.stringify(item.tamanhos)) : null;
 
-            const oldQuantity = item.quantidade;
-            const oldTamanhos = item.tamanhos ? JSON.parse(JSON.stringify(item.tamanhos)) : null;
-            
-            if (movement.type === 'COMPRA') {
-                item.quantidade += movement.quantity;
-                if (movement.size && item.tamanhos) item.tamanhos[movement.size] = (item.tamanhos[movement.size] || 0) + movement.quantity;
-            } else if (['DISTRIBUICAO', 'SAIDA', 'REPOSICAO'].includes(movement.type)) {
-                item.quantidade -= movement.quantity;
-                if (movement.size && item.tamanhos) item.tamanhos[movement.size] -= movement.quantity;
-            } else if (movement.type === 'AJUSTE') {
-                item.quantidade = movement.quantity;
-                if (movement.size && item.tamanhos) item.tamanhos[movement.size] = movement.quantity;
-            }
-            
-            render();
-            showToast('Movimentação registrada!', 'success', 2000);
-            
-            try {
-                // 1. Salva a movimentação
-                const { error: moveError } = await sbClient
-                    .from('movements')
-                    .insert({
-                        date: movement.date,
-                        type: movement.type,
-                        item_id: movement.itemId,
-                        item_name: movement.itemName,
-                        size: movement.size || null,
-                        quantity: movement.quantity,
-                        employee: movement.employeeName,
-                        supplier: movement.supplier,
-                        user_name: state.user.nome,
-                        observations: movement.observations
-                    });
-                
-                if (moveError) throw moveError;
-                
-                // 2. Atualiza o estoque no item
-                const updateData = { 
-                    quantidade: item.quantidade,
-                    updated_at: new Date().toISOString()
-                };
-                if (item.tamanhos) updateData.tamanhos = item.tamanhos;
+                // Atualiza quantidade baseado no tipo
+                if (movement.size && item.tamanhos) {
+                    if (movement.type === 'COMPRA') {
+                        item.tamanhos[movement.size] = (item.tamanhos[movement.size] || 0) + movement.quantity;
+                    } else {
+                        item.tamanhos[movement.size] = (item.tamanhos[movement.size] || 0) - movement.quantity;
+                    }
+                    // Atualiza quantidade total
+                    item.quantidade = Object.values(item.tamanhos).reduce((acc, curr) => acc + curr, 0);
+                } else {
+                    if (movement.type === 'COMPRA') {
+                        item.quantidade += movement.quantity;
+                    } else if (['DISTRIBUICAO', 'SAIDA', 'REPOSICAO'].includes(movement.type)) {
+                        item.quantidade -= movement.quantity;
+                    } else if (movement.type === 'AJUSTE') {
+                        item.quantidade = movement.quantity;
+                    }
+                }
 
-                const { error: itemError } = await sbClient
-                    .from('items')
-                    .update(updateData)
-                    .eq('id', item.id);
-                
-                if (itemError) throw itemError;
-                
-                cache.movements = null;
-                cache.movementsTimestamp = null;
-                cache.items = null;
-                cache.itemsTimestamp = null;
-                cache.statistics = null;
-                cache.statisticsTimestamp = null;
-                
-                loadItems(true);
-                return { success: true };
-            } catch (error) {
-                console.error('Erro ao salvar movimentação:', error);
-                item.quantidade = oldQuantity;
-                if (oldTamanhos) item.tamanhos = oldTamanhos;
                 render();
-                showToast('Erro ao registrar movimentação: ' + error.message, 'error');
-                return { success: false, error: error.message };
+                showToast('Movimentação registrada!', 'success', 2000);
+
+                try {
+                    // 1. Registrar a movimentação
+                    const { error: movError } = await sbClient
+                        .from('movements')
+                        .insert([movement]);
+
+                    if (movError) throw movError;
+
+                    // 2. Atualizar o estoque do item
+                    const { error: itemError } = await sbClient
+                        .from('items')
+                        .update({ 
+                            quantidade: item.quantidade,
+                            tamanhos: item.tamanhos 
+                        })
+                        .eq('id', item.id);
+
+                    if (itemError) throw itemError;
+
+                    cache.movements = null;
+                    cache.movementsTimestamp = null;
+                    cache.items = null;
+                    cache.itemsTimestamp = null;
+                    cache.statistics = null;
+                    cache.statisticsTimestamp = null;
+                    
+                    loadItems(true);
+                    return { success: true };
+                } catch (error) {
+                    console.error('Erro ao salvar movimentação:', error);
+                    // Reverte em caso de erro
+                    item.quantidade = oldQuantity;
+                    item.tamanhos = oldTamanhos;
+                    render();
+                    showToast('Erro ao registrar movimentação: ' + error.message, 'error');
+                    return { success: false, error: error.message };
+                }
             }
         }
 
@@ -745,40 +814,21 @@
                 let query = sbClient
                     .from('movements')
                     .select('*')
-                    .gte('date', filters.startDate)
-                    .lte('date', filters.endDate);
-                
-                if (filters.type !== 'TODOS') {
-                    query = query.eq('type', filters.type);
-                }
-                
-                const { data, error } = await query.order('timestamp', { ascending: false });
-                
+                    .order('date', { ascending: false });
+
+                if (filters.startDate) query = query.gte('date', filters.startDate);
+                if (filters.endDate) query = query.lte('date', filters.endDate);
+                if (filters.type && filters.type !== 'TODOS') query = query.eq('type', filters.type);
+
+                const { data, error } = await query;
+
                 if (error) throw error;
-                
-                // Mapeia para o formato esperado pelo frontend
-                const movements = data.map(m => ({
-                    id: m.id,
-                    date: m.date,
-                    type: m.type,
-                    itemId: m.item_id,
-                    itemName: m.item_name,
-                    size: m.size,
-                    quantity: m.quantity,
-                    employee: m.employee,
-                    employeeName: m.employee,
-                    supplier: m.supplier,
-                    user_name: m.user_name,
-                    userName: m.user_name,
-                    observations: m.observations,
-                    timestamp: m.timestamp
-                }));
-                
-                cache.movements = movements;
+
+                cache.movements = data;
                 cache.movementsFilterKey = filterKey;
                 cache.movementsTimestamp = Date.now();
-                
-                return { success: true, movements: movements };
+
+                return { success: true, movements: data };
             } catch (error) {
                 console.error('Erro ao buscar movimentações:', error);
                 return { success: false, error: error.message };
@@ -795,13 +845,13 @@
                 const { count: totalItems } = await sbClient
                     .from('items')
                     .select('*', { count: 'exact', head: true });
-                
+
                 const { data: stockData } = await sbClient
                     .from('items')
                     .select('quantidade');
-                
+
                 const totalStock = stockData.reduce((acc, curr) => acc + (curr.quantidade || 0), 0);
-                
+
                 const { count: lowStock } = await sbClient
                     .from('items')
                     .select('*', { count: 'exact', head: true })
@@ -813,10 +863,10 @@
                     lowStock,
                     lastUpdate: new Date().toISOString()
                 };
-                
+
                 cache.statistics = statistics;
                 cache.statisticsTimestamp = Date.now();
-                
+
                 return { success: true, statistics };
             } catch (error) {
                 console.error('Erro ao buscar estatísticas:', error);
@@ -846,10 +896,10 @@
             if (result.success) {
                 state.user = result.user;
                 saveSession(result.user);
-                
+
                 state.loadingMessage = 'Carregando dados...';
                 render();
-                
+
                 await loadItems();
                 navigateTo('dashboard');
                 showToast(`Bem-vindo, ${result.user.nome}!`, 'success');
@@ -890,13 +940,13 @@
             const now = new Date();
             const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
             const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-            
+
             // Movimentações recentes
             const recentMovements = state.movements.filter(m => {
                 const movDate = new Date(m.date);
                 return movDate >= monthAgo;
             });
-            
+
             // Itens mais repostos
             const replenishmentCount = {};
             recentMovements.forEach(m => {
@@ -904,18 +954,18 @@
                     replenishmentCount[m.itemName] = (replenishmentCount[m.itemName] || 0) + m.quantity;
                 }
             });
-            
+
             state.analytics.topReplenishedItems = Object.entries(replenishmentCount)
                 .sort((a, b) => b[1] - a[1])
                 .slice(0, 5)
                 .map(([name, count]) => ({ name, count }));
-            
+
             // Distribuição por categoria
             const categoryDist = {};
             state.items.forEach(item => {
                 categoryDist[item.categoria] = (categoryDist[item.categoria] || 0) + item.quantidade;
             });
-            
+
             state.analytics.categoryDistribution = Object.entries(categoryDist)
                 .map(([category, quantity]) => ({ category, quantity }));
 
@@ -966,54 +1016,6 @@
             navigateTo('movement');
         }
 
-        function exportStockToXLSX() {
-            if (!state.items || state.items.length === 0) {
-                showToast('Nenhum item para exportar', 'info');
-                return;
-            }
-            const data = state.items.map(item => ({
-                'Nome': item.nome,
-                'Categoria': item.categoria,
-                'Quantidade Total': item.quantidade,
-                'Unidade': item.unidade,
-                'Unidades por Caixa': item.unidades_por_caixa || 1,
-                'Tamanhos': item.tamanhos ? Object.entries(item.tamanhos).map(([s,q]) => `${s}:${q}`).join(' | ') : '-',
-                'CA': item.ca || '-',
-                'Validade': item.validade ? formatDate(item.validade) : '-',
-                'Localização': item.localizacao || '-',
-                'Observações': item.observacoes || '-'
-            }));
-            const ws = XLSX.utils.json_to_sheet(data);
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "Estoque");
-            XLSX.writeFile(wb, `Estoque_EPI_${getCurrentDate()}.xlsx`);
-            showToast('Exportação concluída', 'success');
-        }
-
-        function exportMovementsToXLSX() {
-            const itemsToExport = state.movements && state.movements.length > 0 ? state.movements : (cache.movements || []);
-            if (!itemsToExport || itemsToExport.length === 0) {
-                showToast('Nenhuma movimentação para exportar', 'info');
-                return;
-            }
-            const data = itemsToExport.map(m => ({
-                'Data': formatDateTime(m.timestamp),
-                'Tipo': MOVEMENT_TYPES[m.type]?.label || m.type,
-                'Item': m.item_name || m.itemName || '-',
-                'Tamanho': m.size || '-',
-                'Quantidade': m.quantity,
-                'Colaborador': m.employee || '-',
-                'Fornecedor': m.supplier || '-',
-                'Usuário': m.user_name || m.user || '-',
-                'Observações': m.observations || '-'
-            }));
-            const ws = XLSX.utils.json_to_sheet(data);
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "Movimentações");
-            XLSX.writeFile(wb, `Movimentacoes_EPI_${getCurrentDate()}.xlsx`);
-            showToast('Exportação concluída', 'success');
-        }
-
         function cancelMovement() {
             state.movementOperation = {
                 active: false,
@@ -1030,7 +1032,7 @@
 
         async function confirmMovement() {
             const op = state.movementOperation;
-            
+
             if (!op.selectedItem || op.quantity <= 0) {
                 showToast('Preencha todos os campos obrigatórios', 'error');
                 return;
@@ -1102,7 +1104,7 @@
             const sizesArea = document.getElementById('sizesConfigArea');
             const singleQtyArea = document.getElementById('singleQuantityArea');
             const itemQuantityInput = document.getElementById('itemQuantity');
-            
+
             if (show) {
                 sizesArea.classList.remove('hidden');
                 sizesArea.classList.add('block');
@@ -1132,7 +1134,7 @@
 
         async function handleSaveItem(e) {
             e.preventDefault();
-            
+
             const hasSizes = document.getElementById('hasSizes')?.checked;
             let tamanhos = null;
             let quantidade = 0;
@@ -1196,9 +1198,9 @@
             state.isLoading = true;
             state.loadingMessage = 'Buscando movimentações...';
             render();
-            
+
             await loadMovements(true);
-            
+
             state.isLoading = false;
             state.loadingMessage = '';
             render();
@@ -1209,9 +1211,9 @@
             state.isLoading = true;
             state.loadingMessage = 'Carregando histórico...';
             render();
-            
+
             await loadMovements(true);
-            
+
             state.isLoading = false;
             state.loadingMessage = '';
             render();
@@ -1222,14 +1224,14 @@
             state.isLoading = true;
             state.loadingMessage = 'Carregando analytics...';
             render();
-            
+
             await loadStatistics();
             await loadMovements(true);
-            
+
             state.isLoading = false;
             state.loadingMessage = '';
             render();
-            
+
             // Renderiza gráficos após um pequeno delay para garantir que o DOM está pronto
             setTimeout(() => renderCharts(), 100);
         }
@@ -1237,7 +1239,7 @@
         function changePage(delta) {
             const totalPages = Math.ceil(getFilteredMovements().length / state.itemsPerPage);
             const newPage = state.currentPage + delta;
-            
+
             if (newPage >= 1 && newPage <= totalPages) {
                 state.currentPage = newPage;
                 render();
@@ -1247,17 +1249,17 @@
 
         function getFilteredMovements() {
             let filtered = state.movements;
-            
+
             if (state.filters.searchTerm) {
                 const term = state.filters.searchTerm.toLowerCase();
-                filtered = filtered.filter(m => 
+                filtered = filtered.filter(m =>
                     m.itemName?.toLowerCase().includes(term) ||
                     m.employee?.toLowerCase().includes(term) ||
                     m.supplier?.toLowerCase().includes(term) ||
                     m.user?.toLowerCase().includes(term)
                 );
             }
-            
+
             return filtered;
         }
 
@@ -1270,44 +1272,44 @@
 
         function getFilteredItems() {
             let filtered = state.items;
-            
+
             // Filtro por categoria
             if (state.filters.category !== 'TODAS') {
                 filtered = filtered.filter(i => i.categoria === state.filters.category);
             }
-            
+
             // Filtro por localização
             if (state.filters.location) {
                 const loc = state.filters.location.toLowerCase();
                 filtered = filtered.filter(i => i.localizacao?.toLowerCase().includes(loc));
             }
-            
+
             // Filtro por quantidade mínima
             if (state.filters.minQuantity !== '') {
                 filtered = filtered.filter(i => i.quantidade >= parseInt(state.filters.minQuantity));
             }
-            
+
             // Filtro por quantidade máxima
             if (state.filters.maxQuantity !== '') {
                 filtered = filtered.filter(i => i.quantidade <= parseInt(state.filters.maxQuantity));
             }
-            
+
             // Filtro por estoque baixo
             if (state.filters.lowStockOnly) {
                 filtered = filtered.filter(i => i.quantidade < 10);
             }
-            
+
             // Filtro por busca de texto
             if (state.filters.searchTerm) {
                 const term = state.filters.searchTerm.toLowerCase();
-                filtered = filtered.filter(i => 
+                filtered = filtered.filter(i =>
                     i.nome?.toLowerCase().includes(term) ||
                     i.categoria?.toLowerCase().includes(term) ||
                     i.localizacao?.toLowerCase().includes(term) ||
                     i.ca?.toLowerCase().includes(term)
                 );
             }
-            
+
             return filtered;
         }
 
@@ -1326,13 +1328,13 @@
             // Destroi gráficos anteriores
             Object.values(chartsInstances).forEach(chart => chart.destroy());
             chartsInstances = {};
-            
+
             // Gráfico de distribuição por categoria
             renderCategoryChart();
-            
+
             // Gráfico de top itens mais repostos
             renderTopItemsChart();
-            
+
             // Gráfico de movimentações por tipo
             renderMovementsTypeChart();
         }
@@ -1340,10 +1342,10 @@
         function renderCategoryChart() {
             const ctx = document.getElementById('categoryChart');
             if (!ctx) return;
-            
+
             const labels = state.analytics.categoryDistribution.map(c => c.category);
             const data = state.analytics.categoryDistribution.map(c => c.quantity);
-            
+
             chartsInstances.categoryChart = new Chart(ctx, {
                 type: 'doughnut',
                 data: {
@@ -1398,10 +1400,10 @@
         function renderTopItemsChart() {
             const ctx = document.getElementById('topItemsChart');
             if (!ctx) return;
-            
+
             const labels = state.analytics.topReplenishedItems.map(i => i.name.substring(0, 20));
             const data = state.analytics.topReplenishedItems.map(i => i.count);
-            
+
             chartsInstances.topItemsChart = new Chart(ctx, {
                 type: 'bar',
                 data: {
@@ -1458,11 +1460,11 @@
         function renderMovementsTypeChart() {
             const ctx = document.getElementById('movementsTypeChart');
             if (!ctx || !state.statistics) return;
-            
+
             const movTypes = state.statistics.movementsByType;
             const labels = Object.keys(movTypes).map(type => MOVEMENT_TYPES[type]?.label || type);
             const data = Object.values(movTypes);
-            
+
             chartsInstances.movementsTypeChart = new Chart(ctx, {
                 type: 'pie',
                 data: {
@@ -1519,8 +1521,8 @@
         // ============================================
         function render() {
             const app = document.getElementById('app');
-            
-            switch(state.view) {
+
+            switch (state.view) {
                 case 'login':
                     app.innerHTML = renderLogin();
                     break;
@@ -1913,8 +1915,8 @@
                                     <div>
                                         <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Selecione o Item *</label>
                                         <select 
-                                            onchange="state.movementOperation.selectedItem = this.value; state.movementOperation.size = null; render()"
-                                            class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-${typeInfo.color}-500 outline-none text-base md:text-lg text-slate-800"
+                                            onchange="state.movementOperation.selectedItem = this.value; render()"
+                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-${typeInfo.color}-500 outline-none text-base md:text-lg text-white"
                                             required
                                         >
                                             <option value="">-- Escolha um item --</option>
@@ -1934,7 +1936,7 @@
                                                     <p class="font-bold text-base md:text-lg">${selectedItem.nome}</p>
                                                 </div>
                                                 <div class="text-right">
-                                                    <p class="text-slate-500 text-sm">Estoque Total</p>
+                                                    <p class="text-slate-400 text-sm">Estoque</p>
                                                     <p class="font-bold text-xl md:text-2xl font-mono text-${typeInfo.color}-400">${selectedItem.quantidade}</p>
                                                 </div>
                                             </div>
@@ -2050,7 +2052,7 @@
         function renderStock() {
             const filteredItems = getFilteredItems();
             const categories = [...new Set(state.items.map(i => i.categoria))];
-            
+
             return `
                 <div class="min-h-screen pb-6">
                     ${renderHeader()}
@@ -2162,8 +2164,8 @@
 
                                         <div class="mb-4">
                                             <div class="flex justify-between items-end mb-2">
-                                                <span class="text-slate-500 text-xs md:text-sm uppercase">Quantidade Total</span>
-                                                <span class="text-2xl md:text-3xl font-bold font-mono ${item.quantidade < 10 ? 'text-amber-500' : 'text-emerald-600'}">${item.quantidade}</span>
+                                                <span class="text-slate-400 text-xs md:text-sm uppercase">Quantidade</span>
+                                                <span class="text-2xl md:text-3xl font-bold font-mono ${item.quantidade < 10 ? 'text-amber-400' : 'text-emerald-400'}">${item.quantidade}</span>
                                             </div>
                                             
                                             ${item.tamanhos && Object.keys(item.tamanhos).length > 0 ? `
@@ -2332,8 +2334,8 @@
                             ` : `
                                 <div class="space-y-2">
                                     ${paginatedMovements.map(movement => {
-                                        const typeInfo = MOVEMENT_TYPES[movement.type] || MOVEMENT_TYPES['AJUSTE'];
-                                        return `
+                const typeInfo = MOVEMENT_TYPES[movement.type] || MOVEMENT_TYPES['AJUSTE'];
+                return `
                                             <div class="glass p-4 rounded-lg hover:border-${typeInfo.color}-500 border-2 border-transparent transition-all">
                                                 <div class="flex items-start justify-between gap-4 flex-wrap md:flex-nowrap">
                                                     <div class="flex-1 min-w-0">
@@ -2386,7 +2388,7 @@
                                                 </div>
                                             </div>
                                         `;
-                                    }).join('')}
+            }).join('')}
                                 </div>
 
                                 <!-- Paginação -->
@@ -2402,18 +2404,18 @@
                                         </button>
                                         
                                         <div class="flex gap-2">
-                                            ${Array.from({length: Math.min(totalPages, 5)}, (_, i) => {
-                                                let pageNum;
-                                                if (totalPages <= 5) {
-                                                    pageNum = i + 1;
-                                                } else if (state.currentPage <= 3) {
-                                                    pageNum = i + 1;
-                                                } else if (state.currentPage >= totalPages - 2) {
-                                                    pageNum = totalPages - 4 + i;
-                                                } else {
-                                                    pageNum = state.currentPage - 2 + i;
-                                                }
-                                                return `
+                                            ${Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                let pageNum;
+                if (totalPages <= 5) {
+                    pageNum = i + 1;
+                } else if (state.currentPage <= 3) {
+                    pageNum = i + 1;
+                } else if (state.currentPage >= totalPages - 2) {
+                    pageNum = totalPages - 4 + i;
+                } else {
+                    pageNum = state.currentPage - 2 + i;
+                }
+                return `
                                                     <button 
                                                         onclick="state.currentPage = ${pageNum}; render()"
                                                         class="w-8 h-8 md:w-10 md:h-10 rounded-lg font-bold text-sm ${state.currentPage === pageNum ? 'bg-blue-600' : 'bg-slate-200 hover:bg-slate-300'} transition-all text-white"
@@ -2421,7 +2423,7 @@
                                                         ${pageNum}
                                                     </button>
                                                 `;
-                                            }).join('')}
+            }).join('')}
                                         </div>
                                         
                                         <button 
@@ -2492,83 +2494,85 @@
                                     </div>
 
                                     <div>
-                                        <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Unidade *</label>
-                                        <div class="flex gap-2">
-                                            <select 
-                                                id="itemUnit"
-                                                class="w-2/3 bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-slate-800"
-                                                required
-                                            >
-                                                <option value="">Selecione...</option>
-                                                <option value="UN" ${item.unidade === 'UN' ? 'selected' : ''}>Unidade (UN)</option>
-                                                <option value="PAR" ${item.unidade === 'PAR' ? 'selected' : ''}>Par (PAR)</option>
-                                                <option value="CX" ${item.unidade === 'CX' ? 'selected' : ''}>Caixa (CX)</option>
-                                                <option value="KG" ${item.unidade === 'KG' ? 'selected' : ''}>Quilograma (KG)</option>
-                                                <option value="LT" ${item.unidade === 'LT' ? 'selected' : ''}>Litro (LT)</option>
-                                            </select>
-                                            <div class="w-1/3 flex flex-col">
-                                                <input 
-                                                    type="number"
-                                                    id="itemUnitsPerBox"
-                                                    value="${item.unidades_por_caixa || 1}"
-                                                    min="1"
-                                                    class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-slate-800 font-mono"
-                                                    title="Unidades por caixa"
-                                                    placeholder="Unid/CX"
-                                                    required
-                                                >
-                                            </div>
-                                        </div>
+                                        <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Unidade *</label>
+                                        <select 
+                                            id="itemUnit"
+                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-white"
+                                            required
+                                        >
+                                            <option value="">Selecione...</option>
+                                            <option value="UN" ${item.unidade === 'UN' ? 'selected' : ''}>Unidade (UN)</option>
+                                            <option value="PAR" ${item.unidade === 'PAR' ? 'selected' : ''}>Par (PAR)</option>
+                                            <option value="CX" ${item.unidade === 'CX' ? 'selected' : ''}>Caixa (CX)</option>
+                                            <option value="KG" ${item.unidade === 'KG' ? 'selected' : ''}>Quilograma (KG)</option>
+                                            <option value="LT" ${item.unidade === 'LT' ? 'selected' : ''}>Litro (LT)</option>
+                                        </select>
+                                    </div>
+
+                                    <div>
+                                        <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Unidades por Caixa</label>
+                                        <input 
+                                            type="number"
+                                            id="itemUnitsPerBox"
+                                            value="${item.unidades_por_caixa || 1}"
+                                            min="1"
+                                            class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-slate-800 font-mono"
+                                        >
                                     </div>
 
                                     <div class="md:col-span-2">
-                                        <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Variações de Tamanho</label>
-                                        <div class="bg-slate-50 border-2 border-slate-200 rounded-lg p-4">
-                                            <div class="flex items-center justify-between mb-4">
-                                                <span class="text-sm text-slate-600">Este item possui numeração ou tamanhos? (ex: 38, 40, P, M, G)</span>
-                                                <label class="relative inline-flex items-center cursor-pointer">
-                                                    <input type="checkbox" id="hasSizes" class="sr-only peer" ${item.tamanhos && Object.keys(item.tamanhos).length > 0 ? 'checked' : ''} onchange="toggleSizesSection(this.checked)">
-                                                    <div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
-                                                </label>
+                                        <label class="flex items-center gap-3 cursor-pointer bg-slate-50 p-4 rounded-xl border-2 border-slate-100 hover:border-amber-200 transition-all">
+                                            <input 
+                                                type="checkbox" 
+                                                id="hasSizes" 
+                                                onchange="toggleSizesSection(this.checked)"
+                                                class="w-6 h-6 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                                                ${item.tamanhos && Object.keys(item.tamanhos).length > 0 ? 'checked' : ''}
+                                            >
+                                            <div>
+                                                <span class="font-bold text-slate-700 block">Este item possui grade de tamanhos?</span>
+                                                <span class="text-xs text-slate-500">Ex: Botas (38, 39, 40) ou Luvas (P, M, G)</span>
                                             </div>
-                                            
-                                            <div id="sizesConfigArea" class="${item.tamanhos && Object.keys(item.tamanhos).length > 0 ? 'block' : 'hidden'}">
-                                                <div id="sizesList" class="space-y-3 mb-3">
-                                                    ${(() => {
-                                                        if (item.tamanhos && Object.keys(item.tamanhos).length > 0) {
-                                                            return Object.entries(item.tamanhos).map(([size, qty]) => `
-                                                                <div class="flex gap-3 items-center size-row mb-2">
-                                                                    <input type="text" class="size-name w-1/2 bg-white border border-slate-300 rounded p-2 focus:border-amber-500 outline-none" placeholder="Ex: 40 ou M" value="${size}" required>
-                                                                    <input type="number" class="size-qty w-1/3 bg-white border border-slate-300 rounded p-2 font-mono focus:border-amber-500 outline-none" placeholder="Qtd" value="${qty}" required min="0">
-                                                                    <button type="button" onclick="this.parentElement.remove()" class="text-red-500 hover:text-red-700 p-2"><i class="ph-bold ph-trash"></i></button>
-                                                                </div>
-                                                            `).join('');
-                                                        }
-                                                        return `
-                                                            <div class="flex gap-3 items-center size-row mb-2">
-                                                                <input type="text" class="size-name w-1/2 bg-white border border-slate-300 rounded p-2 focus:border-amber-500 outline-none" placeholder="Ex: 40 ou M" required>
-                                                                <input type="number" class="size-qty w-1/3 bg-white border border-slate-300 rounded p-2 font-mono focus:border-amber-500 outline-none" placeholder="Qtd" value="0" required min="0">
-                                                                <button type="button" onclick="this.parentElement.remove()" class="text-red-500 hover:text-red-700 p-2"><i class="ph-bold ph-trash"></i></button>
-                                                            </div>
-                                                        `;
-                                                    })()}
-                                                </div>
-                                                <button type="button" onclick="addSizeRow()" class="text-emerald-600 text-sm font-bold flex items-center gap-2 hover:text-emerald-700">
-                                                    <i class="ph-bold ph-plus"></i> Adicionar Tamanho
+                                        </label>
+                                    </div>
+
+                                    <!-- Área de Configuração de Tamanhos -->
+                                    <div id="sizesConfigArea" class="md:col-span-2 ${item.tamanhos && Object.keys(item.tamanhos).length > 0 ? 'block' : 'hidden'} fade-in">
+                                        <div class="bg-amber-50/50 border-2 border-amber-100 rounded-xl p-4 md:p-6">
+                                            <div class="flex justify-between items-center mb-4">
+                                                <h3 class="font-bold text-amber-800 flex items-center gap-2">
+                                                    <i class="ph-fill ph-list-numbers"></i>
+                                                    Grade de Tamanhos e Quantidades
+                                                </h3>
+                                                <button type="button" onclick="addSizeRow()" class="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all">
+                                                    <i class="ph ph-plus"></i> Add Tamanho
                                                 </button>
                                             </div>
+                                            
+                                            <div id="sizesList" class="space-y-2">
+                                                ${item.tamanhos ? Object.entries(item.tamanhos).map(([name, qty]) => `
+                                                    <div class="flex gap-3 items-center size-row mb-2">
+                                                        <input type="text" class="size-name w-1/2 bg-white border border-slate-300 rounded p-2 focus:border-amber-500 outline-none" placeholder="Ex: 40 ou M" value="${name}" required>
+                                                        <input type="number" class="size-qty w-1/3 bg-white border border-slate-300 rounded p-2 font-mono focus:border-amber-500 outline-none" placeholder="Qtd" value="${qty}" required min="0">
+                                                        <button type="button" onclick="this.parentElement.remove()" class="text-red-500 hover:text-red-700 p-2"><i class="ph-bold ph-trash"></i></button>
+                                                    </div>
+                                                `).join('') : ''}
+                                            </div>
+                                            <p class="text-xs text-amber-600 mt-4 italic">
+                                                * A quantidade total será a soma de todos os tamanhos.
+                                            </p>
                                         </div>
                                     </div>
 
-                                    <div id="singleQuantityArea" class="md:col-span-2 ${item.tamanhos && Object.keys(item.tamanhos).length > 0 ? 'hidden' : 'block'}">
-                                        <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Quantidade Total *</label>
+                                    <div id="singleQuantityArea" class="md:col-span-1 ${item.tamanhos && Object.keys(item.tamanhos).length > 0 ? 'hidden' : 'block'}">
+                                        <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Quantidade em Estoque *</label>
                                         <input 
                                             type="number"
                                             id="itemQuantity"
                                             value="${item.quantidade || 0}"
                                             min="0"
                                             class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-slate-800 font-mono"
-                                            ${!(item.tamanhos && Object.keys(item.tamanhos).length > 0) ? 'required' : ''}
+                                            ${item.tamanhos && Object.keys(item.tamanhos).length > 0 ? '' : 'required'}
                                         >
                                     </div>
 
@@ -2693,13 +2697,13 @@
         document.addEventListener('DOMContentLoaded', () => {
             // Tenta carregar sessão salva
             const savedUser = loadSession();
-            
+
             if (savedUser) {
                 state.user = savedUser;
                 state.loadingMessage = 'Carregando...';
                 state.isLoading = true;
                 render();
-                
+
                 loadItems().then(() => {
                     navigateTo('dashboard');
                     state.isLoading = false;
@@ -2712,4 +2716,5 @@
         });
     </script>
 </body>
+
 </html>

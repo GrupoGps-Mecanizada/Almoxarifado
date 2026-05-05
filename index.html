@@ -18,6 +18,14 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         // Suprime warning do Tailwind CDN
+        const originalWarn = console.warn;
+        console.warn = (...args) => {
+            if (args[0] && typeof args[0] === 'string' && args[0].includes('cdn.tailwindcss.com should not be used in production')) {
+                return;
+            }
+            originalWarn(...args);
+        };
+
         tailwind.config = {
             darkMode: 'class',
         }
@@ -980,6 +988,85 @@
                 state.statistics.totalMovements = 0;
             }
             state.statistics.movementsByType = movementsByType;
+        }
+
+        // ============================================
+        // EXPORTAÇÃO PARA EXCEL (SHEETJS)
+        // ============================================
+        function exportStockToXLSX() {
+            try {
+                const items = state.items;
+                if (!items || items.length === 0) {
+                    showToast('Não há dados para exportar', 'error');
+                    return;
+                }
+
+                // Preparar dados para o Excel
+                const data = items.map(item => {
+                    const row = {
+                        'Nome': item.nome,
+                        'Categoria': item.categoria,
+                        'Quantidade Total': item.quantidade,
+                        'Unidade': item.unidade,
+                        'CA': item.ca || '-',
+                        'Validade': item.validade ? formatDate(item.validade) : '-',
+                        'Localização': item.localizacao || '-',
+                        'Observações': item.observacoes || ''
+                    };
+
+                    // Adicionar colunas de tamanhos se existirem
+                    if (item.tamanhos) {
+                        Object.entries(item.tamanhos).forEach(([size, qty]) => {
+                            row[`Tam: ${size}`] = qty;
+                        });
+                    }
+
+                    return row;
+                });
+
+                const worksheet = XLSX.utils.json_to_sheet(data);
+                const workbook = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(workbook, worksheet, "Estoque");
+
+                // Gerar arquivo e baixar
+                XLSX.writeFile(workbook, `Estoque_Almoxarifado_${getCurrentDate()}.xlsx`);
+                showToast('Relatório de estoque gerado!', 'success');
+            } catch (error) {
+                console.error('Erro ao exportar estoque:', error);
+                showToast('Erro ao exportar para Excel', 'error');
+            }
+        }
+
+        function exportMovementsToXLSX() {
+            try {
+                const movements = getFilteredMovements();
+                if (!movements || movements.length === 0) {
+                    showToast('Não há dados para exportar', 'error');
+                    return;
+                }
+
+                const data = movements.map(m => ({
+                    'Data': formatDate(m.date),
+                    'Tipo': MOVEMENT_TYPES[m.type]?.label || m.type,
+                    'Item': m.itemName,
+                    'Quantidade': m.quantity,
+                    'Colaborador': m.employeeName || m.employee || '-',
+                    'Fornecedor': m.supplier || '-',
+                    'Usuário': m.user || '-',
+                    'Observações': m.observations || '',
+                    'Data/Hora Registro': formatDateTime(m.timestamp || m.created_at)
+                }));
+
+                const worksheet = XLSX.utils.json_to_sheet(data);
+                const workbook = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(workbook, worksheet, "Movimentações");
+
+                XLSX.writeFile(workbook, `Movimentacoes_Almoxarifado_${getCurrentDate()}.xlsx`);
+                showToast('Histórico exportado!', 'success');
+            } catch (error) {
+                console.error('Erro ao exportar histórico:', error);
+                showToast('Erro ao exportar para Excel', 'error');
+            }
         }
 
         function handleLogout() {

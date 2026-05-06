@@ -401,7 +401,12 @@
                 supplier: '',
                 quantity: 1,
                 observations: '',
-                returnedOldEpi: null
+                returnedOldEpi: null,
+                targetWarehouse: 'alm-1',
+                createNewItem: false,
+                newItemName: '',
+                newItemCategory: '',
+                newItemUnit: 'UN'
             },
 
             // Edição de item
@@ -1210,42 +1215,126 @@
         // ============================================
         function exportStockToXLSX() {
             try {
-                const items = state.items;
-                if (!items || items.length === 0) {
+                if (!state.items || state.items.length === 0) {
                     showToast('Não há dados para exportar', 'error');
                     return;
                 }
 
-                const data = items.map(item => {
-                    // Descobre o nome do almoxarifado
-                    const wh = state.warehouses.find(w => w.id === (item.warehouse_id || 'alm-1'));
-                    const row = {
-                        'Almoxarifado': wh?.nome || 'Almoxarifado Central',
-                        'Nome': item.nome,
-                        'Categoria': item.categoria,
-                        'Quantidade Total': item.quantidade,
-                        'Unidade': item.unidade,
-                        'CA': item.ca || '-',
-                        'Validade': item.validade ? formatDate(item.validade) : '-',
-                        'Localização': item.localizacao || '-',
-                        'Observações': item.observacoes || ''
-                    };
+                const workbook = XLSX.utils.book_new();
+                const dateStr = getCurrentDate();
 
-                    if (item.tamanhos) {
-                        Object.entries(item.tamanhos).forEach(([size, qty]) => {
-                            row[`Tam: ${size}`] = qty;
+                // Colunas fixas base
+                const BASE_COLS = ['#', 'Nome do Item', 'Categoria', 'Unidade', 'Qtd Total', 'CA', 'Validade', 'Localização', 'Observações'];
+
+                // Descobre todos os tamanhos usados em qualquer item
+                const allSizes = [...new Set(
+                    state.items.flatMap(i => i.tamanhos ? Object.keys(i.tamanhos) : [])
+                )].sort();
+
+                const buildSheet = (items, warehouseName) => {
+                    if (items.length === 0) return null;
+
+                    // ---- Cabeçalho informativo ----
+                    const titleRows = [
+                        [`RELATÓRIO DE ESTOQUE — ${warehouseName.toUpperCase()}`],
+                        [`Gerado em: ${new Date().toLocaleString('pt-BR')}`],
+                        [`Total de itens: ${items.length}   |   Total em estoque: ${items.reduce((s, i) => s + (i.quantidade || 0), 0)}`],
+                        [] // linha vazia
+                    ];
+
+                    const headers = [...BASE_COLS, ...allSizes.map(s => `Tam: ${s}`)];
+
+                    let rowIndex = 1;
+                    const ws = {};
+                    const range = { s: { c: 0, r: 0 }, e: { c: headers.length - 1, r: 0 } };
+
+                    // Escreve linhas do cabeçalho informativo
+                    titleRows.forEach((row) => {
+                        row.forEach((val, c) => {
+                            ws[XLSX.utils.encode_cell({ r: rowIndex - 1, c })] = { v: val, t: 's' };
                         });
-                    }
+                        rowIndex++;
+                    });
 
-                    return row;
+                    // Escreve linha de headers das colunas
+                    headers.forEach((h, c) => {
+                        const cell = { v: h, t: 's' };
+                        ws[XLSX.utils.encode_cell({ r: rowIndex - 1, c })] = cell;
+                    });
+                    rowIndex++;
+
+                    // Escreve os dados
+                    items.forEach((item, idx) => {
+                        const row = [
+                            idx + 1,
+                            item.nome || '',
+                            item.categoria || '',
+                            item.unidade || '',
+                            item.quantidade || 0,
+                            item.ca || '',
+                            item.validade ? formatDate(item.validade) : '',
+                            item.localizacao || '',
+                            item.observacoes || '',
+                            ...allSizes.map(s => item.tamanhos ? (item.tamanhos[s] ?? '') : '')
+                        ];
+                        row.forEach((val, c) => {
+                            const t = typeof val === 'number' ? 'n' : 's';
+                            ws[XLSX.utils.encode_cell({ r: rowIndex - 1, c })] = { v: val, t };
+                        });
+                        rowIndex++;
+                    });
+
+                    range.e.r = rowIndex - 1;
+                    ws['!ref'] = XLSX.utils.encode_range(range);
+
+                    // Larguras das colunas
+                    ws['!cols'] = [
+                        { wch: 4 },  // #
+                        { wch: 32 }, // Nome
+                        { wch: 20 }, // Categoria
+                        { wch: 8 },  // Unidade
+                        { wch: 10 }, // Qtd
+                        { wch: 10 }, // CA
+                        { wch: 12 }, // Validade
+                        { wch: 20 }, // Localização
+                        { wch: 30 }, // Observações
+                        ...allSizes.map(() => ({ wch: 10 }))
+                    ];
+
+                    return ws;
+                };
+
+                // Aba: Resumo geral (todos os almoxarifados)
+                const resumoData = state.warehouses.map(wh => {
+                    const whItems = state.items.filter(i => (i.warehouse_id || 'alm-1') === wh.id);
+                    return {
+                        'Almoxarifado': wh.nome,
+                        'Total de Itens': whItems.length,
+                        'Quantidade em Estoque': whItems.reduce((s, i) => s + (i.quantidade || 0), 0),
+                        'Itens com Estoque Zerado': whItems.filter(i => i.quantidade === 0).length,
+                        'Itens com Estoque Baixo (< 10)': whItems.filter(i => i.quantidade > 0 && i.quantidade < 10).length
+                    };
+                });
+                const wsResumo = XLSX.utils.json_to_sheet(resumoData);
+                wsResumo['!cols'] = [{ wch: 28 }, { wch: 16 }, { wch: 22 }, { wch: 22 }, { wch: 26 }];
+                XLSX.utils.book_append_sheet(workbook, wsResumo, 'Resumo');
+
+                // Uma aba por almoxarifado
+                state.warehouses.forEach(wh => {
+                    const whItems = state.items
+                        .filter(i => (i.warehouse_id || 'alm-1') === wh.id)
+                        .sort((a, b) => (a.categoria || '').localeCompare(b.categoria || '') || a.nome.localeCompare(b.nome));
+
+                    const ws = buildSheet(whItems, wh.nome);
+                    if (ws) {
+                        // Nome da aba: máx 31 chars (limite do Excel)
+                        const sheetName = wh.nome.substring(0, 31);
+                        XLSX.utils.book_append_sheet(workbook, ws, sheetName);
+                    }
                 });
 
-                const worksheet = XLSX.utils.json_to_sheet(data);
-                const workbook = XLSX.utils.book_new();
-                XLSX.utils.book_append_sheet(workbook, worksheet, "Estoque");
-
-                XLSX.writeFile(workbook, `Estoque_Almoxarifado_${getCurrentDate()}.xlsx`);
-                showToast('Relatório de estoque gerado!', 'success');
+                XLSX.writeFile(workbook, `Estoque_Almoxarifados_${dateStr}.xlsx`);
+                showToast('Relatório completo exportado!', 'success');
             } catch (error) {
                 console.error('Erro ao exportar estoque:', error);
                 showToast('Erro ao exportar para Excel', 'error');
@@ -1313,7 +1402,12 @@
                 employeeName: '',
                 supplier: '',
                 quantity: 1,
-                observations: ''
+                observations: '',
+                targetWarehouse: state.activeWarehouse,
+                createNewItem: false,
+                newItemName: '',
+                newItemCategory: '',
+                newItemUnit: 'UN'
             };
             navigateTo('movement');
         }
@@ -1327,7 +1421,12 @@
                 employeeName: '',
                 supplier: '',
                 quantity: 1,
-                observations: ''
+                observations: '',
+                targetWarehouse: state.activeWarehouse,
+                createNewItem: false,
+                newItemName: '',
+                newItemCategory: '',
+                newItemUnit: 'UN'
             };
             goBack();
         }
@@ -1335,23 +1434,66 @@
         async function confirmMovement() {
             const op = state.movementOperation;
 
-            if (!op.selectedItem || op.quantity <= 0) {
-                showToast('Preencha todos os campos obrigatórios', 'error');
+
+            if (!op.quantity || op.quantity <= 0) {
+                showToast('Quantidade deve ser maior que zero', 'error');
                 return;
             }
 
-            if (op.type === 'DISTRIBUICAO' && !op.employeeName) {
-                showToast('Nome do colaborador é obrigatório', 'error');
+            // Fluxo: Compra com NOVO item
+            if (op.createNewItem) {
+                if (!op.newItemName) {
+                    showToast('Nome do item é obrigatório', 'error');
+                    return;
+                }
+                if (!op.newItemCategory) {
+                    showToast('Categoria do item é obrigatória', 'error');
+                    return;
+                }
+
+                const newItemId = 'ITEM-' + Date.now();
+                const newItem = {
+                    id: newItemId,
+                    nome: op.newItemName,
+                    categoria: op.newItemCategory,
+                    quantidade: 0,
+                    unidade: op.newItemUnit || 'UN',
+                    unidades_por_caixa: 1,
+                    tamanhos: null,
+                    ca: '',
+                    validade: '',
+                    localizacao: '',
+                    observacoes: '',
+                    warehouse_id: op.targetWarehouse
+                };
+
+                const itemResult = await saveItem(newItem);
+                if (!itemResult.success) return;
+
+                const movement = {
+                    date: getCurrentDate(),
+                    type: 'COMPRA',
+                    item_id: newItemId,
+                    item_name: op.newItemName,
+                    size: null,
+                    quantity: op.quantity,
+                    employee: '',
+                    supplier: op.supplier,
+                    user_name: state.user.nome,
+                    observations: op.observations,
+                    warehouse_id: op.targetWarehouse
+                };
+
+                const result = await saveMovement(movement);
+                if (result.success) {
+                    cancelMovement();
+                }
                 return;
             }
 
-            if (op.type === 'DISTRIBUICAO' && op.returnedOldEpi === null) {
-                showToast('Informe se o EPI antigo foi devolvido', 'error');
-                return;
-            }
-
-            if (op.type === 'COMPRA' && !op.supplier) {
-                showToast('Nome do fornecedor é obrigatório', 'error');
+            // Fluxo: Compra em item EXISTENTE
+            if (!op.selectedItem) {
+                showToast('Selecione um item', 'error');
                 return;
             }
 
@@ -1366,37 +1508,21 @@
                 return;
             }
 
-            if (['DISTRIBUICAO', 'SAIDA', 'REPOSICAO'].includes(op.type)) {
-                if (op.size && item.tamanhos[op.size] < op.quantity) {
-                    showToast(`Estoque insuficiente para o tamanho ${op.size}`, 'error');
-                    return;
-                } else if (!op.size && item.quantidade < op.quantity) {
-                    showToast('Quantidade em estoque insuficiente', 'error');
-                    return;
-                }
-            }
-
-            let finalObservations = op.observations;
-            if (op.type === 'DISTRIBUICAO') {
-                const epiStatus = op.returnedOldEpi ? '[EPI Antigo: Devolvido]' : '[EPI Antigo: Não Devolvido/Novo]';
-                finalObservations = finalObservations ? `${epiStatus}\n${finalObservations}` : epiStatus;
-            }
-
             const movement = {
                 date: getCurrentDate(),
-                type: op.type,
+                type: 'COMPRA',
                 item_id: item.id,
                 item_name: op.size ? `${item.nome} (Tam: ${op.size})` : item.nome,
-                size: op.size,
+                size: op.size || null,
                 quantity: op.quantity,
-                employee: op.employeeName || '',
-                supplier: op.supplier || '',
+                employee: '',
+                supplier: op.supplier,
                 user_name: state.user.nome,
-                observations: finalObservations
+                observations: op.observations,
+                warehouse_id: op.targetWarehouse
             };
 
             const result = await saveMovement(movement);
-
             if (result.success) {
                 cancelMovement();
             }
@@ -1456,6 +1582,7 @@
                 quantidade = parseInt(document.getElementById('itemQuantity').value);
             }
 
+            const selectedWarehouse = document.querySelector('input[name="itemWarehouse"]:checked');
             const itemData = {
                 id: state.editingItem?.id || 'ITEM-' + Date.now(),
                 nome: document.getElementById('itemName').value,
@@ -1467,7 +1594,8 @@
                 ca: document.getElementById('itemCA').value,
                 validade: document.getElementById('itemValidity').value,
                 localizacao: document.getElementById('itemLocation').value,
-                observacoes: document.getElementById('itemObs').value
+                observacoes: document.getElementById('itemObs').value,
+                warehouse_id: selectedWarehouse?.value || state.activeWarehouse
             };
 
             const result = await saveItem(itemData);
@@ -2018,12 +2146,12 @@
                                 Ações Rápidas
                             </h2>
                             <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                                <button onclick="openMovementSelector()" class="glass p-5 rounded-lg hover:border-emerald-500 border-2 border-transparent transition-all text-center group">
+                                <button onclick="startMovement('COMPRA')" class="glass p-5 rounded-lg hover:border-emerald-500 border-2 border-transparent transition-all text-center group">
                                     <div class="w-12 h-12 bg-emerald-500/20 rounded-lg flex items-center justify-center mb-3 group-hover:scale-110 transition-transform mx-auto">
-                                        <i class="ph-fill ph-arrows-clockwise text-emerald-400 text-2xl"></i>
+                                        <i class="ph-fill ph-shopping-cart text-emerald-400 text-2xl"></i>
                                     </div>
-                                    <h3 class="font-bold text-sm mb-1">Movimentações</h3>
-                                    <p class="text-slate-500 text-xs">Registrar</p>
+                                    <h3 class="font-bold text-sm mb-1">Compra de Estoque</h3>
+                                    <p class="text-slate-500 text-xs">Registrar compra</p>
                                 </button>
 
                                 <button onclick="navigateTo('stock')" class="glass p-5 rounded-lg hover:border-blue-500 border-2 border-transparent transition-all text-center group">
@@ -2192,53 +2320,25 @@
                         <div class="glass p-8 rounded-xl">
                             <div class="flex items-center justify-between mb-6">
                                 <h1 class="text-2xl md:text-3xl font-bold flex items-center gap-3">
-                                    <i class="ph-fill ph-arrows-clockwise text-emerald-400"></i>
-                                    Tipo de Movimentação
+                                    <i class="ph-fill ph-shopping-cart text-emerald-400"></i>
+                                    Compra de Estoque
                                 </h1>
                                 <button onclick="goBack()" class="text-slate-500 hover:text-red-500 transition-all">
                                     <i class="ph ph-x text-3xl"></i>
                                 </button>
                             </div>
 
-                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6 mt-8">
+                            <div class="grid grid-cols-1 md:grid-cols-1 gap-4 md:gap-6 mt-8 max-w-sm mx-auto">
                                 <!-- Compra de Estoque -->
                                 <button onclick="startMovement('COMPRA')" class="glass p-6 md:p-8 rounded-xl hover:border-emerald-500 border-2 border-transparent transition-all group text-center">
                                     <div class="w-12 h-12 md:w-16 md:h-16 bg-emerald-500/20 rounded-xl flex items-center justify-center mb-3 md:mb-4 group-hover:scale-110 transition-transform mx-auto">
                                         <i class="ph-fill ph-shopping-cart text-emerald-400 text-3xl md:text-4xl"></i>
                                     </div>
-                                    <h3 class="font-bold text-lg md:text-xl mb-2">Compra</h3>
-                                    <p class="text-slate-500 text-xs md:text-sm">Novos itens do fornecedor</p>
+                                    <h3 class="font-bold text-lg md:text-xl mb-2">Compra de Estoque</h3>
+                                    <p class="text-slate-500 text-xs md:text-sm">Adicionar itens ao almoxarifado</p>
                                     <div class="mt-3 md:mt-4 pt-3 md:pt-4 border-t border-slate-200">
                                         <p class="text-xs text-emerald-400 font-semibold">
-                                            <i class="ph-fill ph-arrow-up"></i> ADICIONA
-                                        </p>
-                                    </div>
-                                </button>
-
-                                <!-- Reposição -->
-                                <button onclick="startMovement('REPOSICAO')" class="glass p-6 md:p-8 rounded-xl hover:border-blue-500 border-2 border-transparent transition-all group text-center">
-                                    <div class="w-12 h-12 md:w-16 md:h-16 bg-blue-500/20 rounded-xl flex items-center justify-center mb-3 md:mb-4 group-hover:scale-110 transition-transform mx-auto">
-                                        <i class="ph-fill ph-arrow-clockwise text-blue-400 text-3xl md:text-4xl"></i>
-                                    </div>
-                                    <h3 class="font-bold text-lg md:text-xl mb-2">Reposição</h3>
-                                    <p class="text-slate-500 text-xs md:text-sm">Transferência interna</p>
-                                    <div class="mt-3 md:mt-4 pt-3 md:pt-4 border-t border-slate-200">
-                                        <p class="text-xs text-blue-400 font-semibold">
-                                            <i class="ph-fill ph-arrow-down"></i> REMOVE
-                                        </p>
-                                    </div>
-                                </button>
-
-                                <!-- Distribuição -->
-                                <button onclick="startMovement('DISTRIBUICAO')" class="glass p-6 md:p-8 rounded-xl hover:border-purple-500 border-2 border-transparent transition-all group text-center">
-                                    <div class="w-12 h-12 md:w-16 md:h-16 bg-purple-500/20 rounded-xl flex items-center justify-center mb-3 md:mb-4 group-hover:scale-110 transition-transform mx-auto">
-                                        <i class="ph-fill ph-hand-coins text-purple-400 text-3xl md:text-4xl"></i>
-                                    </div>
-                                    <h3 class="font-bold text-lg md:text-xl mb-2">Distribuição</h3>
-                                    <p class="text-slate-500 text-xs md:text-sm">Entrega para colaborador</p>
-                                    <div class="mt-3 md:mt-4 pt-3 md:pt-4 border-t border-slate-200">
-                                        <p class="text-xs text-purple-400 font-semibold">
-                                            <i class="ph-fill ph-arrow-down"></i> REMOVE
+                                            <i class="ph-fill ph-arrow-up"></i> ADICIONA AO ESTOQUE
                                         </p>
                                     </div>
                                 </button>
@@ -2252,13 +2352,13 @@
         function renderMovement() {
             const op = state.movementOperation;
             const typeInfo = MOVEMENT_TYPES[op.type];
-            const availableItems = ['DISTRIBUICAO', 'REPOSICAO'].includes(op.type) ? state.items.filter(item => item.quantidade > 0) : state.items;
-            const selectedItem = availableItems.find(item => item.id === op.selectedItem);
+            const itemsInWarehouse = state.items.filter(item => (item.warehouse_id || 'alm-1') === op.targetWarehouse);
+            const selectedItem = itemsInWarehouse.find(item => item.id === op.selectedItem);
 
             return `
                 <div class="min-h-screen pb-6">
                     ${renderHeader()}
-                    
+
                     <main class="p-4 max-w-3xl mx-auto">
                         <div class="glass p-6 md:p-8 rounded-xl">
                             <div class="flex items-center justify-between mb-6">
@@ -2272,147 +2372,223 @@
                                 </button>
                             </div>
 
-                            ${availableItems.length === 0 ? `
-                                <div class="text-center py-12 text-slate-500">
-                                    <i class="ph ph-warning-circle text-6xl md:text-8xl mb-4 text-amber-500"></i>
-                                    <p class="text-lg md:text-xl mb-4">Nenhum item disponível</p>
-                                    <button onclick="cancelMovement()" class="bg-slate-200 hover:bg-slate-300 px-6 py-3 rounded-lg font-bold">
-                                        Voltar
-                                    </button>
+                            <form onsubmit="event.preventDefault(); confirmMovement();" class="space-y-6">
+
+                                <!-- Seleção do Almoxarifado -->
+                                <div>
+                                    <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Almoxarifado de Destino *</label>
+                                    <div class="grid grid-cols-2 gap-3">
+                                        ${state.warehouses.map(wh => `
+                                            <label class="flex items-center gap-3 cursor-pointer p-4 rounded-xl border-2 transition-all ${op.targetWarehouse === wh.id ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200 bg-white hover:border-emerald-200'}">
+                                                <input
+                                                    type="radio"
+                                                    name="targetWarehouse"
+                                                    value="${wh.id}"
+                                                    ${op.targetWarehouse === wh.id ? 'checked' : ''}
+                                                    onchange="state.movementOperation.targetWarehouse = this.value; state.movementOperation.selectedItem = null; render()"
+                                                >
+                                                <div>
+                                                    <span class="font-bold text-slate-700 block text-sm">${wh.nome}</span>
+                                                    <span class="text-xs text-slate-500">${wh.descricao}</span>
+                                                </div>
+                                            </label>
+                                        `).join('')}
+                                    </div>
                                 </div>
-                            ` : `
-                                <form onsubmit="event.preventDefault(); confirmMovement();" class="space-y-6">
+
+                                <!-- Toggle: Item Existente ou Novo Item -->
+                                <div>
+                                    <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Tipo de Entrada *</label>
+                                    <div class="grid grid-cols-2 gap-3">
+                                        <label class="flex items-center gap-3 cursor-pointer p-4 rounded-xl border-2 transition-all ${!op.createNewItem ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200 bg-white hover:border-emerald-200'}">
+                                            <input
+                                                type="radio"
+                                                name="entryType"
+                                                ${!op.createNewItem ? 'checked' : ''}
+                                                onchange="state.movementOperation.createNewItem = false; state.movementOperation.selectedItem = null; render()"
+                                            >
+                                            <div>
+                                                <span class="font-bold text-slate-700 block text-sm">Item Existente</span>
+                                                <span class="text-xs text-slate-500">Adicionar ao estoque atual</span>
+                                            </div>
+                                        </label>
+                                        <label class="flex items-center gap-3 cursor-pointer p-4 rounded-xl border-2 transition-all ${op.createNewItem ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200 bg-white hover:border-emerald-200'}">
+                                            <input
+                                                type="radio"
+                                                name="entryType"
+                                                ${op.createNewItem ? 'checked' : ''}
+                                                onchange="state.movementOperation.createNewItem = true; state.movementOperation.selectedItem = null; render()"
+                                            >
+                                            <div>
+                                                <span class="font-bold text-slate-700 block text-sm">Novo Item</span>
+                                                <span class="text-xs text-slate-500">Cadastrar e dar entrada</span>
+                                            </div>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                ${!op.createNewItem ? `
+                                    <!-- Seleção de item existente -->
                                     <div>
                                         <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Selecione o Item *</label>
-                                        <select 
-                                            onchange="state.movementOperation.selectedItem = this.value; render()"
-                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-${typeInfo.color}-500 outline-none text-base md:text-lg text-white"
-                                            required
-                                        >
-                                            <option value="">-- Escolha um item --</option>
-                                            ${availableItems.map(item => `
-                                                <option value="${item.id}" ${op.selectedItem === item.id ? 'selected' : ''}>
-                                                    ${item.nome} (${item.quantidade})
-                                                </option>
-                                            `).join('')}
-                                        </select>
+                                        ${itemsInWarehouse.length === 0 ? `
+                                            <div class="bg-amber-50 border-2 border-amber-200 rounded-lg p-4 text-amber-700 text-sm flex items-center gap-2">
+                                                <i class="ph ph-warning text-lg"></i>
+                                                Nenhum item cadastrado neste almoxarifado.
+                                            </div>
+                                        ` : `
+                                            <select
+                                                onchange="state.movementOperation.selectedItem = this.value; state.movementOperation.size = null; render()"
+                                                class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-emerald-500 outline-none text-base md:text-lg text-slate-800"
+                                                required
+                                            >
+                                                <option value="">-- Escolha um item --</option>
+                                                ${itemsInWarehouse.map(item => `
+                                                    <option value="${item.id}" ${op.selectedItem === item.id ? 'selected' : ''}>
+                                                        ${item.nome} (Estoque: ${item.quantidade})
+                                                    </option>
+                                                `).join('')}
+                                            </select>
+                                        `}
                                     </div>
 
                                     ${selectedItem ? `
-                                        <div class="glass p-4 rounded-lg border-2 border-${typeInfo.color}-500/50">
+                                        <div class="glass p-4 rounded-lg border-2 border-emerald-500/50">
                                             <div class="flex justify-between items-center">
                                                 <div>
                                                     <p class="text-slate-500 text-sm">Selecionado</p>
                                                     <p class="font-bold text-base md:text-lg">${selectedItem.nome}</p>
                                                 </div>
                                                 <div class="text-right">
-                                                    <p class="text-slate-400 text-sm">Estoque</p>
-                                                    <p class="font-bold text-xl md:text-2xl font-mono text-${typeInfo.color}-400">${selectedItem.quantidade}</p>
+                                                    <p class="text-slate-400 text-sm">Estoque atual</p>
+                                                    <p class="font-bold text-xl md:text-2xl font-mono text-emerald-600">${selectedItem.quantidade}</p>
                                                 </div>
                                             </div>
                                         </div>
-                                    ` : ''}
 
-                                    ${selectedItem && selectedItem.tamanhos && Object.keys(selectedItem.tamanhos).length > 0 ? `
-                                        <div>
-                                            <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Tamanho *</label>
-                                            <select 
-                                                onchange="state.movementOperation.size = this.value; render()"
-                                                class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-${typeInfo.color}-500 outline-none text-base md:text-lg text-slate-800"
-                                                required
-                                            >
-                                                <option value="">-- Selecione o tamanho --</option>
-                                                ${Object.entries(selectedItem.tamanhos).map(([size, qty]) => `
-                                                    <option value="${size}" ${op.size === size ? 'selected' : ''}>
-                                                        ${size} (Estoque: ${qty})
-                                                    </option>
-                                                `).join('')}
-                                            </select>
-                                        </div>
+                                        ${selectedItem.tamanhos && Object.keys(selectedItem.tamanhos).length > 0 ? `
+                                            <div>
+                                                <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Tamanho *</label>
+                                                <select
+                                                    onchange="state.movementOperation.size = this.value; render()"
+                                                    class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-emerald-500 outline-none text-base md:text-lg text-slate-800"
+                                                    required
+                                                >
+                                                    <option value="">-- Selecione o tamanho --</option>
+                                                    ${Object.entries(selectedItem.tamanhos).map(([size, qty]) => `
+                                                        <option value="${size}" ${op.size === size ? 'selected' : ''}>
+                                                            ${size} (Estoque: ${qty})
+                                                        </option>
+                                                    `).join('')}
+                                                </select>
+                                            </div>
+                                        ` : ''}
                                     ` : ''}
-
-                                    ${op.type === 'DISTRIBUICAO' ? `
+                                ` : `
+                                    <!-- Dados do novo item -->
+                                    <div class="bg-emerald-50 border-2 border-emerald-100 rounded-xl p-4 space-y-4">
+                                        <h3 class="font-bold text-emerald-800 flex items-center gap-2">
+                                            <i class="ph-fill ph-plus-circle"></i>
+                                            Dados do Novo Item
+                                        </h3>
                                         <div>
-                                            <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Colaborador *</label>
-                                            <input 
+                                            <label class="text-sm font-bold text-slate-700 block mb-2 uppercase tracking-wide">Nome do Item *</label>
+                                            <input
                                                 type="text"
-                                                value="${op.employeeName}"
-                                                onchange="state.movementOperation.employeeName = this.value"
-                                                class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-${typeInfo.color}-500 outline-none text-base md:text-lg text-slate-800"
-                                                placeholder="Nome completo"
+                                                value="${op.newItemName}"
+                                                oninput="state.movementOperation.newItemName = this.value"
+                                                class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-3 focus:border-emerald-500 outline-none text-slate-800"
+                                                placeholder="Ex: Capacete de Segurança"
                                                 required
                                             >
                                         </div>
-                                        <div>
-                                            <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Devolveu EPI Antigo? *</label>
-                                            <select 
-                                                onchange="state.movementOperation.returnedOldEpi = this.value === 'true'"
-                                                class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-${typeInfo.color}-500 outline-none text-base md:text-lg text-slate-800"
-                                                required
-                                            >
-                                                <option value="" disabled ${op.returnedOldEpi === null ? 'selected' : ''}>-- Selecione --</option>
-                                                <option value="true" ${op.returnedOldEpi === true ? 'selected' : ''}>Sim, devolveu</option>
-                                                <option value="false" ${op.returnedOldEpi === false ? 'selected' : ''}>Não devolveu / Primeira vez</option>
-                                            </select>
+                                        <div class="grid grid-cols-2 gap-3">
+                                            <div>
+                                                <label class="text-sm font-bold text-slate-700 block mb-2 uppercase tracking-wide">Categoria *</label>
+                                                <select
+                                                    onchange="state.movementOperation.newItemCategory = this.value"
+                                                    class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-3 focus:border-emerald-500 outline-none text-slate-800"
+                                                    required
+                                                >
+                                                    <option value="">Selecione...</option>
+                                                    <option value="Proteção Individual" ${op.newItemCategory === 'Proteção Individual' ? 'selected' : ''}>Proteção Individual</option>
+                                                    <option value="Ferramentas" ${op.newItemCategory === 'Ferramentas' ? 'selected' : ''}>Ferramentas</option>
+                                                    <option value="Uniformes" ${op.newItemCategory === 'Uniformes' ? 'selected' : ''}>Uniformes</option>
+                                                    <option value="Outros" ${op.newItemCategory === 'Outros' ? 'selected' : ''}>Outros</option>
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label class="text-sm font-bold text-slate-700 block mb-2 uppercase tracking-wide">Unidade *</label>
+                                                <select
+                                                    onchange="state.movementOperation.newItemUnit = this.value"
+                                                    class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-3 focus:border-emerald-500 outline-none text-slate-800"
+                                                    required
+                                                >
+                                                    <option value="UN" ${op.newItemUnit === 'UN' ? 'selected' : ''}>Unidade (UN)</option>
+                                                    <option value="PAR" ${op.newItemUnit === 'PAR' ? 'selected' : ''}>Par (PAR)</option>
+                                                    <option value="CX" ${op.newItemUnit === 'CX' ? 'selected' : ''}>Caixa (CX)</option>
+                                                    <option value="KG" ${op.newItemUnit === 'KG' ? 'selected' : ''}>Kg (KG)</option>
+                                                    <option value="LT" ${op.newItemUnit === 'LT' ? 'selected' : ''}>Litro (LT)</option>
+                                                </select>
+                                            </div>
                                         </div>
-                                    ` : ''}
-
-                                    ${op.type === 'COMPRA' ? `
-                                        <div>
-                                            <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Fornecedor *</label>
-                                            <input 
-                                                type="text"
-                                                value="${op.supplier}"
-                                                onchange="state.movementOperation.supplier = this.value"
-                                                class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-${typeInfo.color}-500 outline-none text-base md:text-lg text-slate-800"
-                                                placeholder="Nome do fornecedor"
-                                                required
-                                            >
-                                        </div>
-                                    ` : ''}
-
-                                    <div>
-                                        <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Quantidade *</label>
-                                        <input 
-                                            type="number"
-                                            value="${op.quantity}"
-                                            onchange="state.movementOperation.quantity = parseInt(this.value)"
-                                            min="1"
-                                            ${selectedItem && (op.type === 'DISTRIBUICAO' || op.type === 'REPOSICAO') ? `max="${selectedItem.quantidade}"` : ''}
-                                            class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-${typeInfo.color}-500 outline-none text-base md:text-lg text-slate-800 font-mono"
-                                            required
-                                        >
                                     </div>
+                                `}
 
-                                    <div>
-                                        <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Observações</label>
-                                        <textarea 
-                                            onchange="state.movementOperation.observations = this.value"
-                                            class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-${typeInfo.color}-500 outline-none text-base md:text-lg text-slate-800"
-                                            rows="3"
-                                            placeholder="Informações adicionais (opcional)"
-                                        >${op.observations}</textarea>
-                                    </div>
+                                <!-- Fornecedor -->
+                                <div>
+                                    <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Fornecedor</label>
+                                    <input
+                                        type="text"
+                                        value="${op.supplier}"
+                                        oninput="state.movementOperation.supplier = this.value"
+                                        class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-emerald-500 outline-none text-base md:text-lg text-slate-800"
+                                        placeholder="Nome do fornecedor (opcional)"
+                                    >
+                                </div>
 
-                                    <div class="flex gap-4 pt-6">
-                                        <button 
-                                            type="button"
-                                            onclick="cancelMovement()"
-                                            class="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-4 rounded-xl transition-all"
-                                        >
-                                            CANCELAR
-                                        </button>
-                                        <button 
-                                            type="submit"
-                                            class="flex-1 bg-${typeInfo.color}-600 hover:bg-${typeInfo.color}-700 text-slate-800 font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2"
-                                        >
-                                            <i class="ph ph-check-circle text-xl"></i>
-                                            <span class="hidden md:inline">CONFIRMAR</span>
-                                            <span class="md:hidden">OK</span>
-                                        </button>
-                                    </div>
-                                </form>
-                            `}
+                                <!-- Quantidade -->
+                                <div>
+                                    <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Quantidade *</label>
+                                    <input
+                                        type="number"
+                                        value="${op.quantity}"
+                                        oninput="state.movementOperation.quantity = parseInt(this.value) || 1"
+                                        min="1"
+                                        class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-emerald-500 outline-none text-base md:text-lg text-slate-800 font-mono"
+                                        required
+                                    >
+                                </div>
+
+                                <!-- Observações -->
+                                <div>
+                                    <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Observações</label>
+                                    <textarea
+                                        oninput="state.movementOperation.observations = this.value"
+                                        class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-emerald-500 outline-none text-base md:text-lg text-slate-800"
+                                        rows="3"
+                                        placeholder="Informações adicionais (opcional)"
+                                    >${op.observations}</textarea>
+                                </div>
+
+                                <div class="flex gap-4 pt-6">
+                                    <button
+                                        type="button"
+                                        onclick="cancelMovement()"
+                                        class="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-4 rounded-xl transition-all"
+                                    >
+                                        CANCELAR
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2"
+                                    >
+                                        <i class="ph ph-check-circle text-xl"></i>
+                                        <span class="hidden md:inline">CONFIRMAR COMPRA</span>
+                                        <span class="md:hidden">CONFIRMAR</span>
+                                    </button>
+                                </div>
+                            </form>
                         </div>
                     </main>
                 </div>
@@ -2439,7 +2615,7 @@
                             <div class="flex gap-2">
                                 <button onclick="exportStockToXLSX()" class="bg-blue-600 hover:bg-blue-700 px-4 md:px-6 py-3 rounded-lg font-bold flex items-center gap-2 transition-all text-white">
                                     <i class="ph-fill ph-download-simple text-xl"></i>
-                                    <span class="hidden md:inline">Exportar Excel</span>
+                                    <span class="hidden md:inline">Exportar Ambos</span>
                                 </button>
                                 <button onclick="openNewItem()" class="bg-emerald-600 hover:bg-emerald-700 px-4 md:px-6 py-3 rounded-lg font-bold flex items-center gap-2 transition-all text-white">
                                     <i class="ph-fill ph-plus-circle text-xl"></i>
@@ -3118,9 +3294,33 @@ ALTER TABLE movements ADD COLUMN IF NOT EXISTS destination_warehouse_id TEXT;</p
 
                             <form onsubmit="handleSaveItem(event)" class="space-y-6">
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <!-- Seleção do Almoxarifado -->
+                                    <div class="md:col-span-2">
+                                        <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Almoxarifado *</label>
+                                        <div class="grid grid-cols-2 gap-3">
+                                            ${state.warehouses.map(wh => `
+                                                <label class="flex items-center gap-3 cursor-pointer p-4 rounded-xl border-2 transition-all ${(item.warehouse_id || state.activeWarehouse) === wh.id ? 'border-amber-500 bg-amber-50' : 'border-slate-200 bg-white hover:border-amber-200'}">
+                                                    <input
+                                                        type="radio"
+                                                        name="itemWarehouse"
+                                                        value="${wh.id}"
+                                                        class="w-4 h-4 text-amber-600"
+                                                        ${(item.warehouse_id || state.activeWarehouse) === wh.id ? 'checked' : ''}
+                                                        onchange="render()"
+                                                        required
+                                                    >
+                                                    <div>
+                                                        <span class="font-bold text-slate-700 block text-sm">${wh.nome}</span>
+                                                        <span class="text-xs text-slate-500">${wh.descricao}</span>
+                                                    </div>
+                                                </label>
+                                            `).join('')}
+                                        </div>
+                                    </div>
+
                                     <div class="md:col-span-2">
                                         <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Nome do Item *</label>
-                                        <input 
+                                        <input
                                             type="text"
                                             id="itemName"
                                             value="${item.nome || ''}"

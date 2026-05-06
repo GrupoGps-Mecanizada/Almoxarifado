@@ -345,6 +345,8 @@
             itemsTimestamp: null,
             statistics: null,
             statisticsTimestamp: null,
+            warehouses: null,
+            warehousesTimestamp: null,
             CACHE_DURATION: 300000 // 5 minutos
         };
 
@@ -356,7 +358,8 @@
             'REPOSICAO': { label: 'Reposição', color: 'blue', icon: 'arrow-clockwise', sign: '-' },
             'DISTRIBUICAO': { label: 'Distribuição EPI', color: 'purple', icon: 'hand-coins', sign: '-' },
             'SAIDA': { label: 'Saída', color: 'red', icon: 'arrow-up-right', sign: '-' },
-            'AJUSTE': { label: 'Ajuste', color: 'amber', icon: 'wrench', sign: '±' }
+            'AJUSTE': { label: 'Ajuste', color: 'amber', icon: 'wrench', sign: '±' },
+            'TRANSFERENCIA': { label: 'Transferência', color: 'cyan', icon: 'arrows-left-right', sign: '→' }
         };
 
         // ============================================
@@ -411,7 +414,28 @@
                 monthlyExpenses: [],
                 topReplenishedItems: [],
                 categoryDistribution: []
-            }
+            },
+
+            // Almoxarifados
+            warehouses: [
+                { id: 'alm-1', nome: 'Almoxarifado Central', descricao: 'Estoque principal de EPIs' },
+                { id: 'alm-2', nome: 'Almoxarifado Distribuição', descricao: 'Itens prontos para distribuição' }
+            ],
+            activeWarehouse: 'alm-1',
+
+            // Operação de transferência
+            transferOperation: {
+                active: false,
+                fromWarehouse: 'alm-1',
+                toWarehouse: 'alm-2',
+                selectedItem: null,
+                size: null,
+                quantity: 1,
+                observations: ''
+            },
+
+            // Edição de almoxarifado
+            editingWarehouse: null
         };
 
         // Navigation history para o botão voltar
@@ -745,7 +769,7 @@
 
         async function saveMovement(movement) {
             // Optimistic UI
-            const item = state.items.find(i => i.id === movement.itemId);
+            const item = state.items.find(i => i.id === movement.item_id);
             if (item) {
                 const oldQuantity = item.quantidade;
                 const oldTamanhos = item.tamanhos ? JSON.parse(JSON.stringify(item.tamanhos)) : null;
@@ -882,6 +906,190 @@
             }
         }
 
+        async function getWarehouses(forceRefresh = false) {
+            if (!forceRefresh && cache.warehouses && isCacheValid(cache.warehousesTimestamp)) {
+                return { success: true, warehouses: cache.warehouses };
+            }
+            try {
+                const { data, error } = await sbClient
+                    .from('warehouses')
+                    .select('*')
+                    .order('id');
+                if (error) throw error;
+                cache.warehouses = data;
+                cache.warehousesTimestamp = Date.now();
+                return { success: true, warehouses: data };
+            } catch (error) {
+                // Fallback se a tabela ainda não existir
+                const defaults = [
+                    { id: 'alm-1', nome: 'Almoxarifado Central', descricao: 'Estoque principal de EPIs' },
+                    { id: 'alm-2', nome: 'Almoxarifado Distribuição', descricao: 'Itens prontos para distribuição' }
+                ];
+                cache.warehouses = defaults;
+                cache.warehousesTimestamp = Date.now();
+                return { success: true, warehouses: defaults };
+            }
+        }
+
+        async function saveWarehouse(warehouse) {
+            try {
+                const { error } = await sbClient
+                    .from('warehouses')
+                    .upsert(warehouse);
+                if (error) throw error;
+                cache.warehouses = null;
+                cache.warehousesTimestamp = null;
+                await loadWarehouses(true);
+                showToast('Almoxarifado atualizado!', 'success');
+                return { success: true };
+            } catch (error) {
+                console.error('Erro ao salvar almoxarifado:', error);
+                showToast('Erro ao salvar: ' + error.message, 'error');
+                return { success: false, error: error.message };
+            }
+        }
+
+        async function transferItems() {
+            const op = state.transferOperation;
+            if (!op.selectedItem || op.quantity <= 0) {
+                showToast('Preencha todos os campos', 'error');
+                return;
+            }
+
+            const sourceItem = state.items.find(i => i.id === op.selectedItem);
+            if (!sourceItem) {
+                showToast('Item não encontrado', 'error');
+                return;
+            }
+
+            // Verifica estoque
+            if (op.size && sourceItem.tamanhos) {
+                if ((sourceItem.tamanhos[op.size] || 0) < op.quantity) {
+                    showToast(`Estoque insuficiente para tamanho ${op.size}`, 'error');
+                    return;
+                }
+            } else if (!op.size && sourceItem.quantidade < op.quantity) {
+                showToast('Quantidade insuficiente no estoque', 'error');
+                return;
+            }
+
+            const fromWarehouse = state.warehouses.find(w => w.id === op.fromWarehouse);
+            const toWarehouse = state.warehouses.find(w => w.id === op.toWarehouse);
+
+            // Optimistic: atualiza origem
+            const newSourceTamanhos = sourceItem.tamanhos ? JSON.parse(JSON.stringify(sourceItem.tamanhos)) : null;
+            if (op.size && newSourceTamanhos) {
+                newSourceTamanhos[op.size] = (newSourceTamanhos[op.size] || 0) - op.quantity;
+                sourceItem.tamanhos = newSourceTamanhos;
+                sourceItem.quantidade = Object.values(newSourceTamanhos).reduce((a, b) => a + b, 0);
+            } else {
+                sourceItem.quantidade -= op.quantity;
+            }
+
+            // Procura item equivalente no destino
+            let destItem = state.items.find(i =>
+                i.warehouse_id === op.toWarehouse &&
+                i.nome === sourceItem.nome &&
+                i.categoria === sourceItem.categoria
+            );
+
+            let newDestItem = null;
+            if (destItem) {
+                if (op.size && destItem.tamanhos) {
+                    destItem.tamanhos[op.size] = (destItem.tamanhos[op.size] || 0) + op.quantity;
+                    destItem.quantidade = Object.values(destItem.tamanhos).reduce((a, b) => a + b, 0);
+                } else {
+                    destItem.quantidade += op.quantity;
+                }
+            } else {
+                newDestItem = {
+                    ...sourceItem,
+                    id: 'ITEM-TRF-' + Date.now(),
+                    warehouse_id: op.toWarehouse,
+                    quantidade: op.quantity,
+                    tamanhos: op.size && sourceItem.tamanhos
+                        ? Object.fromEntries(Object.keys(sourceItem.tamanhos).map(s => [s, s === op.size ? op.quantity : 0]))
+                        : null
+                };
+                state.items.push(newDestItem);
+            }
+
+            render();
+            showToast(`Transferindo para ${toWarehouse?.nome || 'destino'}...`, 'info', 2000);
+
+            try {
+                // 1. Registra movimentação (com fallback se coluna não existir no banco)
+                const movementPayload = {
+                    date: getCurrentDate(),
+                    type: 'TRANSFERENCIA',
+                    item_id: sourceItem.id,
+                    item_name: op.size ? `${sourceItem.nome} (Tam: ${op.size})` : sourceItem.nome,
+                    size: op.size,
+                    quantity: op.quantity,
+                    user_name: state.user.nome,
+                    observations: op.observations || `Transferido de ${fromWarehouse?.nome} para ${toWarehouse?.nome}`,
+                    destination_warehouse_id: op.toWarehouse
+                };
+
+                let movResult = await sbClient.from('movements').insert([movementPayload]);
+                if (movResult.error) {
+                    // Pode ser que a coluna destination_warehouse_id não exista,
+                    // ou que exista uma constraint no banco rejeitando o type 'TRANSFERENCIA'.
+                    console.warn('Retentando sem destination_warehouse_id ou ajustando type:', movResult.error.message);
+                    const { destination_warehouse_id, ...movFallback } = movementPayload;
+                    
+                    // Fallback para tipo existente caso a constraint do banco rejeite TRANSFERENCIA
+                    movFallback.type = 'SAIDA';
+                    movFallback.observations = '[TRANSFERÊNCIA] ' + (movFallback.observations || '');
+                    
+                    movResult = await sbClient.from('movements').insert([movFallback]);
+                    if (movResult.error) throw movResult.error;
+                }
+
+                // 2. Atualiza item de origem
+                const { error: srcErr } = await sbClient.from('items')
+                    .update({ quantidade: sourceItem.quantidade, tamanhos: sourceItem.tamanhos })
+                    .eq('id', sourceItem.id);
+                if (srcErr) throw srcErr;
+
+                // 3. Cria ou atualiza item no destino
+                if (destItem) {
+                    const { error: dstErr } = await sbClient.from('items')
+                        .update({ quantidade: destItem.quantidade, tamanhos: destItem.tamanhos })
+                        .eq('id', destItem.id);
+                    if (dstErr) throw dstErr;
+                } else if (newDestItem) {
+                    let insResult = await sbClient.from('items').insert([newDestItem]);
+                    if (insResult.error) {
+                        // warehouse_id ou id duplicado pode causar erro
+                        console.warn('Retentando insert de destino sem warehouse_id:', insResult.error.message);
+                        const { warehouse_id, id: _id, ...itemFallback } = newDestItem;
+                        insResult = await sbClient.from('items').insert([itemFallback]);
+                        if (insResult.error) throw insResult.error;
+                    }
+                }
+
+                cache.items = null;
+                cache.itemsTimestamp = null;
+                cache.movements = null;
+                cache.movementsTimestamp = null;
+                await loadItems(true);
+
+                showToast('Transferência concluída!', 'success');
+
+                state.transferOperation = {
+                    active: false, fromWarehouse: 'alm-1', toWarehouse: 'alm-2',
+                    selectedItem: null, size: null, quantity: 1, observations: ''
+                };
+                goBack();
+
+            } catch (error) {
+                console.error('Erro na transferência:', error);
+                showToast('Erro na transferência: ' + error.message, 'error');
+                await loadItems(true);
+            }
+        }
+
         // ============================================
         // LÓGICA DE NEGÓCIO
         // ============================================
@@ -943,6 +1151,13 @@
             }
         }
 
+        async function loadWarehouses(forceRefresh = false) {
+            const result = await getWarehouses(forceRefresh);
+            if (result.success) {
+                state.warehouses = result.warehouses;
+            }
+        }
+
         function calculateAnalytics() {
             // Calcula analytics baseado nas movimentações
             const now = new Date();
@@ -959,7 +1174,7 @@
             const replenishmentCount = {};
             recentMovements.forEach(m => {
                 if (m.type === 'REPOSICAO' || m.type === 'COMPRA') {
-                    replenishmentCount[m.itemName] = (replenishmentCount[m.itemName] || 0) + m.quantity;
+                    replenishmentCount[m.item_name] = (replenishmentCount[m.item_name] || 0) + m.quantity;
                 }
             });
 
@@ -1001,9 +1216,11 @@
                     return;
                 }
 
-                // Preparar dados para o Excel
                 const data = items.map(item => {
+                    // Descobre o nome do almoxarifado
+                    const wh = state.warehouses.find(w => w.id === (item.warehouse_id || 'alm-1'));
                     const row = {
+                        'Almoxarifado': wh?.nome || 'Almoxarifado Central',
                         'Nome': item.nome,
                         'Categoria': item.categoria,
                         'Quantidade Total': item.quantidade,
@@ -1014,7 +1231,6 @@
                         'Observações': item.observacoes || ''
                     };
 
-                    // Adicionar colunas de tamanhos se existirem
                     if (item.tamanhos) {
                         Object.entries(item.tamanhos).forEach(([size, qty]) => {
                             row[`Tam: ${size}`] = qty;
@@ -1028,7 +1244,6 @@
                 const workbook = XLSX.utils.book_new();
                 XLSX.utils.book_append_sheet(workbook, worksheet, "Estoque");
 
-                // Gerar arquivo e baixar
                 XLSX.writeFile(workbook, `Estoque_Almoxarifado_${getCurrentDate()}.xlsx`);
                 showToast('Relatório de estoque gerado!', 'success');
             } catch (error) {
@@ -1048,7 +1263,7 @@
                 const data = movements.map(m => ({
                     'Data': formatDate(m.date),
                     'Tipo': MOVEMENT_TYPES[m.type]?.label || m.type,
-                    'Item': m.itemName,
+                    'Item': m.item_name,
                     'Quantidade': m.quantity,
                     'Colaborador': m.employeeName || m.employee || '-',
                     'Fornecedor': m.supplier || '-',
@@ -1170,13 +1385,13 @@
             const movement = {
                 date: getCurrentDate(),
                 type: op.type,
-                itemId: item.id,
-                itemName: op.size ? `${item.nome} (Tam: ${op.size})` : item.nome,
+                item_id: item.id,
+                item_name: op.size ? `${item.nome} (Tam: ${op.size})` : item.nome,
                 size: op.size,
                 quantity: op.quantity,
-                employeeName: op.employeeName || '',
+                employee: op.employeeName || '',
                 supplier: op.supplier || '',
-                user: state.user.nome,
+                user_name: state.user.nome,
                 observations: finalObservations
             };
 
@@ -1281,6 +1496,46 @@
             navigateTo('editItem');
         }
 
+        function navigateToWarehouses() {
+            navigateTo('warehouses');
+        }
+
+        function startTransfer(fromWarehouseId) {
+            state.transferOperation = {
+                active: true,
+                fromWarehouse: fromWarehouseId || state.activeWarehouse,
+                toWarehouse: fromWarehouseId === 'alm-1' ? 'alm-2' : 'alm-1',
+                selectedItem: null,
+                size: null,
+                quantity: 1,
+                observations: ''
+            };
+            navigateTo('transfer');
+        }
+
+        function cancelTransfer() {
+            state.transferOperation = {
+                active: false, fromWarehouse: 'alm-1', toWarehouse: 'alm-2',
+                selectedItem: null, size: null, quantity: 1, observations: ''
+            };
+            goBack();
+        }
+
+        async function handleSaveWarehouse(e) {
+            e.preventDefault();
+            const id = document.getElementById('warehouseId').value;
+            const nome = document.getElementById('warehouseName').value;
+            const descricao = document.getElementById('warehouseDesc').value;
+            // Otimista
+            const wh = state.warehouses.find(w => w.id === id);
+            if (wh) {
+                wh.nome = nome;
+                wh.descricao = descricao;
+            }
+            render();
+            await saveWarehouse({ id, nome, descricao });
+        }
+
         async function applyFilters() {
             state.isLoading = true;
             state.loadingMessage = 'Buscando movimentações...';
@@ -1340,7 +1595,7 @@
             if (state.filters.searchTerm) {
                 const term = state.filters.searchTerm.toLowerCase();
                 filtered = filtered.filter(m =>
-                    m.itemName?.toLowerCase().includes(term) ||
+                    m.item_name?.toLowerCase().includes(term) ||
                     m.employee?.toLowerCase().includes(term) ||
                     m.supplier?.toLowerCase().includes(term) ||
                     m.user?.toLowerCase().includes(term)
@@ -1359,6 +1614,12 @@
 
         function getFilteredItems() {
             let filtered = state.items;
+
+            // Filtro por almoxarifado
+            filtered = filtered.filter(i => {
+                const wid = i.warehouse_id || 'alm-1';
+                return wid === state.activeWarehouse;
+            });
 
             // Filtro por categoria
             if (state.filters.category !== 'TODAS') {
@@ -1634,6 +1895,12 @@
                 case 'editItem':
                     app.innerHTML = renderEditItem();
                     break;
+                case 'warehouses':
+                    app.innerHTML = renderWarehouses();
+                    break;
+                case 'transfer':
+                    app.innerHTML = renderTransfer();
+                    break;
             }
         }
 
@@ -1750,8 +2017,8 @@
                                 <i class="ph-fill ph-lightning text-amber-400"></i>
                                 Ações Rápidas
                             </h2>
-                            <div class="grid grid-cols-2 lg:grid-cols-5 gap-4">
-                                <button onclick="openMovementSelector()" class="glass p-6 rounded-lg hover:border-emerald-500 border-2 border-transparent transition-all text-center group">
+                            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                                <button onclick="openMovementSelector()" class="glass p-5 rounded-lg hover:border-emerald-500 border-2 border-transparent transition-all text-center group">
                                     <div class="w-12 h-12 bg-emerald-500/20 rounded-lg flex items-center justify-center mb-3 group-hover:scale-110 transition-transform mx-auto">
                                         <i class="ph-fill ph-arrows-clockwise text-emerald-400 text-2xl"></i>
                                     </div>
@@ -1759,7 +2026,7 @@
                                     <p class="text-slate-500 text-xs">Registrar</p>
                                 </button>
 
-                                <button onclick="navigateTo('stock')" class="glass p-6 rounded-lg hover:border-blue-500 border-2 border-transparent transition-all text-center group">
+                                <button onclick="navigateTo('stock')" class="glass p-5 rounded-lg hover:border-blue-500 border-2 border-transparent transition-all text-center group">
                                     <div class="w-12 h-12 bg-blue-500/20 rounded-lg flex items-center justify-center mb-3 group-hover:scale-110 transition-transform mx-auto">
                                         <i class="ph-fill ph-warehouse text-blue-400 text-2xl"></i>
                                     </div>
@@ -1767,7 +2034,7 @@
                                     <p class="text-slate-500 text-xs">Visualizar</p>
                                 </button>
 
-                                <button onclick="navigateToHistory()" class="glass p-6 rounded-lg hover:border-purple-500 border-2 border-transparent transition-all text-center group">
+                                <button onclick="navigateToHistory()" class="glass p-5 rounded-lg hover:border-purple-500 border-2 border-transparent transition-all text-center group">
                                     <div class="w-12 h-12 bg-purple-500/20 rounded-lg flex items-center justify-center mb-3 group-hover:scale-110 transition-transform mx-auto">
                                         <i class="ph-fill ph-clock-counter-clockwise text-purple-400 text-2xl"></i>
                                     </div>
@@ -1775,7 +2042,15 @@
                                     <p class="text-slate-500 text-xs">Ver</p>
                                 </button>
 
-                                <button onclick="navigateToDashboardAnalytics()" class="glass p-6 rounded-lg hover:border-pink-500 border-2 border-transparent transition-all text-center group">
+                                <button onclick="startTransfer('alm-1')" class="glass p-5 rounded-lg hover:border-cyan-500 border-2 border-transparent transition-all text-center group">
+                                    <div class="w-12 h-12 bg-cyan-500/20 rounded-lg flex items-center justify-center mb-3 group-hover:scale-110 transition-transform mx-auto">
+                                        <i class="ph-fill ph-arrows-left-right text-cyan-400 text-2xl"></i>
+                                    </div>
+                                    <h3 class="font-bold text-sm mb-1">Transferência</h3>
+                                    <p class="text-slate-500 text-xs">Entre almox.</p>
+                                </button>
+
+                                <button onclick="navigateToDashboardAnalytics()" class="glass p-5 rounded-lg hover:border-pink-500 border-2 border-transparent transition-all text-center group">
                                     <div class="w-12 h-12 bg-pink-500/20 rounded-lg flex items-center justify-center mb-3 group-hover:scale-110 transition-transform mx-auto">
                                         <i class="ph-fill ph-chart-line text-pink-400 text-2xl"></i>
                                     </div>
@@ -1783,12 +2058,20 @@
                                     <p class="text-slate-500 text-xs">Relatórios</p>
                                 </button>
 
-                                <button onclick="openNewItem()" class="glass p-6 rounded-lg hover:border-amber-500 border-2 border-transparent transition-all text-center group">
+                                <button onclick="openNewItem()" class="glass p-5 rounded-lg hover:border-amber-500 border-2 border-transparent transition-all text-center group">
                                     <div class="w-12 h-12 bg-amber-500/20 rounded-lg flex items-center justify-center mb-3 group-hover:scale-110 transition-transform mx-auto">
                                         <i class="ph-fill ph-plus-circle text-amber-400 text-2xl"></i>
                                     </div>
                                     <h3 class="font-bold text-sm mb-1">Novo Item</h3>
                                     <p class="text-slate-500 text-xs">Cadastrar</p>
+                                </button>
+
+                                <button onclick="navigateToWarehouses()" class="glass p-5 rounded-lg hover:border-slate-500 border-2 border-transparent transition-all text-center group">
+                                    <div class="w-12 h-12 bg-slate-500/20 rounded-lg flex items-center justify-center mb-3 group-hover:scale-110 transition-transform mx-auto">
+                                        <i class="ph-fill ph-gear text-slate-400 text-2xl"></i>
+                                    </div>
+                                    <h3 class="font-bold text-sm mb-1">Almoxarifados</h3>
+                                    <p class="text-slate-500 text-xs">Configurar</p>
                                 </button>
                             </div>
                         </div>
@@ -2139,13 +2422,16 @@
         function renderStock() {
             const filteredItems = getFilteredItems();
             const categories = [...new Set(state.items.map(i => i.categoria))];
+            const activeWh = state.warehouses.find(w => w.id === state.activeWarehouse);
+            const otherWh = state.warehouses.find(w => w.id !== state.activeWarehouse);
 
             return `
                 <div class="min-h-screen pb-6">
                     ${renderHeader()}
                     
                     <main class="p-4 max-w-7xl mx-auto space-y-6">
-                        <div class="flex justify-between items-center mb-6 flex-wrap gap-4">
+                        <!-- Título e ações -->
+                        <div class="flex justify-between items-center flex-wrap gap-4">
                             <h1 class="text-2xl md:text-3xl font-bold flex items-center gap-3">
                                 <i class="ph-fill ph-warehouse text-emerald-400"></i>
                                 Estoque de EPIs
@@ -2158,8 +2444,50 @@
                                 <button onclick="openNewItem()" class="bg-emerald-600 hover:bg-emerald-700 px-4 md:px-6 py-3 rounded-lg font-bold flex items-center gap-2 transition-all text-white">
                                     <i class="ph-fill ph-plus-circle text-xl"></i>
                                     <span class="hidden md:inline">Novo Item</span>
-                                    <span class="md:inline hidden">+</span>
                                 </button>
+                            </div>
+                        </div>
+
+                        <!-- Tabs de Almoxarifado -->
+                        <div class="glass rounded-xl overflow-hidden">
+                            <div class="flex border-b border-slate-200">
+                                ${state.warehouses.map(wh => `
+                                    <button
+                                        onclick="state.activeWarehouse = '${wh.id}'; state.filters.category = 'TODAS'; state.filters.searchTerm = ''; render()"
+                                        class="flex-1 py-4 px-6 font-bold text-sm transition-all flex items-center justify-center gap-2 ${
+                                            state.activeWarehouse === wh.id
+                                                ? 'bg-emerald-50 text-emerald-700 border-b-2 border-emerald-500'
+                                                : 'text-slate-500 hover:bg-slate-50'
+                                        }">
+                                        <i class="ph-fill ph-${wh.id === 'alm-1' ? 'warehouse' : 'truck'} text-lg"></i>
+                                        <span>${wh.nome}</span>
+                                        <span class="ml-2 text-xs px-2 py-0.5 rounded-full font-mono ${
+                                            state.activeWarehouse === wh.id ? 'bg-emerald-200 text-emerald-800' : 'bg-slate-200 text-slate-600'
+                                        }">${state.items.filter(i => (i.warehouse_id || 'alm-1') === wh.id).length}</span>
+                                    </button>
+                                `).join('')}
+                            </div>
+
+                            <!-- Barra de ações do almoxarifado ativo -->
+                            <div class="p-4 bg-slate-50 flex items-center justify-between flex-wrap gap-3">
+                                <div>
+                                    <p class="font-bold text-slate-700 text-sm">${activeWh?.nome || 'Almoxarifado'}</p>
+                                    <p class="text-slate-500 text-xs">${activeWh?.descricao || ''}</p>
+                                </div>
+                                <div class="flex gap-2">
+                                    <button
+                                        onclick="startTransfer('${state.activeWarehouse}')"
+                                        class="bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 transition-all">
+                                        <i class="ph-fill ph-arrows-left-right"></i>
+                                        Transferir para ${otherWh?.nome || 'outro'}
+                                    </button>
+                                    <button
+                                        onclick="navigateToWarehouses()"
+                                        class="bg-slate-200 hover:bg-slate-300 text-slate-700 px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 transition-all">
+                                        <i class="ph-fill ph-gear"></i>
+                                        Configurar
+                                    </button>
+                                </div>
                             </div>
                         </div>
 
@@ -2219,20 +2547,28 @@
                         ${filteredItems.length === 0 ? `
                             <div class="glass p-12 rounded-xl text-center">
                                 <i class="ph ph-package text-6xl md:text-8xl text-slate-600 mb-4"></i>
-                                <p class="text-slate-500 text-lg md:text-xl mb-6">Nenhum item encontrado</p>
+                                <p class="text-slate-500 text-lg md:text-xl mb-6">Nenhum item encontrado em ${activeWh?.nome || 'este almoxarifado'}</p>
                                 ${state.filters.searchTerm || state.filters.category !== 'TODAS' || state.filters.location || state.filters.lowStockOnly ? `
                                     <button onclick="state.filters = {startDate: getFirstDayOfMonth(), endDate: getCurrentDate(), type: 'TODOS', searchTerm: '', category: 'TODAS', minQuantity: '', maxQuantity: '', location: '', lowStockOnly: false}; render()" class="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg font-bold text-white">
                                         Limpar Filtros
                                     </button>
                                 ` : `
-                                    <button onclick="openNewItem()" class="bg-emerald-600 hover:bg-emerald-700 px-6 py-3 rounded-lg font-bold text-white">
-                                        Cadastrar Primeiro Item
-                                    </button>
+                                    <div class="flex gap-3 justify-center flex-wrap">
+                                        <button onclick="openNewItem()" class="bg-emerald-600 hover:bg-emerald-700 px-6 py-3 rounded-lg font-bold text-white">
+                                            Cadastrar Item Aqui
+                                        </button>
+                                        ${state.activeWarehouse !== 'alm-1' ? `
+                                            <button onclick="startTransfer('alm-1')" class="bg-cyan-600 hover:bg-cyan-700 px-6 py-3 rounded-lg font-bold text-white flex items-center gap-2">
+                                                <i class="ph-fill ph-arrows-left-right"></i>
+                                                Transferir do Central
+                                            </button>
+                                        ` : ''}
+                                    </div>
                                 `}
                             </div>
                         ` : `
                             <div class="mb-4 text-slate-500 text-sm">
-                                Mostrando <span class="font-bold text-slate-800">${filteredItems.length}</span> de <span class="font-bold text-slate-800">${state.items.length}</span> itens
+                                Mostrando <span class="font-bold text-slate-800">${filteredItems.length}</span> de <span class="font-bold text-slate-800">${state.items.filter(i => (i.warehouse_id || 'alm-1') === state.activeWarehouse).length}</span> itens em <span class="font-bold text-emerald-600">${activeWh?.nome}</span>
                             </div>
                             
                             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -2299,7 +2635,10 @@
                                                 <i class="ph ph-pencil-simple"></i>
                                                 Editar
                                             </button>
-                                            <button onclick="handleDeleteItem('${item.id}')" class="bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-red-500 px-3 md:px-4 py-2 rounded-lg font-semibold transition-all flex items-center justify-center gap-2 border border-red-500 text-sm text-white">
+                                            <button onclick="state.transferOperation.selectedItem='${item.id}'; startTransfer('${item.warehouse_id || 'alm-1'}')" class="bg-cyan-600/20 hover:bg-cyan-600 text-cyan-500 hover:text-white px-3 py-2 rounded-lg font-semibold transition-all flex items-center justify-center gap-2 border border-cyan-500 text-sm" title="Transferir">
+                                                <i class="ph ph-arrows-left-right"></i>
+                                            </button>
+                                            <button onclick="handleDeleteItem('${item.id}')" class="bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white px-3 py-2 rounded-lg font-semibold transition-all flex items-center justify-center gap-2 border border-red-500 text-sm">
                                                 <i class="ph ph-trash"></i>
                                             </button>
                                         </div>
@@ -2307,6 +2646,232 @@
                                 `).join('')}
                             </div>
                         `}
+                    </main>
+                </div>
+            `;
+        }
+
+
+
+        function renderWarehouses() {
+            return `
+                <div class="min-h-screen pb-6">
+                    ${renderHeader()}
+                    <main class="p-4 max-w-3xl mx-auto space-y-6">
+                        <div class="flex items-center justify-between">
+                            <h1 class="text-2xl md:text-3xl font-bold flex items-center gap-3">
+                                <i class="ph-fill ph-gear text-slate-400"></i>
+                                Configurar Almoxarifados
+                            </h1>
+                            <button onclick="goBack()" class="text-slate-500 hover:text-red-500 transition-all">
+                                <i class="ph ph-x text-3xl"></i>
+                            </button>
+                        </div>
+
+                        <div class="space-y-4">
+                            ${state.warehouses.map(wh => `
+                                <div class="glass p-6 rounded-xl">
+                                    <div class="flex items-center gap-3 mb-4">
+                                        <div class="w-12 h-12 bg-${wh.id === 'alm-1' ? 'emerald' : 'cyan'}-500/20 rounded-xl flex items-center justify-center">
+                                            <i class="ph-fill ph-${wh.id === 'alm-1' ? 'warehouse' : 'truck'} text-${wh.id === 'alm-1' ? 'emerald' : 'cyan'}-500 text-2xl"></i>
+                                        </div>
+                                        <div>
+                                            <h2 class="font-bold text-lg">${wh.nome}</h2>
+                                            <p class="text-slate-500 text-sm">${wh.descricao || ''}</p>
+                                        </div>
+                                        <div class="ml-auto">
+                                            <span class="text-xs bg-slate-100 text-slate-600 px-3 py-1 rounded-full font-mono font-bold">
+                                                ${state.items.filter(i => (i.warehouse_id || 'alm-1') === wh.id).length} itens
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <form onsubmit="handleSaveWarehouse(event)" class="space-y-4">
+                                        <input type="hidden" id="warehouseId" value="${wh.id}">
+                                        <div>
+                                            <label class="text-sm font-bold text-slate-700 block mb-2 uppercase tracking-wide">Nome do Almoxarifado *</label>
+                                            <input
+                                                type="text"
+                                                id="warehouseName"
+                                                value="${wh.nome}"
+                                                class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-3 focus:border-emerald-500 outline-none text-slate-800"
+                                                placeholder="Nome do almoxarifado"
+                                                required
+                                            >
+                                        </div>
+                                        <div>
+                                            <label class="text-sm font-bold text-slate-700 block mb-2 uppercase tracking-wide">Descrição</label>
+                                            <input
+                                                type="text"
+                                                id="warehouseDesc"
+                                                value="${wh.descricao || ''}"
+                                                class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-3 focus:border-emerald-500 outline-none text-slate-800"
+                                                placeholder="Descrição opcional"
+                                            >
+                                        </div>
+                                        <button type="submit" class="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-lg font-bold flex items-center gap-2 transition-all">
+                                            <i class="ph ph-floppy-disk"></i>
+                                            Salvar Alterações
+                                        </button>
+                                    </form>
+                                </div>
+                            `).join('')}
+                        </div>
+
+                        <div class="glass p-6 rounded-xl border-l-4 border-blue-400">
+                            <h3 class="font-bold text-blue-700 mb-2 flex items-center gap-2">
+                                <i class="ph-fill ph-info"></i>
+                                SQL para criar as tabelas no Supabase
+                            </h3>
+                            <p class="text-slate-500 text-sm mb-3">Execute no SQL Editor do Supabase para ativar a persistência:</p>
+                            <pre class="bg-slate-800 text-emerald-300 p-4 rounded-lg text-xs overflow-x-auto font-mono">CREATE TABLE IF NOT EXISTS warehouses (
+  id TEXT PRIMARY KEY,
+  nome TEXT NOT NULL,
+  descricao TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+INSERT INTO warehouses (id, nome, descricao) VALUES
+  ('alm-1', 'Almoxarifado Central', 'Estoque principal'),
+  ('alm-2', 'Almoxarifado Distribuição', 'Itens para distribuição')
+ON CONFLICT (id) DO NOTHING;
+ALTER TABLE items ADD COLUMN IF NOT EXISTS warehouse_id TEXT DEFAULT 'alm-1';
+ALTER TABLE movements ADD COLUMN IF NOT EXISTS destination_warehouse_id TEXT;</pre>
+                        </div>
+                    </main>
+                </div>
+            `;
+        }
+
+        function renderTransfer() {
+            const op = state.transferOperation;
+            const fromWh = state.warehouses.find(w => w.id === op.fromWarehouse);
+            const toWh = state.warehouses.find(w => w.id === op.toWarehouse);
+            const sourceItems = state.items.filter(i => (i.warehouse_id || 'alm-1') === op.fromWarehouse && i.quantidade > 0);
+            const selectedItem = sourceItems.find(i => i.id === op.selectedItem);
+
+            return `
+                <div class="min-h-screen pb-6">
+                    ${renderHeader()}
+                    <main class="p-4 max-w-3xl mx-auto">
+                        <div class="glass p-6 md:p-8 rounded-xl">
+                            <div class="flex items-center justify-between mb-6">
+                                <h1 class="text-2xl font-bold flex items-center gap-3">
+                                    <i class="ph-fill ph-arrows-left-right text-cyan-500"></i>
+                                    Transferência entre Almoxarifados
+                                </h1>
+                                <button onclick="cancelTransfer()" class="text-slate-500 hover:text-red-500 transition-all">
+                                    <i class="ph ph-x text-3xl"></i>
+                                </button>
+                            </div>
+
+                            <div class="flex items-center gap-4 mb-6 p-4 bg-slate-50 rounded-xl">
+                                <div class="flex-1 text-center">
+                                    <div class="w-12 h-12 bg-emerald-100 rounded-xl flex items-center justify-center mx-auto mb-2">
+                                        <i class="ph-fill ph-warehouse text-emerald-600 text-2xl"></i>
+                                    </div>
+                                    <p class="font-bold text-sm text-slate-700">${fromWh?.nome || 'Origem'}</p>
+                                    <p class="text-xs text-slate-500">${fromWh?.descricao || ''}</p>
+                                </div>
+                                <div class="text-cyan-500 text-3xl font-bold">→</div>
+                                <div class="flex-1 text-center">
+                                    <div class="w-12 h-12 bg-cyan-100 rounded-xl flex items-center justify-center mx-auto mb-2">
+                                        <i class="ph-fill ph-truck text-cyan-600 text-2xl"></i>
+                                    </div>
+                                    <p class="font-bold text-sm text-slate-700">${toWh?.nome || 'Destino'}</p>
+                                    <p class="text-xs text-slate-500">${toWh?.descricao || ''}</p>
+                                </div>
+                            </div>
+
+                            ${sourceItems.length === 0 ? `
+                                <div class="text-center py-12 text-slate-500">
+                                    <i class="ph ph-package text-6xl mb-4 opacity-50"></i>
+                                    <p class="text-xl mb-4">Nenhum item disponível em ${fromWh?.nome}</p>
+                                    <button onclick="cancelTransfer()" class="bg-slate-200 hover:bg-slate-300 px-6 py-3 rounded-lg font-bold">Voltar</button>
+                                </div>
+                            ` : `
+                                <form onsubmit="event.preventDefault(); transferItems();" class="space-y-6">
+                                    <div>
+                                        <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Item a Transferir *</label>
+                                        <select
+                                            onchange="state.transferOperation.selectedItem = this.value; state.transferOperation.size = null; render()"
+                                            class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-cyan-500 outline-none text-slate-800"
+                                            required
+                                        >
+                                            <option value="">-- Selecione um item --</option>
+                                            ${sourceItems.map(item => `
+                                                <option value="${item.id}" ${op.selectedItem === item.id ? 'selected' : ''}>
+                                                    ${item.nome} (${item.quantidade} em estoque)
+                                                </option>
+                                            `).join('')}
+                                        </select>
+                                    </div>
+
+                                    ${selectedItem ? `
+                                        <div class="glass p-4 rounded-lg border-2 border-cyan-500/30">
+                                            <div class="flex justify-between items-center">
+                                                <div>
+                                                    <p class="text-slate-500 text-sm">Item selecionado</p>
+                                                    <p class="font-bold text-lg">${selectedItem.nome}</p>
+                                                    <span class="text-xs px-2 py-1 bg-blue-500/20 text-blue-500 rounded-full">${selectedItem.categoria}</span>
+                                                </div>
+                                                <div class="text-right">
+                                                    <p class="text-slate-400 text-sm">Disponível</p>
+                                                    <p class="font-bold text-2xl font-mono text-emerald-500">${selectedItem.quantidade}</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ` : ''}
+
+                                    ${selectedItem && selectedItem.tamanhos && Object.keys(selectedItem.tamanhos).length > 0 ? `
+                                        <div>
+                                            <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Tamanho *</label>
+                                            <select
+                                                onchange="state.transferOperation.size = this.value; render()"
+                                                class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-cyan-500 outline-none text-slate-800"
+                                                required
+                                            >
+                                                <option value="">-- Selecione o tamanho --</option>
+                                                ${Object.entries(selectedItem.tamanhos).filter(([s, q]) => q > 0).map(([size, qty]) => `
+                                                    <option value="${size}" ${op.size === size ? 'selected' : ''}>
+                                                        ${size} (Disponível: ${qty})
+                                                    </option>
+                                                `).join('')}
+                                            </select>
+                                        </div>
+                                    ` : ''}
+
+                                    <div>
+                                        <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Quantidade *</label>
+                                        <input
+                                            type="number"
+                                            value="${op.quantity}"
+                                            onchange="state.transferOperation.quantity = parseInt(this.value)"
+                                            min="1"
+                                            ${selectedItem ? `max="${op.size && selectedItem.tamanhos ? (selectedItem.tamanhos[op.size] || 0) : selectedItem.quantidade}"` : ''}
+                                            class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-cyan-500 outline-none text-slate-800 font-mono text-lg"
+                                            required
+                                        >
+                                    </div>
+
+                                    <div>
+                                        <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Observações</label>
+                                        <textarea
+                                            onchange="state.transferOperation.observations = this.value"
+                                            class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-cyan-500 outline-none text-slate-800"
+                                            rows="2"
+                                            placeholder="Motivo da transferência (opcional)"
+                                        >${op.observations}</textarea>
+                                    </div>
+
+                                    <div class="flex gap-4 pt-6">
+                                        <button type="button" onclick="cancelTransfer()" class="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-4 rounded-xl transition-all">CANCELAR</button>
+                                        <button type="submit" class="flex-1 bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2">
+                                            <i class="ph-fill ph-arrows-left-right"></i>
+                                            TRANSFERIR
+                                        </button>
+                                    </div>
+                                </form>
+                            `}
+                        </div>
                     </main>
                 </div>
             `;
@@ -2431,7 +2996,7 @@
                                                                 <i class="ph-fill ph-${typeInfo.icon} text-slate-800 text-xl"></i>
                                                             </div>
                                                             <div class="min-w-0 flex-1">
-                                                                <h3 class="font-bold text-base md:text-lg truncate">${movement.itemName}</h3>
+                                                                <h3 class="font-bold text-base md:text-lg truncate">${movement.item_name}</h3>
                                                                 <span class="text-xs px-2 py-1 ${getColorClass(typeInfo.color)} rounded-full font-semibold uppercase">${typeInfo.label}</span>
                                                             </div>
                                                         </div>
@@ -2766,6 +3331,20 @@
                                 <i class="ph-fill ph-clock-counter-clockwise text-lg md:text-xl"></i>
                             </button>
                             <button 
+                                onclick="startTransfer(state.activeWarehouse)"
+                                class="px-3 md:px-4 py-2 rounded-lg hover:bg-slate-100 transition-all ${state.view === 'transfer' ? 'bg-slate-100 text-cyan-600' : 'text-slate-600'}"
+                                title="Transferência"
+                            >
+                                <i class="ph-fill ph-arrows-left-right text-lg md:text-xl"></i>
+                            </button>
+                            <button 
+                                onclick="navigateToWarehouses()"
+                                class="px-3 md:px-4 py-2 rounded-lg hover:bg-slate-100 transition-all ${state.view === 'warehouses' ? 'bg-slate-100 text-slate-700' : 'text-slate-600'}"
+                                title="Almoxarifados"
+                            >
+                                <i class="ph-fill ph-gear text-lg md:text-xl"></i>
+                            </button>
+                            <button 
                                 onclick="handleLogout()"
                                 class="px-3 md:px-4 py-2 rounded-lg hover:bg-red-50 transition-all text-red-500 hover:text-red-600"
                                 title="Sair"
@@ -2791,7 +3370,7 @@
                 state.isLoading = true;
                 render();
 
-                loadItems().then(() => {
+                Promise.all([loadItems(), loadWarehouses()]).then(() => {
                     navigateTo('dashboard');
                     state.isLoading = false;
                     state.loadingMessage = '';

@@ -1,0 +1,85 @@
+/* Almoxarifado/css/auth.css */
+#login-screen {
+  position: fixed; inset: 0;
+  background: radial-gradient(ellipse at 50% 30%, #f1f5f9 0%, #e8edf5 60%, #dde4ef 100%);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  z-index: 10000; overflow: hidden;
+}
+
+.login-box {
+  background: #fff; border: 1px solid rgba(10,47,168,0.12);
+  width: 100%; max-width: 380px; border-radius: 16px;
+  box-shadow: 0 4px 18px rgba(10,47,168,0.07), 0 1px 4px rgba(0,0,0,0.04);
+  display: flex; flex-direction: column; overflow: hidden;
+  margin: 0 16px; animation: loginCardIn 0.4s cubic-bezier(0.16,1,0.3,1) forwards;
+}
+@keyframes loginCardIn { from { opacity:0; transform:translateY(20px); } to { opacity:1; transform:translateY(0); } }
+
+.login-header {
+  padding: 24px 20px 18px; background: #fff;
+  border-bottom: 1px solid rgba(226,232,240,0.8);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.login-header-title { display: flex; flex-direction: column; gap: 2px; }
+.login-brand-label { font-size: 11px; font-weight: 700; letter-spacing: 0.1em; color: #64748b; text-transform: uppercase; }
+.login-brand-name  { font-size: 20px; font-weight: 800; color: #0f3868; letter-spacing: -0.02em; line-height: 1.1; }
+.login-icon {
+  width: 40px; height: 40px; border-radius: 10px;
+  background: linear-gradient(135deg, #0f3868 0%, #2563eb 100%);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(15,56,104,0.3); font-size: 20px; color: #fff;
+}
+
+.login-system-row {
+  padding: 14px 20px; background: #f8fafc;
+  border-bottom: 1px solid rgba(226,232,240,0.8);
+  display: flex; align-items: center; gap: 12px;
+}
+.login-system-icon {
+  width: 32px; height: 32px; border-radius: 8px;
+  background: linear-gradient(135deg, #1a56a0 0%, #2563eb 100%);
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; flex-shrink: 0; box-shadow: 0 2px 6px rgba(0,0,0,0.15); font-size: 16px;
+}
+.login-system-name { font-size: 13px; font-weight: 700; color: #334155; letter-spacing: 0.03em; text-transform: uppercase; }
+
+.login-form-area { background: #f4f7fa; padding: 20px 20px 24px; display: flex; flex-direction: column; gap: 16px; }
+.login-form-section {
+  background: #fff; border-radius: 12px; border: 1px solid rgba(226,232,240,0.8);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.03); padding: 20px;
+  display: flex; flex-direction: column; gap: 14px;
+}
+
+.login-input-group { display: flex; flex-direction: column; gap: 6px; }
+.login-input-group label { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #94a3b8; }
+.login-input-group input {
+  height: 42px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;
+  padding: 0 14px; font-size: 14px; color: #1e293b;
+  font-family: var(--font-display); outline: none; transition: border-color .2s, box-shadow .2s;
+}
+.login-input-group input:focus { border-color: #2563eb; background: #fff; box-shadow: 0 0 0 3px rgba(37,99,235,0.08); }
+
+.login-btn {
+  width: 100%; height: 44px;
+  background: linear-gradient(135deg, #0f3868 0%, #1a56a0 100%);
+  color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 700;
+  cursor: pointer; transition: all .2s; font-family: var(--font-display);
+  box-shadow: 0 4px 12px rgba(15,56,104,0.25);
+}
+.login-btn:hover { background: linear-gradient(135deg, #0f3868 0%, #2563eb 100%); transform: translateY(-1px); box-shadow: 0 6px 18px rgba(15,56,104,0.32); }
+.login-btn:active { transform: translateY(1px); }
+.login-btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+
+.login-error { color: #dc2626; font-size: 12px; text-align: center; min-height: 18px; font-weight: 500; }
+
+.login-footer {
+  position: fixed; bottom: 18px; left: 0; right: 0; text-align: center;
+  font-size: 10px; color: rgba(148,163,184,0.4); font-weight: 500;
+  letter-spacing: 0.08em; text-transform: uppercase; pointer-events: none; z-index: 5;
+}
+@media (max-width: 420px) {
+  .login-header { padding: 16px 16px 14px; }
+  .login-form-area { padding: 16px 16px 20px; }
+  .login-form-section { padding: 16px; }
+  .login-brand-name { font-size: 18px; }
+}

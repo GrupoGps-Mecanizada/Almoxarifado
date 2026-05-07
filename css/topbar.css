@@ -1,0 +1,69 @@
+/* Almoxarifado/css/topbar.css */
+#global-sync-bar { height: 0; background: linear-gradient(90deg, var(--accent), #2563eb); transition: height .25s; flex-shrink: 0; }
+#global-sync-bar.active { height: 3px; }
+
+#topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 16px; border-bottom: 1px solid var(--border);
+  background: var(--bg-1); flex-shrink: 0; position: relative; z-index: 100;
+  gap: 12px; min-height: 48px;
+}
+#topbar-left  { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+#topbar-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+.topbar-icon-btn {
+  width: 34px; height: 34px; display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: transparent; color: var(--text-2); cursor: pointer; transition: all .15s; font-size: 16px;
+}
+.topbar-icon-btn:hover { background: var(--bg-3); border-color: var(--accent); color: var(--accent); }
+
+.logo {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 1px; line-height: 1;
+}
+.logo-gps       { font-weight: 800; font-size: 14px; letter-spacing: 0.5px; color: #0f3868; }
+.logo-divider   { height: 1px; background: linear-gradient(90deg, transparent, var(--border), transparent); width: 100%; margin: 1px 0; }
+.logo-gestao    { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.12em; color: var(--text-3); }
+
+/* Sidebar overlay */
+.nav-menu-overlay { position: fixed; inset: 0; z-index: 9000; background: rgba(0,0,0,0.3); backdrop-filter: blur(2px); animation: fadeOverlay .15s ease; }
+.nav-menu-overlay.hidden { display: none; }
+@keyframes fadeOverlay { from { opacity:0; } to { opacity:1; } }
+
+.nav-menu-panel {
+  position: absolute; top: 0; left: 0; width: 280px; height: 100%;
+  background: var(--bg-1); border-right: 1px solid var(--border);
+  box-shadow: var(--shadow-lg); display: flex; flex-direction: column;
+  animation: slideNav .2s cubic-bezier(.4,0,.2,1);
+}
+@keyframes slideNav { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+
+.nav-menu-header {
+  display: flex; align-items: center; justify-content: flex-start;
+  padding: 20px 16px; border-bottom: 1px solid var(--border); min-height: 80px;
+}
+.nav-menu-body { flex: 1; overflow-y: auto; padding: 8px 0; }
+
+.nav-menu-item {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 10px 20px; border: none; border-radius: 0;
+  background: transparent; color: var(--text-2);
+  font-family: var(--font-display); font-size: 13px; font-weight: 500;
+  cursor: pointer; transition: all .12s; text-align: left;
+}
+.nav-menu-item:hover { background: var(--bg-3); color: var(--accent); }
+.nav-menu-item.active { background: var(--accent-glow); color: var(--accent); font-weight: 600; }
+.nav-menu-item i { font-size: 16px; flex-shrink: 0; width: 20px; text-align: center; }
+
+.nav-menu-footer {
+  border-top: 1px solid var(--border); padding: 14px 20px;
+  background: var(--bg-2); flex-shrink: 0; display: flex; flex-direction: column; gap: 10px;
+}
+.nav-menu-user-info { font-size: 12px; color: var(--text-2); display: flex; align-items: center; gap: 8px; }
+
+@media (max-width: 480px) {
+  .nav-menu-panel { width: 100vw; }
+  .logo-gps { font-size: 12px; }
+  #topbar { padding: 6px 10px; }
+}

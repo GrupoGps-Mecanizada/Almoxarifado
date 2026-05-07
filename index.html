@@ -1579,9 +1579,7 @@
                 const term = state.filters.searchTerm.toLowerCase();
                 filtered = filtered.filter(i =>
                     i.nome?.toLowerCase().includes(term) ||
-                    i.categoria?.toLowerCase().includes(term) ||
-                    i.localizacao?.toLowerCase().includes(term) ||
-                    i.ca?.toLowerCase().includes(term)
+                    i.categoria?.toLowerCase().includes(term)
                 );
             }
 

@@ -2373,21 +2373,21 @@
                             ${state.emergency.cart.length > 0 ? `<span class="tab-count" style="background:var(--red);color:#fff;">${state.emergency.cart.length}</span>` : ''}
                         </button>
                     </div>
-                    ${state.activeWarehouse !== 'emergencial' ? `
                     <div class="info-bar">
                         <div>
-                            <div class="info-bar-title">${activeWh?.nome || 'Almoxarifado'}</div>
-                            <div class="info-bar-sub">${activeWh?.descricao || ''}</div>
+                            <div class="info-bar-title">${state.activeWarehouse === 'emergencial' ? 'Saída Emergencial' : (activeWh?.nome || 'Almoxarifado')}</div>
+                            <div class="info-bar-sub">${state.activeWarehouse === 'emergencial' ? 'Retira itens de qualquer almoxarifado' : (activeWh?.descricao || '')}</div>
                         </div>
                         <div class="row">
-                            <button onclick="startTransfer('${state.activeWarehouse}')" class="btn-cyan" style="font-size:12px;padding:7px 12px;">
-                                <i class="ph-fill ph-arrows-left-right"></i> Transferir para ${otherWh?.nome || 'outro'}
+                            <button onclick="startTransfer('${state.activeWarehouse === 'emergencial' ? 'alm-1' : state.activeWarehouse}')" class="btn-cyan" style="font-size:12px;padding:7px 12px;">
+                                <i class="ph-fill ph-arrows-left-right"></i> Transferência
                             </button>
+                            ${state.activeWarehouse !== 'emergencial' ? `
                             <button onclick="navigateToWarehouses()" class="btn-ghost" style="font-size:12px;padding:7px 12px;">
                                 <i class="ph-fill ph-gear"></i> Configurar
-                            </button>
+                            </button>` : ''}
                         </div>
-                    </div>` : ''}
+                    </div>
                 </div>
 
                 ${state.activeWarehouse === 'emergencial' ? renderEmergencial() : `

@@ -1923,288 +1923,175 @@
 }
 
         function renderMovementSelector() {
-            return `
-                <div class="min-h-screen pb-6">
-                    ${renderHeader()}
-                    
-                    <main class="p-4 max-w-5xl mx-auto">
-                        <div class="glass p-8 rounded-xl">
-                            <div class="flex items-center justify-between mb-6">
-                                <h1 class="text-2xl md:text-3xl font-bold flex items-center gap-3">
-                                    <i class="ph-fill ph-shopping-cart text-emerald-400"></i>
-                                    Compra de Estoque
-                                </h1>
-                                <button onclick="goBack()" class="text-slate-500 hover:text-red-500 transition-all">
-                                    <i class="ph ph-x text-3xl"></i>
-                                </button>
-                            </div>
-
-                            <div class="grid grid-cols-1 md:grid-cols-1 gap-4 md:gap-6 mt-8 max-w-sm mx-auto">
-                                <!-- Compra de Estoque -->
-                                <button onclick="startMovement('COMPRA')" class="glass p-6 md:p-8 rounded-xl hover:border-emerald-500 border-2 border-transparent transition-all group text-center">
-                                    <div class="w-12 h-12 md:w-16 md:h-16 bg-emerald-500/20 rounded-xl flex items-center justify-center mb-3 md:mb-4 group-hover:scale-110 transition-transform mx-auto">
-                                        <i class="ph-fill ph-shopping-cart text-emerald-400 text-3xl md:text-4xl"></i>
-                                    </div>
-                                    <h3 class="font-bold text-lg md:text-xl mb-2">Compra de Estoque</h3>
-                                    <p class="text-slate-500 text-xs md:text-sm">Adicionar itens ao almoxarifado</p>
-                                    <div class="mt-3 md:mt-4 pt-3 md:pt-4 border-t border-slate-200">
-                                        <p class="text-xs text-emerald-400 font-semibold">
-                                            <i class="ph-fill ph-arrow-up"></i> ADICIONA AO ESTOQUE
-                                        </p>
-                                    </div>
-                                </button>
-                            </div>
-                        </div>
-                    </main>
+    return `
+        <div class="page-wrap">
+            ${renderHeader()}
+            <div class="page-content-sm">
+                <div class="card-lg">
+                    <div class="row-between" style="margin-bottom:24px;">
+                        <h1 class="page-title"><i class="ph-fill ph-shopping-cart text-green"></i> Compra de Estoque</h1>
+                        <button onclick="goBack()" class="btn-icon"><i class="ph ph-x"></i></button>
+                    </div>
+                    <div class="stack" style="max-width:360px;margin:0 auto;">
+                        <button onclick="startMovement('COMPRA')" class="action-card" style="padding:28px;">
+                            <div class="action-icon icon-green" style="width:56px;height:56px;font-size:26px;"><i class="ph-fill ph-shopping-cart"></i></div>
+                            <h3 style="font-size:16px;">Compra de Estoque</h3>
+                            <p>Registrar entrada de material</p>
+                        </button>
+                    </div>
                 </div>
-            `;
-        }
+            </div>
+        </div>
+    `;
+}
 
         function renderMovement() {
-            const op = state.movementOperation;
-            const typeInfo = MOVEMENT_TYPES[op.type];
-            const itemsInWarehouse = state.items.filter(item => (item.warehouse_id || 'alm-1') === op.targetWarehouse);
-            const selectedItem = itemsInWarehouse.find(item => item.id === op.selectedItem);
+    const op = state.movementOperation;
+    const typeInfo = MOVEMENT_TYPES[op.type];
+    const itemsInWarehouse = state.items.filter(item => (item.warehouse_id || 'alm-1') === op.targetWarehouse);
+    const selectedItem = itemsInWarehouse.find(item => item.id === op.selectedItem);
+    const colorMap = { emerald:'green', blue:'blue', purple:'purple', amber:'amber', red:'red', cyan:'cyan' };
+    const colorKey = colorMap[typeInfo.color] || 'gray';
 
-            return `
-                <div class="min-h-screen pb-6">
-                    ${renderHeader()}
+    return `
+        <div class="page-wrap">
+            ${renderHeader()}
+            <div class="page-content-sm">
+                <div class="card-lg">
+                    <div class="row-between" style="margin-bottom:24px;">
+                        <h1 class="page-title">
+                            <i class="ph-fill ph-${typeInfo.icon} text-${colorKey}"></i>
+                            ${typeInfo.label}
+                        </h1>
+                        <button onclick="cancelMovement()" class="btn-icon"><i class="ph ph-x"></i></button>
+                    </div>
 
-                    <main class="p-4 max-w-3xl mx-auto">
-                        <div class="glass p-6 md:p-8 rounded-xl">
-                            <div class="flex items-center justify-between mb-6">
-                                <h1 class="text-2xl md:text-3xl font-bold flex items-center gap-3">
-                                    <i class="ph-fill ph-${typeInfo.icon} text-${typeInfo.color}-400"></i>
-                                    <span class="hidden md:inline">${typeInfo.label}</span>
-                                    <span class="md:hidden">${typeInfo.label.split(' ')[0]}</span>
-                                </h1>
-                                <button onclick="cancelMovement()" class="text-slate-500 hover:text-red-500 transition-all">
-                                    <i class="ph ph-x text-3xl"></i>
-                                </button>
-                            </div>
+                    <form onsubmit="event.preventDefault();confirmMovement();" class="stack">
 
-                            <form onsubmit="event.preventDefault(); confirmMovement();" class="space-y-6">
-
-                                <!-- Seleção do Almoxarifado -->
-                                <div>
-                                    <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Almoxarifado de Destino *</label>
-                                    <div class="grid grid-cols-2 gap-3">
-                                        ${state.warehouses.map(wh => `
-                                            <label class="flex items-center gap-3 cursor-pointer p-4 rounded-xl border-2 transition-all ${op.targetWarehouse === wh.id ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200 bg-white hover:border-emerald-200'}">
-                                                <input
-                                                    type="radio"
-                                                    name="targetWarehouse"
-                                                    value="${wh.id}"
-                                                    ${op.targetWarehouse === wh.id ? 'checked' : ''}
-                                                    onchange="state.movementOperation.targetWarehouse = this.value; state.movementOperation.selectedItem = null; render()"
-                                                >
-                                                <div>
-                                                    <span class="font-bold text-slate-700 block text-sm">${wh.nome}</span>
-                                                    <span class="text-xs text-slate-500">${wh.descricao}</span>
-                                                </div>
-                                            </label>
-                                        `).join('')}
-                                    </div>
-                                </div>
-
-                                <!-- Toggle: Item Existente ou Novo Item -->
-                                <div>
-                                    <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Tipo de Entrada *</label>
-                                    <div class="grid grid-cols-2 gap-3">
-                                        <label class="flex items-center gap-3 cursor-pointer p-4 rounded-xl border-2 transition-all ${!op.createNewItem ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200 bg-white hover:border-emerald-200'}">
-                                            <input
-                                                type="radio"
-                                                name="entryType"
-                                                ${!op.createNewItem ? 'checked' : ''}
-                                                onchange="state.movementOperation.createNewItem = false; state.movementOperation.selectedItem = null; render()"
-                                            >
-                                            <div>
-                                                <span class="font-bold text-slate-700 block text-sm">Item Existente</span>
-                                                <span class="text-xs text-slate-500">Adicionar ao estoque atual</span>
-                                            </div>
-                                        </label>
-                                        <label class="flex items-center gap-3 cursor-pointer p-4 rounded-xl border-2 transition-all ${op.createNewItem ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200 bg-white hover:border-emerald-200'}">
-                                            <input
-                                                type="radio"
-                                                name="entryType"
-                                                ${op.createNewItem ? 'checked' : ''}
-                                                onchange="state.movementOperation.createNewItem = true; state.movementOperation.selectedItem = null; render()"
-                                            >
-                                            <div>
-                                                <span class="font-bold text-slate-700 block text-sm">Novo Item</span>
-                                                <span class="text-xs text-slate-500">Cadastrar e dar entrada</span>
-                                            </div>
-                                        </label>
-                                    </div>
-                                </div>
-
-                                ${!op.createNewItem ? `
-                                    <!-- Seleção de item existente -->
-                                    <div>
-                                        <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Selecione o Item *</label>
-                                        ${itemsInWarehouse.length === 0 ? `
-                                            <div class="bg-amber-50 border-2 border-amber-200 rounded-lg p-4 text-amber-700 text-sm flex items-center gap-2">
-                                                <i class="ph ph-warning text-lg"></i>
-                                                Nenhum item cadastrado neste almoxarifado.
-                                            </div>
-                                        ` : `
-                                            <select
-                                                onchange="state.movementOperation.selectedItem = this.value; state.movementOperation.size = null; render()"
-                                                class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-emerald-500 outline-none text-base md:text-lg text-slate-800"
-                                                required
-                                            >
-                                                <option value="">-- Escolha um item --</option>
-                                                ${itemsInWarehouse.map(item => `
-                                                    <option value="${item.id}" ${op.selectedItem === item.id ? 'selected' : ''}>
-                                                        ${item.nome} (Estoque: ${item.quantidade})
-                                                    </option>
-                                                `).join('')}
-                                            </select>
-                                        `}
-                                    </div>
-
-                                    ${selectedItem ? `
-                                        <div class="glass p-4 rounded-lg border-2 border-emerald-500/50">
-                                            <div class="flex justify-between items-center">
-                                                <div>
-                                                    <p class="text-slate-500 text-sm">Selecionado</p>
-                                                    <p class="font-bold text-base md:text-lg">${selectedItem.nome}</p>
-                                                </div>
-                                                <div class="text-right">
-                                                    <p class="text-slate-400 text-sm">Estoque atual</p>
-                                                    <p class="font-bold text-xl md:text-2xl font-mono text-emerald-600">${selectedItem.quantidade}</p>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        ${selectedItem.tamanhos && Object.keys(selectedItem.tamanhos).length > 0 ? `
-                                            <div>
-                                                <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Tamanho *</label>
-                                                <select
-                                                    onchange="state.movementOperation.size = this.value; render()"
-                                                    class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-emerald-500 outline-none text-base md:text-lg text-slate-800"
-                                                    required
-                                                >
-                                                    <option value="">-- Selecione o tamanho --</option>
-                                                    ${Object.entries(selectedItem.tamanhos).map(([size, qty]) => `
-                                                        <option value="${size}" ${op.size === size ? 'selected' : ''}>
-                                                            ${size} (Estoque: ${qty})
-                                                        </option>
-                                                    `).join('')}
-                                                </select>
-                                            </div>
-                                        ` : ''}
-                                    ` : ''}
-                                ` : `
-                                    <!-- Dados do novo item -->
-                                    <div class="bg-emerald-50 border-2 border-emerald-100 rounded-xl p-4 space-y-4">
-                                        <h3 class="font-bold text-emerald-800 flex items-center gap-2">
-                                            <i class="ph-fill ph-plus-circle"></i>
-                                            Dados do Novo Item
-                                        </h3>
+                        <div class="field-group">
+                            <label class="field-label">Almoxarifado de Destino *</label>
+                            <div class="grid-2">
+                                ${state.warehouses.map(wh => `
+                                    <label class="radio-card ${op.targetWarehouse === wh.id ? 'selected' : ''}">
+                                        <input type="radio" name="targetWarehouse" value="${wh.id}" ${op.targetWarehouse===wh.id?'checked':''}
+                                            onchange="state.movementOperation.targetWarehouse=this.value;state.movementOperation.selectedItem=null;render()" style="width:16px;height:16px;">
                                         <div>
-                                            <label class="text-sm font-bold text-slate-700 block mb-2 uppercase tracking-wide">Nome do Item *</label>
-                                            <input
-                                                type="text"
-                                                value="${op.newItemName}"
-                                                oninput="state.movementOperation.newItemName = this.value"
-                                                class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-3 focus:border-emerald-500 outline-none text-slate-800"
-                                                placeholder="Ex: Capacete de Segurança"
-                                                required
-                                            >
+                                            <div class="radio-card-title">${wh.nome}</div>
+                                            <div class="radio-card-sub">${wh.descricao}</div>
                                         </div>
-                                        <div class="grid grid-cols-2 gap-3">
-                                            <div>
-                                                <label class="text-sm font-bold text-slate-700 block mb-2 uppercase tracking-wide">Categoria *</label>
-                                                <select
-                                                    onchange="state.movementOperation.newItemCategory = this.value"
-                                                    class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-3 focus:border-emerald-500 outline-none text-slate-800"
-                                                    required
-                                                >
-                                                    <option value="">Selecione...</option>
-                                                    <option value="Proteção Individual" ${op.newItemCategory === 'Proteção Individual' ? 'selected' : ''}>Proteção Individual</option>
-                                                    <option value="Ferramentas" ${op.newItemCategory === 'Ferramentas' ? 'selected' : ''}>Ferramentas</option>
-                                                    <option value="Uniformes" ${op.newItemCategory === 'Uniformes' ? 'selected' : ''}>Uniformes</option>
-                                                    <option value="Outros" ${op.newItemCategory === 'Outros' ? 'selected' : ''}>Outros</option>
-                                                </select>
-                                            </div>
-                                            <div>
-                                                <label class="text-sm font-bold text-slate-700 block mb-2 uppercase tracking-wide">Unidade *</label>
-                                                <select
-                                                    onchange="state.movementOperation.newItemUnit = this.value"
-                                                    class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-3 focus:border-emerald-500 outline-none text-slate-800"
-                                                    required
-                                                >
-                                                    <option value="UN" ${op.newItemUnit === 'UN' ? 'selected' : ''}>Unidade (UN)</option>
-                                                    <option value="PAR" ${op.newItemUnit === 'PAR' ? 'selected' : ''}>Par (PAR)</option>
-                                                    <option value="CX" ${op.newItemUnit === 'CX' ? 'selected' : ''}>Caixa (CX)</option>
-                                                    <option value="KG" ${op.newItemUnit === 'KG' ? 'selected' : ''}>Kg (KG)</option>
-                                                    <option value="LT" ${op.newItemUnit === 'LT' ? 'selected' : ''}>Litro (LT)</option>
-                                                </select>
-                                            </div>
+                                    </label>
+                                `).join('')}
+                            </div>
+                        </div>
+
+                        <div class="field-group">
+                            <label class="field-label">Tipo de Entrada *</label>
+                            <div class="grid-2">
+                                <label class="radio-card ${!op.createNewItem ? 'selected' : ''}">
+                                    <input type="radio" name="entryType" ${!op.createNewItem?'checked':''}
+                                        onchange="state.movementOperation.createNewItem=false;state.movementOperation.selectedItem=null;render()" style="width:16px;height:16px;">
+                                    <div><div class="radio-card-title">Item Existente</div><div class="radio-card-sub">Adicionar ao estoque</div></div>
+                                </label>
+                                <label class="radio-card ${op.createNewItem ? 'selected' : ''}">
+                                    <input type="radio" name="entryType" ${op.createNewItem?'checked':''}
+                                        onchange="state.movementOperation.createNewItem=true;state.movementOperation.selectedItem=null;render()" style="width:16px;height:16px;">
+                                    <div><div class="radio-card-title">Novo Item</div><div class="radio-card-sub">Cadastrar e dar entrada</div></div>
+                                </label>
+                            </div>
+                        </div>
+
+                        ${!op.createNewItem ? `
+                            <div class="field-group">
+                                <label class="field-label">Selecione o Item *</label>
+                                ${itemsInWarehouse.length === 0 ? `
+                                    <div class="warning-banner"><i class="ph ph-warning"></i> Nenhum item cadastrado neste almoxarifado.</div>
+                                ` : `
+                                    <select class="field-input field-select" onchange="state.movementOperation.selectedItem=this.value;state.movementOperation.size=null;render()" required>
+                                        <option value="">-- Escolha um item --</option>
+                                        ${itemsInWarehouse.map(item => `<option value="${item.id}" ${op.selectedItem===item.id?'selected':''}>${item.nome} (Estoque: ${item.quantidade})</option>`).join('')}
+                                    </select>
+                                `}
+                            </div>
+                            ${selectedItem ? `
+                                <div class="item-preview selected">
+                                    <div>
+                                        <div style="font-size:11px;color:var(--text-3);">Selecionado</div>
+                                        <div style="font-weight:700;font-size:15px;color:var(--text-1);">${selectedItem.nome}</div>
+                                    </div>
+                                    <div style="text-align:right;">
+                                        <div style="font-size:11px;color:var(--text-3);">Estoque atual</div>
+                                        <div style="font-size:22px;font-weight:700;color:var(--green);">${selectedItem.quantidade}</div>
+                                    </div>
+                                </div>
+                                ${selectedItem.tamanhos && Object.keys(selectedItem.tamanhos).length > 0 ? `
+                                    <div class="field-group">
+                                        <label class="field-label">Tamanho *</label>
+                                        <select class="field-input field-select" onchange="state.movementOperation.size=this.value;render()" required>
+                                            <option value="">-- Selecione --</option>
+                                            ${Object.entries(selectedItem.tamanhos).map(([s,q]) => `<option value="${s}" ${op.size===s?'selected':''}>${s} (Estoque: ${q})</option>`).join('')}
+                                        </select>
+                                    </div>
+                                ` : ''}
+                            ` : ''}
+                        ` : `
+                            <div class="card-sm" style="border-color:color-mix(in srgb,var(--green) 30%,transparent);background:color-mix(in srgb,var(--green) 4%,transparent);">
+                                <div style="font-weight:700;color:var(--green);margin-bottom:12px;display:flex;align-items:center;gap:6px;"><i class="ph-fill ph-plus-circle"></i> Dados do Novo Item</div>
+                                <div class="stack-sm">
+                                    <div class="field-group">
+                                        <label class="field-label">Nome do Item *</label>
+                                        <input class="field-input" type="text" value="${op.newItemName}" oninput="state.movementOperation.newItemName=this.value" placeholder="Ex: Capacete de Segurança" required>
+                                    </div>
+                                    <div class="grid-2">
+                                        <div class="field-group">
+                                            <label class="field-label">Categoria *</label>
+                                            <select class="field-input field-select" onchange="state.movementOperation.newItemCategory=this.value" required>
+                                                <option value="">Selecione...</option>
+                                                <option value="Proteção Individual" ${op.newItemCategory==='Proteção Individual'?'selected':''}>Proteção Individual</option>
+                                                <option value="Ferramentas" ${op.newItemCategory==='Ferramentas'?'selected':''}>Ferramentas</option>
+                                                <option value="Uniformes" ${op.newItemCategory==='Uniformes'?'selected':''}>Uniformes</option>
+                                                <option value="Outros" ${op.newItemCategory==='Outros'?'selected':''}>Outros</option>
+                                            </select>
+                                        </div>
+                                        <div class="field-group">
+                                            <label class="field-label">Unidade *</label>
+                                            <select class="field-input field-select" onchange="state.movementOperation.newItemUnit=this.value">
+                                                <option value="UN" ${op.newItemUnit==='UN'?'selected':''}>Unidade (UN)</option>
+                                                <option value="PAR" ${op.newItemUnit==='PAR'?'selected':''}>Par (PAR)</option>
+                                                <option value="CX" ${op.newItemUnit==='CX'?'selected':''}>Caixa (CX)</option>
+                                                <option value="KG" ${op.newItemUnit==='KG'?'selected':''}>Kg (KG)</option>
+                                                <option value="LT" ${op.newItemUnit==='LT'?'selected':''}>Litro (LT)</option>
+                                            </select>
                                         </div>
                                     </div>
-                                `}
-
-                                <!-- Fornecedor -->
-                                <div>
-                                    <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Fornecedor</label>
-                                    <input
-                                        type="text"
-                                        value="${op.supplier}"
-                                        oninput="state.movementOperation.supplier = this.value"
-                                        class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-emerald-500 outline-none text-base md:text-lg text-slate-800"
-                                        placeholder="Nome do fornecedor (opcional)"
-                                    >
                                 </div>
+                            </div>
+                        `}
 
-                                <!-- Quantidade -->
-                                <div>
-                                    <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Quantidade *</label>
-                                    <input
-                                        type="number"
-                                        value="${op.quantity}"
-                                        oninput="state.movementOperation.quantity = parseInt(this.value) || 1"
-                                        min="1"
-                                        class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-emerald-500 outline-none text-base md:text-lg text-slate-800 font-mono"
-                                        required
-                                    >
-                                </div>
-
-                                <!-- Observações -->
-                                <div>
-                                    <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Observações</label>
-                                    <textarea
-                                        oninput="state.movementOperation.observations = this.value"
-                                        class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-emerald-500 outline-none text-base md:text-lg text-slate-800"
-                                        rows="3"
-                                        placeholder="Informações adicionais (opcional)"
-                                    >${op.observations}</textarea>
-                                </div>
-
-                                <div class="flex gap-4 pt-6">
-                                    <button
-                                        type="button"
-                                        onclick="cancelMovement()"
-                                        class="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-4 rounded-xl transition-all"
-                                    >
-                                        CANCELAR
-                                    </button>
-                                    <button
-                                        type="submit"
-                                        class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2"
-                                    >
-                                        <i class="ph ph-check-circle text-xl"></i>
-                                        <span class="hidden md:inline">CONFIRMAR COMPRA</span>
-                                        <span class="md:hidden">CONFIRMAR</span>
-                                    </button>
-                                </div>
-                            </form>
+                        <div class="field-group">
+                            <label class="field-label">Fornecedor</label>
+                            <input class="field-input" type="text" value="${op.supplier}" oninput="state.movementOperation.supplier=this.value" placeholder="Nome do fornecedor (opcional)">
                         </div>
-                    </main>
+                        <div class="field-group">
+                            <label class="field-label">Quantidade *</label>
+                            <input class="field-input" type="number" value="${op.quantity}" oninput="state.movementOperation.quantity=parseInt(this.value)||1" min="1" required>
+                        </div>
+                        <div class="field-group">
+                            <label class="field-label">Observações</label>
+                            <textarea class="field-input" rows="3" oninput="state.movementOperation.observations=this.value" placeholder="Informações adicionais">${op.observations}</textarea>
+                        </div>
+
+                        <div class="row-end" style="padding-top:8px;">
+                            <button type="button" onclick="cancelMovement()" class="btn-ghost">CANCELAR</button>
+                            <button type="submit" class="btn-primary" style="min-width:160px;">
+                                <i class="ph ph-check-circle"></i> CONFIRMAR COMPRA
+                            </button>
+                        </div>
+                    </form>
                 </div>
-            `;
-        }
+            </div>
+        </div>
+    `;
+}
 
         function renderStock() {
     const filteredItems = getFilteredItems();

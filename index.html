@@ -2233,236 +2233,135 @@
         }
 
         function renderStock() {
-            const filteredItems = getFilteredItems();
-            const categories = [...new Set(state.items.map(i => i.categoria))];
-            const activeWh = state.warehouses.find(w => w.id === state.activeWarehouse);
-            const otherWh = state.warehouses.find(w => w.id !== state.activeWarehouse);
+    const filteredItems = getFilteredItems();
+    const categories = [...new Set(state.items.map(i => i.categoria))];
+    const activeWh = state.warehouses.find(w => w.id === state.activeWarehouse);
+    const otherWh  = state.warehouses.find(w => w.id !== state.activeWarehouse);
 
-            return `
-                <div class="min-h-screen pb-6">
-                    ${renderHeader()}
-                    
-                    <main class="p-4 max-w-7xl mx-auto space-y-6">
-                        <!-- Título e ações -->
-                        <div class="flex justify-between items-center flex-wrap gap-4">
-                            <h1 class="text-2xl md:text-3xl font-bold flex items-center gap-3">
-                                <i class="ph-fill ph-warehouse text-emerald-400"></i>
-                                Estoque de EPIs
-                            </h1>
-                            <div class="flex gap-2">
-                                <button onclick="exportStockToXLSX()" class="bg-blue-600 hover:bg-blue-700 px-4 md:px-6 py-3 rounded-lg font-bold flex items-center gap-2 transition-all text-white">
-                                    <i class="ph-fill ph-download-simple text-xl"></i>
-                                    <span class="hidden md:inline">Exportar Ambos</span>
-                                </button>
-                                <button onclick="openNewItem()" class="bg-emerald-600 hover:bg-emerald-700 px-4 md:px-6 py-3 rounded-lg font-bold flex items-center gap-2 transition-all text-white">
-                                    <i class="ph-fill ph-plus-circle text-xl"></i>
-                                    <span class="hidden md:inline">Novo Item</span>
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- Tabs de Almoxarifado -->
-                        <div class="glass rounded-xl overflow-hidden">
-                            <div class="flex border-b border-slate-200">
-                                ${state.warehouses.map(wh => `
-                                    <button
-                                        onclick="state.activeWarehouse = '${wh.id}'; state.filters.category = 'TODAS'; state.filters.searchTerm = ''; render()"
-                                        class="flex-1 py-4 px-6 font-bold text-sm transition-all flex items-center justify-center gap-2 ${
-                                            state.activeWarehouse === wh.id
-                                                ? 'bg-emerald-50 text-emerald-700 border-b-2 border-emerald-500'
-                                                : 'text-slate-500 hover:bg-slate-50'
-                                        }">
-                                        <i class="ph-fill ph-${wh.id === 'alm-1' ? 'warehouse' : 'truck'} text-lg"></i>
-                                        <span>${wh.nome}</span>
-                                        <span class="ml-2 text-xs px-2 py-0.5 rounded-full font-mono ${
-                                            state.activeWarehouse === wh.id ? 'bg-emerald-200 text-emerald-800' : 'bg-slate-200 text-slate-600'
-                                        }">${state.items.filter(i => (i.warehouse_id || 'alm-1') === wh.id).length}</span>
-                                    </button>
-                                `).join('')}
-                            </div>
-
-                            <!-- Barra de ações do almoxarifado ativo -->
-                            <div class="p-4 bg-slate-50 flex items-center justify-between flex-wrap gap-3">
-                                <div>
-                                    <p class="font-bold text-slate-700 text-sm">${activeWh?.nome || 'Almoxarifado'}</p>
-                                    <p class="text-slate-500 text-xs">${activeWh?.descricao || ''}</p>
-                                </div>
-                                <div class="flex gap-2">
-                                    <button
-                                        onclick="startTransfer('${state.activeWarehouse}')"
-                                        class="bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 transition-all">
-                                        <i class="ph-fill ph-arrows-left-right"></i>
-                                        Transferir para ${otherWh?.nome || 'outro'}
-                                    </button>
-                                    <button
-                                        onclick="navigateToWarehouses()"
-                                        class="bg-slate-200 hover:bg-slate-300 text-slate-700 px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 transition-all">
-                                        <i class="ph-fill ph-gear"></i>
-                                        Configurar
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Filtros Avançados -->
-                        <div class="glass p-4 md:p-6 rounded-xl">
-                            <h2 class="font-bold mb-4 flex items-center gap-2 text-base md:text-lg">
-                                <i class="ph ph-funnel text-blue-400"></i>
-                                Filtros Avançados
-                            </h2>
-                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <div>
-                                    <label class="text-xs font-bold text-slate-500 block mb-2 uppercase">Categoria</label>
-                                    <select 
-                                        onchange="state.filters.category = this.value; render()"
-                                        class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-3 focus:border-blue-500 outline-none text-slate-800 text-sm"
-                                    >
-                                        <option value="TODAS">Todas</option>
-                                        ${categories.map(cat => `
-                                            <option value="${cat}" ${state.filters.category === cat ? 'selected' : ''}>${cat}</option>
-                                        `).join('')}
-                                    </select>
-                                </div>
-                                <div>
-                                    <label class="text-xs font-bold text-slate-500 block mb-2 uppercase">Localização</label>
-                                    <input 
-                                        type="text"
-                                        value="${state.filters.location}"
-                                        oninput="state.filters.location = this.value; render()"
-                                        class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-3 focus:border-blue-500 outline-none text-slate-800 text-sm"
-                                        placeholder="Ex: Prateleira A1"
-                                    >
-                                </div>
-                                <div class="flex items-end">
-                                    <label class="flex items-center gap-2 cursor-pointer">
-                                        <input 
-                                            type="checkbox"
-                                            ${state.filters.lowStockOnly ? 'checked' : ''}
-                                            onchange="state.filters.lowStockOnly = this.checked; render()"
-                                            class="w-5 h-5 rounded"
-                                        >
-                                        <span class="text-sm font-semibold text-amber-400">Apenas Estoque Baixo</span>
-                                    </label>
-                                </div>
-                            </div>
-                            <div class="mt-4">
-                                <label class="text-xs font-bold text-slate-500 block mb-2 uppercase">Pesquisar</label>
-                                <input 
-                                    type="text"
-                                    value="${state.filters.searchTerm}"
-                                    oninput="handleSearchInput(this.value)"
-                                    class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-3 focus:border-blue-500 outline-none text-slate-800"
-                                    placeholder="Buscar por nome, categoria, CA..."
-                                >
-                            </div>
-                        </div>
-
-                        ${filteredItems.length === 0 ? `
-                            <div class="glass p-12 rounded-xl text-center">
-                                <i class="ph ph-package text-6xl md:text-8xl text-slate-600 mb-4"></i>
-                                <p class="text-slate-500 text-lg md:text-xl mb-6">Nenhum item encontrado em ${activeWh?.nome || 'este almoxarifado'}</p>
-                                ${state.filters.searchTerm || state.filters.category !== 'TODAS' || state.filters.location || state.filters.lowStockOnly ? `
-                                    <button onclick="state.filters = {startDate: getFirstDayOfMonth(), endDate: getCurrentDate(), type: 'TODOS', searchTerm: '', category: 'TODAS', minQuantity: '', maxQuantity: '', location: '', lowStockOnly: false}; render()" class="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg font-bold text-white">
-                                        Limpar Filtros
-                                    </button>
-                                ` : `
-                                    <div class="flex gap-3 justify-center flex-wrap">
-                                        <button onclick="openNewItem()" class="bg-emerald-600 hover:bg-emerald-700 px-6 py-3 rounded-lg font-bold text-white">
-                                            Cadastrar Item Aqui
-                                        </button>
-                                        ${state.activeWarehouse !== 'alm-1' ? `
-                                            <button onclick="startTransfer('alm-1')" class="bg-cyan-600 hover:bg-cyan-700 px-6 py-3 rounded-lg font-bold text-white flex items-center gap-2">
-                                                <i class="ph-fill ph-arrows-left-right"></i>
-                                                Transferir do Central
-                                            </button>
-                                        ` : ''}
-                                    </div>
-                                `}
-                            </div>
-                        ` : `
-                            <div class="mb-4 text-slate-500 text-sm">
-                                Mostrando <span class="font-bold text-slate-800">${filteredItems.length}</span> de <span class="font-bold text-slate-800">${state.items.filter(i => (i.warehouse_id || 'alm-1') === state.activeWarehouse).length}</span> itens em <span class="font-bold text-emerald-600">${activeWh?.nome}</span>
-                            </div>
-                            
-                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                ${filteredItems.map(item => `
-                                    <div class="glass p-4 md:p-6 rounded-xl hover:border-emerald-500 border-2 border-transparent transition-all fade-in">
-                                        <div class="flex justify-between items-start mb-4">
-                                            <div class="flex-1 pr-2">
-                                                <h3 class="font-bold text-lg md:text-xl mb-2 break-words">${item.nome}</h3>
-                                                <div class="flex gap-2 flex-wrap">
-                                                    <span class="text-xs px-2 md:px-3 py-1 bg-blue-500/20 text-blue-400 rounded-full font-semibold">${item.categoria}</span>
-                                                    <span class="text-xs px-2 md:px-3 py-1 bg-slate-500/20 text-slate-500 rounded-full font-mono">${item.unidade}</span>
-                                                    ${item.ca ? `<span class="text-xs px-2 md:px-3 py-1 bg-purple-500/20 text-purple-400 rounded-full font-mono">CA ${item.ca}</span>` : ''}
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <div class="mb-4">
-                                            <div class="flex justify-between items-end mb-2">
-                                                <span class="text-slate-400 text-xs md:text-sm uppercase">Quantidade</span>
-                                                <span class="text-2xl md:text-3xl font-bold font-mono ${item.quantidade < 10 ? 'text-amber-400' : 'text-emerald-400'}">${item.quantidade}</span>
-                                            </div>
-                                            
-                                            ${item.tamanhos && Object.keys(item.tamanhos).length > 0 ? `
-                                                <div class="mt-3 flex flex-wrap gap-2">
-                                                    ${Object.entries(item.tamanhos).map(([size, qty]) => `
-                                                        <div class="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs">
-                                                            <span class="font-bold text-slate-700">${size}:</span> 
-                                                            <span class="font-mono ${qty > 0 ? 'text-emerald-600' : 'text-red-500'}">${qty}</span>
-                                                        </div>
-                                                    `).join('')}
-                                                </div>
-                                            ` : ''}
-
-                                            ${item.unidades_por_caixa && item.unidades_por_caixa > 1 ? `
-                                                <div class="mt-2 text-xs text-slate-500 font-semibold">
-                                                    <i class="ph ph-package"></i> ${item.unidades_por_caixa} unidades por caixa
-                                                </div>
-                                            ` : ''}
-
-                                            ${item.quantidade < 10 ? `
-                                                <div class="mt-3 bg-amber-50 border border-amber-200 text-amber-600 px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-2">
-                                                    <i class="ph-fill ph-warning"></i>
-                                                    ESTOQUE BAIXO
-                                                </div>
-                                            ` : ''}
-                                        </div>
-
-                                        ${item.localizacao ? `
-                                            <p class="text-slate-500 text-xs md:text-sm mb-2 flex items-center gap-2">
-                                                <i class="ph ph-map-pin"></i>
-                                                ${item.localizacao}
-                                            </p>
-                                        ` : ''}
-
-                                        ${item.validade ? `
-                                            <p class="text-slate-500 text-xs md:text-sm mb-4 flex items-center gap-2">
-                                                <i class="ph ph-calendar"></i>
-                                                Val: ${formatDate(item.validade)}
-                                            </p>
-                                        ` : ''}
-
-                                        <div class="flex gap-2 pt-4 border-t border-slate-200">
-                                            <button onclick='openEditItem(${JSON.stringify(item).replace(/'/g, "&#39;")})' class="flex-1 bg-blue-600 hover:bg-blue-700 px-3 md:px-4 py-2 rounded-lg font-semibold transition-all flex items-center justify-center gap-2 text-sm text-white">
-                                                <i class="ph ph-pencil-simple"></i>
-                                                Editar
-                                            </button>
-                                            <button onclick="state.transferOperation.selectedItem='${item.id}'; startTransfer('${item.warehouse_id || 'alm-1'}')" class="bg-cyan-600/20 hover:bg-cyan-600 text-cyan-500 hover:text-white px-3 py-2 rounded-lg font-semibold transition-all flex items-center justify-center gap-2 border border-cyan-500 text-sm" title="Transferir">
-                                                <i class="ph ph-arrows-left-right"></i>
-                                            </button>
-                                            <button onclick="handleDeleteItem('${item.id}')" class="bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white px-3 py-2 rounded-lg font-semibold transition-all flex items-center justify-center gap-2 border border-red-500 text-sm">
-                                                <i class="ph ph-trash"></i>
-                                            </button>
-                                        </div>
-                                    </div>
-                                `).join('')}
-                            </div>
-                        `}
-                    </main>
+    return `
+        <div class="page-wrap">
+            ${renderHeader()}
+            <div class="page-content">
+                <div class="row-between">
+                    <h1 class="page-title"><i class="ph-fill ph-warehouse text-green"></i> Estoque de EPIs</h1>
+                    <div class="row">
+                        <button onclick="exportStockToXLSX()" class="btn-secondary"><i class="ph-fill ph-download-simple"></i> <span>Exportar</span></button>
+                        <button onclick="openNewItem()" class="btn-primary"><i class="ph-fill ph-plus-circle"></i> <span>Novo Item</span></button>
+                    </div>
                 </div>
-            `;
-        }
+
+                <div class="card" style="padding:0;overflow:hidden;">
+                    <div class="tab-bar">
+                        ${state.warehouses.map(wh => `
+                            <button class="tab-btn ${state.activeWarehouse === wh.id ? 'active' : ''}"
+                                onclick="state.activeWarehouse='${wh.id}';state.filters.category='TODAS';state.filters.searchTerm='';render()">
+                                <i class="ph-fill ph-${wh.id === 'alm-1' ? 'warehouse' : 'truck'}"></i>
+                                ${wh.nome}
+                                <span class="tab-count">${state.items.filter(i => (i.warehouse_id||'alm-1') === wh.id).length}</span>
+                            </button>
+                        `).join('')}
+                    </div>
+                    <div class="info-bar">
+                        <div>
+                            <div class="info-bar-title">${activeWh?.nome || 'Almoxarifado'}</div>
+                            <div class="info-bar-sub">${activeWh?.descricao || ''}</div>
+                        </div>
+                        <div class="row">
+                            <button onclick="startTransfer('${state.activeWarehouse}')" class="btn-cyan" style="font-size:12px;padding:7px 12px;">
+                                <i class="ph-fill ph-arrows-left-right"></i> Transferir para ${otherWh?.nome || 'outro'}
+                            </button>
+                            <button onclick="navigateToWarehouses()" class="btn-ghost" style="font-size:12px;padding:7px 12px;">
+                                <i class="ph-fill ph-gear"></i> Configurar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="section-title" style="margin-bottom:14px;"><i class="ph ph-funnel" style="margin-right:6px;"></i>Filtros</div>
+                    <div class="grid-3" style="margin-bottom:12px;">
+                        <div class="field-group">
+                            <label class="field-label">Categoria</label>
+                            <select class="field-input field-select" onchange="state.filters.category=this.value;render()">
+                                <option value="TODAS">Todas</option>
+                                ${categories.map(c => `<option value="${c}" ${state.filters.category===c?'selected':''}>${c}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div class="field-group">
+                            <label class="field-label">Localização</label>
+                            <input class="field-input" type="text" value="${state.filters.location}" oninput="state.filters.location=this.value;render()" placeholder="Ex: Prateleira A1">
+                        </div>
+                        <div class="field-group" style="justify-content:flex-end;">
+                            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding-top:20px;">
+                                <input type="checkbox" ${state.filters.lowStockOnly?'checked':''} onchange="state.filters.lowStockOnly=this.checked;render()" style="width:16px;height:16px;">
+                                <span style="font-size:13px;font-weight:600;color:var(--orange);">Estoque Baixo</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="field-group">
+                        <label class="field-label">Pesquisar</label>
+                        <input class="field-input" type="text" value="${state.filters.searchTerm}" oninput="handleSearchInput(this.value)" placeholder="Buscar por nome, categoria, CA...">
+                    </div>
+                </div>
+
+                ${filteredItems.length === 0 ? `
+                    <div class="card">
+                        <div class="empty-state">
+                            <i class="ph ph-package"></i>
+                            <p>Nenhum item encontrado em ${activeWh?.nome || 'este almoxarifado'}</p>
+                            ${state.filters.searchTerm || state.filters.category !== 'TODAS' || state.filters.location || state.filters.lowStockOnly ? `
+                                <div style="margin-top:16px;">
+                                    <button onclick="state.filters={startDate:getFirstDayOfMonth(),endDate:getCurrentDate(),type:'TODOS',searchTerm:'',category:'TODAS',minQuantity:'',maxQuantity:'',location:'',lowStockOnly:false};render()" class="btn-secondary">Limpar Filtros</button>
+                                </div>
+                            ` : `
+                                <div style="margin-top:16px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
+                                    <button onclick="openNewItem()" class="btn-primary">Cadastrar Item</button>
+                                    ${state.activeWarehouse !== 'alm-1' ? `<button onclick="startTransfer('alm-1')" class="btn-cyan"><i class="ph-fill ph-arrows-left-right"></i> Transferir do Central</button>` : ''}
+                                </div>
+                            `}
+                        </div>
+                    </div>
+                ` : `
+                    <div class="count-label">Mostrando <strong>${filteredItems.length}</strong> de <strong>${state.items.filter(i=>(i.warehouse_id||'alm-1')===state.activeWarehouse).length}</strong> itens em <strong style="color:var(--green);">${activeWh?.nome}</strong></div>
+                    <div class="grid-cards">
+                        ${filteredItems.map(item => `
+                            <div class="item-card">
+                                <div class="item-card-name">${item.nome}</div>
+                                <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">
+                                    <span class="badge badge-blue">${item.categoria}</span>
+                                    <span class="badge badge-gray">${item.unidade}</span>
+                                    ${item.ca ? `<span class="badge badge-purple">CA ${item.ca}</span>` : ''}
+                                </div>
+                                <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:8px;">
+                                    <span style="font-size:11px;text-transform:uppercase;color:var(--text-3);">Quantidade</span>
+                                    <span class="item-card-qty ${item.quantidade < 10 ? 'low' : 'ok'}">${item.quantidade}</span>
+                                </div>
+                                ${item.tamanhos && Object.keys(item.tamanhos).length > 0 ? `
+                                    <div class="sizes-grid">
+                                        ${Object.entries(item.tamanhos).map(([s,q]) => `
+                                            <div class="size-chip"><strong>${s}:</strong> <span class="qty ${q>0?'ok':'low'}">${q}</span></div>
+                                        `).join('')}
+                                    </div>
+                                ` : ''}
+                                ${item.unidades_por_caixa && item.unidades_por_caixa > 1 ? `
+                                    <div style="font-size:11px;color:var(--text-2);margin-top:6px;"><i class="ph ph-package"></i> ${item.unidades_por_caixa} un/caixa</div>
+                                ` : ''}
+                                ${item.quantidade < 10 ? `<div class="low-stock-alert"><i class="ph-fill ph-warning"></i> ESTOQUE BAIXO</div>` : ''}
+                                ${item.localizacao ? `<div style="font-size:12px;color:var(--text-2);margin-top:8px;"><i class="ph ph-map-pin"></i> ${item.localizacao}</div>` : ''}
+                                ${item.validade ? `<div style="font-size:12px;color:var(--text-2);margin-top:4px;"><i class="ph ph-calendar"></i> Val: ${formatDate(item.validade)}</div>` : ''}
+                                <div class="item-actions">
+                                    <button onclick='openEditItem(${JSON.stringify(item).replace(/'/g,"&#39;")})' class="btn-secondary" style="flex:1;font-size:12px;padding:8px;"><i class="ph ph-pencil-simple"></i> Editar</button>
+                                    <button onclick="state.transferOperation.selectedItem='${item.id}';startTransfer('${item.warehouse_id||'alm-1'}')" class="btn-cyan" style="padding:8px 10px;" title="Transferir"><i class="ph ph-arrows-left-right"></i></button>
+                                    <button onclick="handleDeleteItem('${item.id}')" class="btn-danger" style="padding:8px 10px;"><i class="ph ph-trash"></i></button>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `}
+            </div>
+        </div>
+    `;
+}
 
 
 

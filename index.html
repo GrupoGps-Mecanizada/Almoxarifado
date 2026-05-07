@@ -2227,76 +2227,52 @@
 
 
         function renderWarehouses() {
-            return `
-                <div class="min-h-screen pb-6">
-                    ${renderHeader()}
-                    <main class="p-4 max-w-3xl mx-auto space-y-6">
-                        <div class="flex items-center justify-between">
-                            <h1 class="text-2xl md:text-3xl font-bold flex items-center gap-3">
-                                <i class="ph-fill ph-gear text-slate-400"></i>
-                                Configurar Almoxarifados
-                            </h1>
-                            <button onclick="goBack()" class="text-slate-500 hover:text-red-500 transition-all">
-                                <i class="ph ph-x text-3xl"></i>
-                            </button>
-                        </div>
+    return `
+        <div class="page-wrap">
+            ${renderHeader()}
+            <div class="page-content-sm">
+                <div class="row-between">
+                    <h1 class="page-title"><i class="ph-fill ph-gear text-faint"></i> Configurar Almoxarifados</h1>
+                    <button onclick="goBack()" class="btn-icon"><i class="ph ph-x"></i></button>
+                </div>
 
-                        <div class="space-y-4">
-                            ${state.warehouses.map(wh => `
-                                <div class="glass p-6 rounded-xl">
-                                    <div class="flex items-center gap-3 mb-4">
-                                        <div class="w-12 h-12 bg-${wh.id === 'alm-1' ? 'emerald' : 'cyan'}-500/20 rounded-xl flex items-center justify-center">
-                                            <i class="ph-fill ph-${wh.id === 'alm-1' ? 'warehouse' : 'truck'} text-${wh.id === 'alm-1' ? 'emerald' : 'cyan'}-500 text-2xl"></i>
-                                        </div>
-                                        <div>
-                                            <h2 class="font-bold text-lg">${wh.nome}</h2>
-                                            <p class="text-slate-500 text-sm">${wh.descricao || ''}</p>
-                                        </div>
-                                        <div class="ml-auto">
-                                            <span class="text-xs bg-slate-100 text-slate-600 px-3 py-1 rounded-full font-mono font-bold">
-                                                ${state.items.filter(i => (i.warehouse_id || 'alm-1') === wh.id).length} itens
-                                            </span>
-                                        </div>
-                                    </div>
-                                    <form onsubmit="handleSaveWarehouse(event)" class="space-y-4">
-                                        <input type="hidden" id="warehouseId" value="${wh.id}">
-                                        <div>
-                                            <label class="text-sm font-bold text-slate-700 block mb-2 uppercase tracking-wide">Nome do Almoxarifado *</label>
-                                            <input
-                                                type="text"
-                                                id="warehouseName"
-                                                value="${wh.nome}"
-                                                class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-3 focus:border-emerald-500 outline-none text-slate-800"
-                                                placeholder="Nome do almoxarifado"
-                                                required
-                                            >
-                                        </div>
-                                        <div>
-                                            <label class="text-sm font-bold text-slate-700 block mb-2 uppercase tracking-wide">Descrição</label>
-                                            <input
-                                                type="text"
-                                                id="warehouseDesc"
-                                                value="${wh.descricao || ''}"
-                                                class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-3 focus:border-emerald-500 outline-none text-slate-800"
-                                                placeholder="Descrição opcional"
-                                            >
-                                        </div>
-                                        <button type="submit" class="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-lg font-bold flex items-center gap-2 transition-all">
-                                            <i class="ph ph-floppy-disk"></i>
-                                            Salvar Alterações
-                                        </button>
-                                    </form>
+                <div class="stack">
+                    ${state.warehouses.map(wh => `
+                        <div class="card">
+                            <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px;">
+                                <div class="stat-icon ${wh.id==='alm-1'?'icon-green':'icon-cyan'}">
+                                    <i class="ph-fill ph-${wh.id==='alm-1'?'warehouse':'truck'}"></i>
                                 </div>
-                            `).join('')}
+                                <div style="flex:1;">
+                                    <div style="font-weight:700;font-size:15px;color:var(--text-1);">${wh.nome}</div>
+                                    <div style="font-size:12px;color:var(--text-2);">${wh.descricao || ''}</div>
+                                </div>
+                                <span class="badge badge-gray">${state.items.filter(i=>(i.warehouse_id||'alm-1')===wh.id).length} itens</span>
+                            </div>
+                            <form onsubmit="handleSaveWarehouse(event)" class="stack-sm">
+                                <input type="hidden" id="warehouseId" value="${wh.id}">
+                                <div class="field-group">
+                                    <label class="field-label">Nome *</label>
+                                    <input class="field-input" type="text" id="warehouseName" value="${wh.nome}" placeholder="Nome do almoxarifado" required>
+                                </div>
+                                <div class="field-group">
+                                    <label class="field-label">Descrição</label>
+                                    <input class="field-input" type="text" id="warehouseDesc" value="${wh.descricao||''}" placeholder="Descrição opcional">
+                                </div>
+                                <div>
+                                    <button type="submit" class="btn-primary"><i class="ph ph-floppy-disk"></i> Salvar Alterações</button>
+                                </div>
+                            </form>
                         </div>
+                    `).join('')}
+                </div>
 
-                        <div class="glass p-6 rounded-xl border-l-4 border-blue-400">
-                            <h3 class="font-bold text-blue-700 mb-2 flex items-center gap-2">
-                                <i class="ph-fill ph-info"></i>
-                                SQL para criar as tabelas no Supabase
-                            </h3>
-                            <p class="text-slate-500 text-sm mb-3">Execute no SQL Editor do Supabase para ativar a persistência:</p>
-                            <pre class="bg-slate-800 text-emerald-300 p-4 rounded-lg text-xs overflow-x-auto font-mono">CREATE TABLE IF NOT EXISTS warehouses (
+                <div class="card accent-blue">
+                    <div style="font-weight:700;color:var(--accent);margin-bottom:8px;display:flex;align-items:center;gap:6px;">
+                        <i class="ph-fill ph-info"></i> SQL para criar as tabelas no Supabase
+                    </div>
+                    <p style="font-size:12px;color:var(--text-2);margin-bottom:10px;">Execute no SQL Editor do Supabase:</p>
+                    <pre class="sql-block">CREATE TABLE IF NOT EXISTS warehouses (
   id TEXT PRIMARY KEY,
   nome TEXT NOT NULL,
   descricao TEXT,
@@ -2308,147 +2284,111 @@ INSERT INTO warehouses (id, nome, descricao) VALUES
 ON CONFLICT (id) DO NOTHING;
 ALTER TABLE items ADD COLUMN IF NOT EXISTS warehouse_id TEXT DEFAULT 'alm-1';
 ALTER TABLE movements ADD COLUMN IF NOT EXISTS destination_warehouse_id TEXT;</pre>
-                        </div>
-                    </main>
                 </div>
-            `;
-        }
+            </div>
+        </div>
+    `;
+}
 
         function renderTransfer() {
-            const op = state.transferOperation;
-            const fromWh = state.warehouses.find(w => w.id === op.fromWarehouse);
-            const toWh = state.warehouses.find(w => w.id === op.toWarehouse);
-            const sourceItems = state.items.filter(i => (i.warehouse_id || 'alm-1') === op.fromWarehouse && i.quantidade > 0);
-            const selectedItem = sourceItems.find(i => i.id === op.selectedItem);
+    const op = state.transferOperation;
+    const fromWh = state.warehouses.find(w => w.id === op.fromWarehouse);
+    const toWh   = state.warehouses.find(w => w.id === op.toWarehouse);
+    const sourceItems = state.items.filter(i => (i.warehouse_id||'alm-1') === op.fromWarehouse && i.quantidade > 0);
+    const selectedItem = sourceItems.find(i => i.id === op.selectedItem);
 
-            return `
-                <div class="min-h-screen pb-6">
-                    ${renderHeader()}
-                    <main class="p-4 max-w-3xl mx-auto">
-                        <div class="glass p-6 md:p-8 rounded-xl">
-                            <div class="flex items-center justify-between mb-6">
-                                <h1 class="text-2xl font-bold flex items-center gap-3">
-                                    <i class="ph-fill ph-arrows-left-right text-cyan-500"></i>
-                                    Transferência entre Almoxarifados
-                                </h1>
-                                <button onclick="cancelTransfer()" class="text-slate-500 hover:text-red-500 transition-all">
-                                    <i class="ph ph-x text-3xl"></i>
-                                </button>
+    return `
+        <div class="page-wrap">
+            ${renderHeader()}
+            <div class="page-content-sm">
+                <div class="card-lg">
+                    <div class="row-between" style="margin-bottom:24px;">
+                        <h1 class="page-title"><i class="ph-fill ph-arrows-left-right text-cyan"></i> Transferência</h1>
+                        <button onclick="goBack()" class="btn-icon"><i class="ph ph-x"></i></button>
+                    </div>
+
+                    <form onsubmit="event.preventDefault();confirmTransfer();" class="stack">
+                        <div class="field-group">
+                            <label class="field-label">De (Origem)</label>
+                            <div class="grid-2">
+                                ${state.warehouses.map(wh => `
+                                    <label class="radio-card ${op.fromWarehouse===wh.id?'selected':''}">
+                                        <input type="radio" name="fromWarehouse" value="${wh.id}" ${op.fromWarehouse===wh.id?'checked':''}
+                                            onchange="state.transferOperation.fromWarehouse=this.value;state.transferOperation.selectedItem=null;render()" style="width:16px;height:16px;">
+                                        <div><div class="radio-card-title">${wh.nome}</div><div class="radio-card-sub">${wh.descricao}</div></div>
+                                    </label>
+                                `).join('')}
                             </div>
+                        </div>
 
-                            <div class="flex items-center gap-4 mb-6 p-4 bg-slate-50 rounded-xl">
-                                <div class="flex-1 text-center">
-                                    <div class="w-12 h-12 bg-emerald-100 rounded-xl flex items-center justify-center mx-auto mb-2">
-                                        <i class="ph-fill ph-warehouse text-emerald-600 text-2xl"></i>
-                                    </div>
-                                    <p class="font-bold text-sm text-slate-700">${fromWh?.nome || 'Origem'}</p>
-                                    <p class="text-xs text-slate-500">${fromWh?.descricao || ''}</p>
-                                </div>
-                                <div class="text-cyan-500 text-3xl font-bold">→</div>
-                                <div class="flex-1 text-center">
-                                    <div class="w-12 h-12 bg-cyan-100 rounded-xl flex items-center justify-center mx-auto mb-2">
-                                        <i class="ph-fill ph-truck text-cyan-600 text-2xl"></i>
-                                    </div>
-                                    <p class="font-bold text-sm text-slate-700">${toWh?.nome || 'Destino'}</p>
-                                    <p class="text-xs text-slate-500">${toWh?.descricao || ''}</p>
-                                </div>
+                        <div class="field-group">
+                            <label class="field-label">Para (Destino)</label>
+                            <div class="grid-2">
+                                ${state.warehouses.map(wh => `
+                                    <label class="radio-card ${op.toWarehouse===wh.id?'selected':''}">
+                                        <input type="radio" name="toWarehouse" value="${wh.id}" ${op.toWarehouse===wh.id?'checked':''}
+                                            onchange="state.transferOperation.toWarehouse=this.value;render()" style="width:16px;height:16px;">
+                                        <div><div class="radio-card-title">${wh.nome}</div><div class="radio-card-sub">${wh.descricao}</div></div>
+                                    </label>
+                                `).join('')}
                             </div>
+                        </div>
 
+                        <div class="field-group">
+                            <label class="field-label">Item para Transferir *</label>
                             ${sourceItems.length === 0 ? `
-                                <div class="text-center py-12 text-slate-500">
-                                    <i class="ph ph-package text-6xl mb-4 opacity-50"></i>
-                                    <p class="text-xl mb-4">Nenhum item disponível em ${fromWh?.nome}</p>
-                                    <button onclick="cancelTransfer()" class="bg-slate-200 hover:bg-slate-300 px-6 py-3 rounded-lg font-bold">Voltar</button>
-                                </div>
+                                <div class="warning-banner"><i class="ph ph-warning"></i> Nenhum item disponível em ${fromWh?.nome || 'origem'}.</div>
                             ` : `
-                                <form onsubmit="event.preventDefault(); transferItems();" class="space-y-6">
-                                    <div>
-                                        <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Item a Transferir *</label>
-                                        <select
-                                            onchange="state.transferOperation.selectedItem = this.value; state.transferOperation.size = null; render()"
-                                            class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-cyan-500 outline-none text-slate-800"
-                                            required
-                                        >
-                                            <option value="">-- Selecione um item --</option>
-                                            ${sourceItems.map(item => `
-                                                <option value="${item.id}" ${op.selectedItem === item.id ? 'selected' : ''}>
-                                                    ${item.nome} (${item.quantidade} em estoque)
-                                                </option>
-                                            `).join('')}
-                                        </select>
-                                    </div>
-
-                                    ${selectedItem ? `
-                                        <div class="glass p-4 rounded-lg border-2 border-cyan-500/30">
-                                            <div class="flex justify-between items-center">
-                                                <div>
-                                                    <p class="text-slate-500 text-sm">Item selecionado</p>
-                                                    <p class="font-bold text-lg">${selectedItem.nome}</p>
-                                                    <span class="text-xs px-2 py-1 bg-blue-500/20 text-blue-500 rounded-full">${selectedItem.categoria}</span>
-                                                </div>
-                                                <div class="text-right">
-                                                    <p class="text-slate-400 text-sm">Disponível</p>
-                                                    <p class="font-bold text-2xl font-mono text-emerald-500">${selectedItem.quantidade}</p>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    ` : ''}
-
-                                    ${selectedItem && selectedItem.tamanhos && Object.keys(selectedItem.tamanhos).length > 0 ? `
-                                        <div>
-                                            <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Tamanho *</label>
-                                            <select
-                                                onchange="state.transferOperation.size = this.value; render()"
-                                                class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-cyan-500 outline-none text-slate-800"
-                                                required
-                                            >
-                                                <option value="">-- Selecione o tamanho --</option>
-                                                ${Object.entries(selectedItem.tamanhos).filter(([s, q]) => q > 0).map(([size, qty]) => `
-                                                    <option value="${size}" ${op.size === size ? 'selected' : ''}>
-                                                        ${size} (Disponível: ${qty})
-                                                    </option>
-                                                `).join('')}
-                                            </select>
-                                        </div>
-                                    ` : ''}
-
-                                    <div>
-                                        <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Quantidade *</label>
-                                        <input
-                                            type="number"
-                                            value="${op.quantity}"
-                                            onchange="state.transferOperation.quantity = parseInt(this.value)"
-                                            min="1"
-                                            ${selectedItem ? `max="${op.size && selectedItem.tamanhos ? (selectedItem.tamanhos[op.size] || 0) : selectedItem.quantidade}"` : ''}
-                                            class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-cyan-500 outline-none text-slate-800 font-mono text-lg"
-                                            required
-                                        >
-                                    </div>
-
-                                    <div>
-                                        <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Observações</label>
-                                        <textarea
-                                            onchange="state.transferOperation.observations = this.value"
-                                            class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-cyan-500 outline-none text-slate-800"
-                                            rows="2"
-                                            placeholder="Motivo da transferência (opcional)"
-                                        >${op.observations}</textarea>
-                                    </div>
-
-                                    <div class="flex gap-4 pt-6">
-                                        <button type="button" onclick="cancelTransfer()" class="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-4 rounded-xl transition-all">CANCELAR</button>
-                                        <button type="submit" class="flex-1 bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2">
-                                            <i class="ph-fill ph-arrows-left-right"></i>
-                                            TRANSFERIR
-                                        </button>
-                                    </div>
-                                </form>
+                                <select class="field-input field-select" onchange="state.transferOperation.selectedItem=this.value;state.transferOperation.size=null;render()" required>
+                                    <option value="">-- Escolha um item --</option>
+                                    ${sourceItems.map(i => `<option value="${i.id}" ${op.selectedItem===i.id?'selected':''}>${i.nome} (Disponível: ${i.quantidade})</option>`).join('')}
+                                </select>
                             `}
                         </div>
-                    </main>
+
+                        ${selectedItem ? `
+                            <div class="item-preview selected">
+                                <div>
+                                    <div style="font-size:11px;color:var(--text-3);">Item selecionado</div>
+                                    <div style="font-weight:700;font-size:15px;color:var(--text-1);">${selectedItem.nome}</div>
+                                </div>
+                                <div style="text-align:right;">
+                                    <div style="font-size:11px;color:var(--text-3);">Disponível</div>
+                                    <div style="font-size:22px;font-weight:700;color:var(--green);">${selectedItem.quantidade}</div>
+                                </div>
+                            </div>
+                            ${selectedItem.tamanhos && Object.keys(selectedItem.tamanhos).length > 0 ? `
+                                <div class="field-group">
+                                    <label class="field-label">Tamanho *</label>
+                                    <select class="field-input field-select" onchange="state.transferOperation.size=this.value;render()" required>
+                                        <option value="">-- Selecione --</option>
+                                        ${Object.entries(selectedItem.tamanhos).map(([s,q]) => `<option value="${s}" ${op.size===s?'selected':''}>${s} (Disponível: ${q})</option>`).join('')}
+                                    </select>
+                                </div>
+                            ` : ''}
+                        ` : ''}
+
+                        <div class="field-group">
+                            <label class="field-label">Quantidade *</label>
+                            <input class="field-input" type="number" value="${op.quantity}" oninput="state.transferOperation.quantity=parseInt(this.value)||1" min="1" max="${selectedItem?.quantidade||9999}" required>
+                        </div>
+                        <div class="field-group">
+                            <label class="field-label">Observações</label>
+                            <textarea class="field-input" rows="2" oninput="state.transferOperation.observations=this.value" placeholder="Motivo da transferência">${op.observations}</textarea>
+                        </div>
+
+                        <div class="row-end" style="padding-top:8px;">
+                            <button type="button" onclick="goBack()" class="btn-ghost">CANCELAR</button>
+                            <button type="submit" class="btn-cyan" style="min-width:160px;">
+                                <i class="ph ph-arrows-left-right"></i> CONFIRMAR TRANSFERÊNCIA
+                            </button>
+                        </div>
+                    </form>
                 </div>
-            `;
-        }
+            </div>
+        </div>
+    `;
+}
 
         function renderHistory() {
     const filteredMovements = getFilteredMovements();
@@ -2568,227 +2508,79 @@ ALTER TABLE movements ADD COLUMN IF NOT EXISTS destination_warehouse_id TEXT;</p
 }
 
         function renderEditItem() {
-            const item = state.editingItem || {};
-            const isEdit = !!state.editingItem;
-
-            return `
-                <div class="min-h-screen pb-6">
-                    ${renderHeader()}
-                    
-                    <main class="p-4 max-w-3xl mx-auto">
-                        <div class="glass p-6 md:p-8 rounded-xl">
-                            <div class="flex items-center justify-between mb-6">
-                                <h1 class="text-2xl md:text-3xl font-bold flex items-center gap-3">
-                                    <i class="ph-fill ph-${isEdit ? 'pencil-simple' : 'plus-circle'} text-amber-400"></i>
-                                    <span class="hidden md:inline">${isEdit ? 'Editar Item' : 'Novo Item'}</span>
-                                    <span class="md:hidden">${isEdit ? 'Editar' : 'Novo'}</span>
-                                </h1>
-                                <button onclick="goBack()" class="text-slate-500 hover:text-red-500 transition-all">
-                                    <i class="ph ph-x text-3xl"></i>
-                                </button>
+    const item = state.editingItem || {};
+    return `
+        <div class="page-wrap">
+            ${renderHeader()}
+            <div class="page-content-sm">
+                <div class="card-lg">
+                    <div class="row-between" style="margin-bottom:24px;">
+                        <h1 class="page-title"><i class="ph-fill ph-pencil-simple text-blue"></i> ${item.id ? 'Editar Item' : 'Novo Item'}</h1>
+                        <button onclick="goBack()" class="btn-icon"><i class="ph ph-x"></i></button>
+                    </div>
+                    <form onsubmit="handleSaveItem(event)" class="stack">
+                        <div class="grid-2">
+                            <div class="field-group" style="grid-column:1/-1;">
+                                <label class="field-label">Nome do Item *</label>
+                                <input class="field-input" type="text" id="itemName" value="${item.nome||''}" placeholder="Ex: Capacete de Segurança" required>
                             </div>
-
-                            <form onsubmit="handleSaveItem(event)" class="space-y-6">
-                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    <!-- Seleção do Almoxarifado -->
-                                    <div class="md:col-span-2">
-                                        <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Almoxarifado *</label>
-                                        <div class="grid grid-cols-2 gap-3">
-                                            ${state.warehouses.map(wh => `
-                                                <label class="flex items-center gap-3 cursor-pointer p-4 rounded-xl border-2 transition-all ${(item.warehouse_id || state.activeWarehouse) === wh.id ? 'border-amber-500 bg-amber-50' : 'border-slate-200 bg-white hover:border-amber-200'}">
-                                                    <input
-                                                        type="radio"
-                                                        name="itemWarehouse"
-                                                        value="${wh.id}"
-                                                        class="w-4 h-4 text-amber-600"
-                                                        ${(item.warehouse_id || state.activeWarehouse) === wh.id ? 'checked' : ''}
-                                                        onchange="render()"
-                                                        required
-                                                    >
-                                                    <div>
-                                                        <span class="font-bold text-slate-700 block text-sm">${wh.nome}</span>
-                                                        <span class="text-xs text-slate-500">${wh.descricao}</span>
-                                                    </div>
-                                                </label>
-                                            `).join('')}
-                                        </div>
-                                    </div>
-
-                                    <div class="md:col-span-2">
-                                        <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Nome do Item *</label>
-                                        <input
-                                            type="text"
-                                            id="itemName"
-                                            value="${item.nome || ''}"
-                                            class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-slate-800"
-                                            placeholder="Ex: Capacete de Segurança"
-                                            required
-                                        >
-                                    </div>
-
-                                    <div>
-                                        <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Categoria *</label>
-                                        <select 
-                                            id="itemCategory"
-                                            class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-slate-800"
-                                            required
-                                        >
-                                            <option value="">Selecione...</option>
-                                            <option value="Proteção Individual" ${item.categoria === 'Proteção Individual' ? 'selected' : ''}>Proteção Individual</option>
-                                            <option value="Ferramentas" ${item.categoria === 'Ferramentas' ? 'selected' : ''}>Ferramentas</option>
-                                            <option value="Uniformes" ${item.categoria === 'Uniformes' ? 'selected' : ''}>Uniformes</option>
-                                            <option value="Outros" ${item.categoria === 'Outros' ? 'selected' : ''}>Outros</option>
-                                        </select>
-                                    </div>
-
-                                    <div>
-                                        <label class="text-sm font-bold text-slate-300 block mb-3 uppercase tracking-wide">Unidade *</label>
-                                        <select 
-                                            id="itemUnit"
-                                            class="w-full bg-slate-800/50 border-2 border-slate-700 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-white"
-                                            required
-                                        >
-                                            <option value="">Selecione...</option>
-                                            <option value="UN" ${item.unidade === 'UN' ? 'selected' : ''}>Unidade (UN)</option>
-                                            <option value="PAR" ${item.unidade === 'PAR' ? 'selected' : ''}>Par (PAR)</option>
-                                            <option value="CX" ${item.unidade === 'CX' ? 'selected' : ''}>Caixa (CX)</option>
-                                            <option value="KG" ${item.unidade === 'KG' ? 'selected' : ''}>Quilograma (KG)</option>
-                                            <option value="LT" ${item.unidade === 'LT' ? 'selected' : ''}>Litro (LT)</option>
-                                        </select>
-                                    </div>
-
-                                    <div>
-                                        <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Unidades por Caixa</label>
-                                        <input 
-                                            type="number"
-                                            id="itemUnitsPerBox"
-                                            value="${item.unidades_por_caixa || 1}"
-                                            min="1"
-                                            class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-slate-800 font-mono"
-                                        >
-                                    </div>
-
-                                    <div class="md:col-span-2">
-                                        <label class="flex items-center gap-3 cursor-pointer bg-slate-50 p-4 rounded-xl border-2 border-slate-100 hover:border-amber-200 transition-all">
-                                            <input 
-                                                type="checkbox" 
-                                                id="hasSizes" 
-                                                onchange="toggleSizesSection(this.checked)"
-                                                class="w-6 h-6 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
-                                                ${item.tamanhos && Object.keys(item.tamanhos).length > 0 ? 'checked' : ''}
-                                            >
-                                            <div>
-                                                <span class="font-bold text-slate-700 block">Este item possui grade de tamanhos?</span>
-                                                <span class="text-xs text-slate-500">Ex: Botas (38, 39, 40) ou Luvas (P, M, G)</span>
-                                            </div>
-                                        </label>
-                                    </div>
-
-                                    <!-- Área de Configuração de Tamanhos -->
-                                    <div id="sizesConfigArea" class="md:col-span-2 ${item.tamanhos && Object.keys(item.tamanhos).length > 0 ? 'block' : 'hidden'} fade-in">
-                                        <div class="bg-amber-50/50 border-2 border-amber-100 rounded-xl p-4 md:p-6">
-                                            <div class="flex justify-between items-center mb-4">
-                                                <h3 class="font-bold text-amber-800 flex items-center gap-2">
-                                                    <i class="ph-fill ph-list-numbers"></i>
-                                                    Grade de Tamanhos e Quantidades
-                                                </h3>
-                                                <button type="button" onclick="addSizeRow()" class="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all">
-                                                    <i class="ph ph-plus"></i> Add Tamanho
-                                                </button>
-                                            </div>
-                                            
-                                            <div id="sizesList" class="space-y-2">
-                                                ${item.tamanhos ? Object.entries(item.tamanhos).map(([name, qty]) => `
-                                                    <div class="flex gap-3 items-center size-row mb-2">
-                                                        <input type="text" class="size-name w-1/2 bg-white border border-slate-300 rounded p-2 focus:border-amber-500 outline-none" placeholder="Ex: 40 ou M" value="${name}" required>
-                                                        <input type="number" class="size-qty w-1/3 bg-white border border-slate-300 rounded p-2 font-mono focus:border-amber-500 outline-none" placeholder="Qtd" value="${qty}" required min="0">
-                                                        <button type="button" onclick="this.parentElement.remove()" class="text-red-500 hover:text-red-700 p-2"><i class="ph-bold ph-trash"></i></button>
-                                                    </div>
-                                                `).join('') : ''}
-                                            </div>
-                                            <p class="text-xs text-amber-600 mt-4 italic">
-                                                * A quantidade total será a soma de todos os tamanhos.
-                                            </p>
-                                        </div>
-                                    </div>
-
-                                    <div id="singleQuantityArea" class="md:col-span-1 ${item.tamanhos && Object.keys(item.tamanhos).length > 0 ? 'hidden' : 'block'}">
-                                        <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Quantidade em Estoque *</label>
-                                        <input 
-                                            type="number"
-                                            id="itemQuantity"
-                                            value="${item.quantidade || 0}"
-                                            min="0"
-                                            class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-slate-800 font-mono"
-                                            ${item.tamanhos && Object.keys(item.tamanhos).length > 0 ? '' : 'required'}
-                                        >
-                                    </div>
-
-                                    <div>
-                                        <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">CA</label>
-                                        <input 
-                                            type="text"
-                                            id="itemCA"
-                                            value="${item.ca || ''}"
-                                            class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-slate-800 font-mono"
-                                            placeholder="Ex: 12345"
-                                        >
-                                    </div>
-
-                                    <div>
-                                        <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Validade</label>
-                                        <input 
-                                            type="date"
-                                            id="itemValidity"
-                                            value="${item.validade || ''}"
-                                            class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-slate-800"
-                                        >
-                                    </div>
-
-                                    <div>
-                                        <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Localização</label>
-                                        <input 
-                                            type="text"
-                                            id="itemLocation"
-                                            value="${item.localizacao || ''}"
-                                            class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-slate-800"
-                                            placeholder="Ex: Prateleira A1"
-                                        >
-                                    </div>
-
-                                    <div class="md:col-span-2">
-                                        <label class="text-sm font-bold text-slate-700 block mb-3 uppercase tracking-wide">Observações</label>
-                                        <textarea 
-                                            id="itemObs"
-                                            class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 focus:border-amber-500 outline-none text-base md:text-lg text-slate-800"
-                                            rows="3"
-                                            placeholder="Informações adicionais..."
-                                        >${item.observacoes || ''}</textarea>
-                                    </div>
-                                </div>
-
-                                <div class="flex gap-4 pt-6 border-t border-slate-200">
-                                    <button 
-                                        type="button"
-                                        onclick="goBack()"
-                                        class="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-4 rounded-xl transition-all"
-                                    >
-                                        CANCELAR
-                                    </button>
-                                    <button 
-                                        type="submit"
-                                        class="flex-1 bg-amber-600 hover:bg-amber-700  font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2 text-white"
-                                    >
-                                        <i class="ph ph-floppy-disk text-xl"></i>
-                                        ${isEdit ? 'ATUALIZAR' : 'CADASTRAR'}
-                                    </button>
-                                </div>
-                            </form>
+                            <div class="field-group">
+                                <label class="field-label">Categoria *</label>
+                                <select class="field-input field-select" id="itemCategory" required>
+                                    <option value="">Selecione...</option>
+                                    <option value="Proteção Individual" ${item.categoria==='Proteção Individual'?'selected':''}>Proteção Individual</option>
+                                    <option value="Ferramentas" ${item.categoria==='Ferramentas'?'selected':''}>Ferramentas</option>
+                                    <option value="Uniformes" ${item.categoria==='Uniformes'?'selected':''}>Uniformes</option>
+                                    <option value="Outros" ${item.categoria==='Outros'?'selected':''}>Outros</option>
+                                </select>
+                            </div>
+                            <div class="field-group">
+                                <label class="field-label">Unidade *</label>
+                                <select class="field-input field-select" id="itemUnit">
+                                    <option value="UN" ${item.unidade==='UN'?'selected':''}>Unidade (UN)</option>
+                                    <option value="PAR" ${item.unidade==='PAR'?'selected':''}>Par (PAR)</option>
+                                    <option value="CX" ${item.unidade==='CX'?'selected':''}>Caixa (CX)</option>
+                                    <option value="KG" ${item.unidade==='KG'?'selected':''}>Kg (KG)</option>
+                                    <option value="LT" ${item.unidade==='LT'?'selected':''}>Litro (LT)</option>
+                                </select>
+                            </div>
+                            <div class="field-group">
+                                <label class="field-label">Quantidade Inicial</label>
+                                <input class="field-input" type="number" id="itemQuantity" value="${item.quantidade||0}" min="0">
+                            </div>
+                            <div class="field-group">
+                                <label class="field-label">CA (Certificado de Aprovação)</label>
+                                <input class="field-input" type="text" id="itemCA" value="${item.ca||''}" placeholder="Ex: 12345">
+                            </div>
+                            <div class="field-group">
+                                <label class="field-label">Localização</label>
+                                <input class="field-input" type="text" id="itemLocation" value="${item.localizacao||''}" placeholder="Ex: Prateleira A1">
+                            </div>
+                            <div class="field-group">
+                                <label class="field-label">Validade</label>
+                                <input class="field-input" type="date" id="itemValidity" value="${item.validade||''}">
+                            </div>
+                            <div class="field-group">
+                                <label class="field-label">Unidades por Caixa</label>
+                                <input class="field-input" type="number" id="itemUnitsPerBox" value="${item.unidades_por_caixa||1}" min="1">
+                            </div>
+                            <div class="field-group" style="grid-column:1/-1;">
+                                <label class="field-label">Observações</label>
+                                <textarea class="field-input" id="itemObs" rows="2" placeholder="Informações adicionais...">${item.observacoes||''}</textarea>
+                            </div>
                         </div>
-                    </main>
+                        <div class="row-end" style="padding-top:8px;">
+                            <button type="button" onclick="goBack()" class="btn-ghost">CANCELAR</button>
+                            <button type="submit" class="btn-primary" style="min-width:140px;">
+                                <i class="ph ph-floppy-disk"></i> ${item.id ? 'SALVAR' : 'CADASTRAR'}
+                            </button>
+                        </div>
+                    </form>
                 </div>
-            `;
-        }
+            </div>
+        </div>
+    `;
+}
 
         function renderHeader() {
             const views = [

@@ -815,21 +815,22 @@
             if (!item) { showToast('Selecione um item', 'error'); return; }
 
             const hasSizes = item.tamanhos && Object.keys(item.tamanhos).length > 0;
+            // Obrigatório selecionar tamanho só quando há tamanhos pré-configurados via dropdown
             if (hasSizes && !em.formSize) {
                 showToast('Selecione um tamanho', 'error');
                 return;
             }
 
-            const maxQty = hasSizes ? (item.tamanhos[em.formSize] || 0) : item.quantidade;
+            const sizeKey = em.formSize || null;
+            const maxQty = hasSizes && sizeKey ? (item.tamanhos[sizeKey] || 0) : item.quantidade;
             const qty = Math.max(1, parseInt(em.formQty) || 1);
             if (qty > maxQty) {
                 showToast(`Quantidade maior que o estoque disponível (${maxQty})`, 'error');
                 return;
             }
 
-            // Chave única no carrinho: item_id + tamanho
-            const cartKey = hasSizes ? em.formSize : null;
-            const existing = em.cart.find(c => c.item_id === item.id && c.size === cartKey);
+            // Chave única no carrinho: item_id + tamanho (texto livre também funciona como chave)
+            const existing = em.cart.find(c => c.item_id === item.id && c.size === sizeKey);
             if (existing) {
                 const total = existing.quantidade + qty;
                 if (total > maxQty) {
@@ -838,7 +839,7 @@
                 }
                 existing.quantidade = total;
             } else {
-                const label = hasSizes ? `${item.nome} (Tam: ${em.formSize})` : item.nome;
+                const label = sizeKey ? `${item.nome} (Tam: ${sizeKey})` : item.nome;
                 em.cart.push({
                     item_id: item.id,
                     item_name: label,
@@ -846,7 +847,7 @@
                     quantidade: qty,
                     max: maxQty,
                     warehouse_id: item.warehouse_id || 'alm-1',
-                    size: cartKey
+                    size: sizeKey
                 });
             }
             em.formItemId = '';
@@ -2301,13 +2302,20 @@
                                 </div>
                                 ${selectedItem.tamanhos && Object.keys(selectedItem.tamanhos).length > 0 ? `
                                     <div class="field-group">
-                                        <label class="field-label">Tamanho *</label>
+                                        <label class="field-label">Tamanho / Numeração *</label>
                                         <select class="field-input field-select" onchange="state.movementOperation.size=this.value;render()" required>
                                             <option value="">-- Selecione --</option>
                                             ${Object.entries(selectedItem.tamanhos).map(([s,q]) => `<option value="${s}" ${op.size===s?'selected':''}>${s} (Estoque: ${q})</option>`).join('')}
                                         </select>
                                     </div>
-                                ` : ''}
+                                ` : `
+                                    <div class="field-group">
+                                        <label class="field-label">Tamanho / Numeração <span style="font-weight:400;color:var(--text-3)">(ex: 38, 39, M, G)</span></label>
+                                        <input class="field-input" type="text" placeholder="Digite o tamanho ou numeração..."
+                                            value="${op.size || ''}"
+                                            oninput="state.movementOperation.size=this.value.trim()||null;render()">
+                                    </div>
+                                `}
                             ` : ''}
                         ` : `
                             <div class="card-sm" style="border-color:color-mix(in srgb,var(--green) 30%,transparent);background:color-mix(in srgb,var(--green) 4%,transparent);">
@@ -2558,7 +2566,7 @@
                                 }).join('')}
                             </select>
                         </div>
-                        ${emgHasSizes ? `
+                        ${emgSelectedItem ? (emgHasSizes ? `
                         <div class="field-group">
                             <label class="field-label">Tamanho / Numeração *</label>
                             <select class="field-input field-select"
@@ -2568,7 +2576,13 @@
                                     `<option value="${s}" ${em.formSize===s?'selected':''}>${s} — ${q} disponível${q!==1?'is':''}</option>`
                                 ).join('')}
                             </select>
-                        </div>` : ''}
+                        </div>` : `
+                        <div class="field-group">
+                            <label class="field-label">Tamanho / Numeração <span style="font-weight:400;color:var(--text-3)">(ex: 38, 39, M, G)</span></label>
+                            <input class="field-input" type="text" placeholder="Digite o tamanho ou numeração..."
+                                value="${em.formSize || ''}"
+                                oninput="state.emergency.formSize=this.value.trim();render()">
+                        </div>`) : ''}
                         <div class="field-group">
                             <label class="field-label">Quantidade *</label>
                             <input class="field-input" type="number" min="1" max="${emgMaxQty||9999}" id="emgQty"
@@ -2795,19 +2809,26 @@ ALTER TABLE movements ADD COLUMN IF NOT EXISTS destination_warehouse_id TEXT;</p
                                     ${hasSizes && !op.size ? `<div style="font-size:11px;color:var(--orange);margin-top:4px;"><i class="ph ph-warning"></i> Selecione um tamanho</div>` : ''}
                                 </div>
                                 <div style="text-align:right;">
-                                    <div style="font-size:11px;color:var(--text-3);">${hasSizes && op.size ? `Tam ${op.size}` : 'Disponível'}</div>
+                                    <div style="font-size:11px;color:var(--text-3);">${op.size ? `Tam ${op.size}` : 'Disponível'}</div>
                                     <div style="font-size:22px;font-weight:700;color:${availableQty > 0 ? 'var(--green)' : 'var(--red)'};">${availableQty}</div>
                                 </div>
                             </div>
                             ${hasSizes ? `
                                 <div class="field-group">
-                                    <label class="field-label">Tamanho *</label>
+                                    <label class="field-label">Tamanho / Numeração *</label>
                                     <select class="field-input field-select" onchange="state.transferOperation.size=this.value;state.transferOperation.quantity=1;render()" required>
-                                        <option value="">-- Selecione o tamanho --</option>
+                                        <option value="">-- Selecione --</option>
                                         ${Object.entries(selectedItem.tamanhos).filter(([,q])=>q>0).map(([s,q]) => `<option value="${s}" ${op.size===s?'selected':''}>${s} — ${q} disponível${q!==1?'is':''}</option>`).join('')}
                                     </select>
                                 </div>
-                            ` : ''}
+                            ` : `
+                                <div class="field-group">
+                                    <label class="field-label">Tamanho / Numeração <span style="font-weight:400;color:var(--text-3)">(ex: 38, 39, M, G)</span></label>
+                                    <input class="field-input" type="text" placeholder="Digite o tamanho ou numeração..."
+                                        value="${op.size || ''}"
+                                        oninput="state.transferOperation.size=this.value.trim()||null;render()">
+                                </div>
+                            `}
                         ` : ''}
 
                         <div class="field-group">

@@ -73,6 +73,7 @@
             selectedDate: getCurrentDate(),
             isLoading: false,
             loadingMessage: '',
+            loginError: '',
 
             // Paginação
             currentPage: 1,
@@ -824,6 +825,7 @@
                 navigateTo('dashboard');
                 showToast(`Bem-vindo, ${result.user.nome}!`, 'success');
             } else {
+                state.loginError = result.error || 'Erro ao entrar. Verifique suas credenciais.';
                 showToast('Login falhou: ' + (result.error || 'Credenciais inválidas'), 'error');
             }
 
@@ -1732,62 +1734,49 @@
         }
 
         function renderLogin() {
-            return `
-                <div class="min-h-screen flex flex-col justify-center items-center p-6">
-                    <div class="glass p-8 rounded-2xl w-full max-w-md shadow-2xl fade-in">
-                        <div class="flex justify-center mb-6 text-emerald-400">
-                            <i class="ph-fill ph-package text-7xl"></i>
-                        </div>
-                        <h1 class="text-4xl font-bold text-center mb-2 font-mono">ALMOXARIFADO</h1>
-                        <p class="text-center text-slate-500 mb-8 text-sm uppercase tracking-wider">Sistema de Controle de EPIs</p>
-                        
-                        <form onsubmit="handleLogin(event)" class="space-y-6">
-                            <div>
-                                <label class="text-sm font-bold text-slate-700 block mb-2 uppercase tracking-wide">E-mail</label>
-                                <div class="relative">
-                                    <i class="ph ph-envelope absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 text-xl"></i>
-                                    <input 
-                                        type="email" 
-                                        id="email"
-                                        class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 pl-12 focus:border-emerald-500 outline-none text-lg text-slate-800"
-                                        placeholder="Digite seu e-mail"
-                                        ${state.isLoading ? 'disabled' : ''}
-                                        required
-                                    >
-                                </div>
-                            </div>
-                            
-                            <div>
-                                <label class="text-sm font-bold text-slate-700 block mb-2 uppercase tracking-wide">Senha</label>
-                                <div class="relative">
-                                    <i class="ph ph-lock absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 text-xl"></i>
-                                    <input 
-                                        type="password" 
-                                        id="password"
-                                        class="w-full bg-white shadow-sm border-2 border-slate-200 rounded-lg p-4 pl-12 focus:border-emerald-500 outline-none text-lg text-slate-800"
-                                        placeholder="Digite sua senha"
-                                        ${state.isLoading ? 'disabled' : ''}
-                                        required
-                                    >
-                                </div>
-                            </div>
-                            
-                            <button 
-                                type="submit" 
-                                class="w-full bg-emerald-600 hover:bg-emerald-700  font-bold py-4 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed text-white"
-                                ${state.isLoading ? 'disabled' : ''}
-                            >
-                                ${state.isLoading ? `<i class="ph ph-spinner animate-spin text-2xl"></i> ${state.loadingMessage.toUpperCase()}` : '<i class="ph ph-sign-in text-xl"></i> ENTRAR'}
-                            </button>
-                        </form>
-                        
-                        <div class="mt-6 text-center text-xs text-slate-500 font-mono">
-                            <p>v3.0.0 | © 2026</p>
-                        </div>
+    return `
+        <div id="login-screen">
+            <div class="login-box">
+                <div class="login-header">
+                    <div class="login-header-title">
+                        <span class="login-brand-label">Central GPS · Grupo GPS</span>
+                        <span class="login-brand-name">Mecanizada</span>
+                    </div>
+                    <div class="login-icon">
+                        <i class="ph-fill ph-squares-four"></i>
                     </div>
                 </div>
-            `;
-        }
+                <div class="login-system-row">
+                    <div class="login-system-icon">
+                        <i class="ph-fill ph-package"></i>
+                    </div>
+                    <span class="login-system-name">Almoxarifado EPI</span>
+                </div>
+                <div class="login-form-area">
+                    <div class="login-form-section">
+                        <form onsubmit="handleLogin(event)" style="display:flex;flex-direction:column;gap:0;">
+                            <div class="login-input-group" style="margin-bottom:14px;">
+                                <label>E-mail</label>
+                                <input type="email" id="email" placeholder="Digite seu e-mail" ${state.isLoading ? 'disabled' : ''} required>
+                            </div>
+                            <div class="login-input-group">
+                                <label>Senha</label>
+                                <input type="password" id="password" placeholder="Digite sua senha" ${state.isLoading ? 'disabled' : ''} required>
+                            </div>
+                            <button type="submit" class="login-btn" style="margin-top:18px;" ${state.isLoading ? 'disabled' : ''}>
+                                ${state.isLoading
+                                    ? `<i class="ph ph-spinner spin" style="margin-right:6px;"></i>${state.loadingMessage ? state.loadingMessage.toUpperCase() : 'CARREGANDO...'}`
+                                    : '<i class="ph ph-sign-in" style="margin-right:6px;"></i>ENTRAR'}
+                            </button>
+                            <div class="login-error">${state.loginError || ''}</div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            <div class="login-footer">Desenvolvido por Grupo GPS — Almoxarifado EPI v3.0</div>
+        </div>
+    `;
+}
 
         function renderDashboard() {
             const totalItems = state.items.length;

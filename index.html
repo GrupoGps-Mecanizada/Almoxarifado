@@ -395,6 +395,16 @@
 
                 if (error) throw error;
 
+                // Normaliza tamanhos: pode vir como string JSON se a coluna for text
+                if (data) {
+                    data.forEach(item => {
+                        if (item.tamanhos !== null && typeof item.tamanhos === 'string') {
+                            try { item.tamanhos = JSON.parse(item.tamanhos); }
+                            catch (e) { item.tamanhos = null; }
+                        }
+                    });
+                }
+
                 cache.items = data;
                 cache.itemsTimestamp = Date.now();
 
@@ -406,6 +416,10 @@
         }
 
         async function saveItem(item) {
+            // Normaliza tamanhos antes de salvar/usar
+            if (item.tamanhos !== null && typeof item.tamanhos === 'string') {
+                try { item.tamanhos = JSON.parse(item.tamanhos); } catch (e) { item.tamanhos = null; }
+            }
             // Optimistic UI
             const isNew = !state.items.find(i => i.id === item.id);
             const originalItems = [...state.items];
@@ -475,13 +489,14 @@
                 const oldTamanhos = item.tamanhos ? JSON.parse(JSON.stringify(item.tamanhos)) : null;
 
                 // Atualiza quantidade baseado no tipo
-                if (movement.size && item.tamanhos) {
+                if (movement.size) {
+                    // Inicializa tamanhos se o item ainda não tinha (ex: criado sem checkbox de tamanhos)
+                    if (!item.tamanhos || typeof item.tamanhos !== 'object') item.tamanhos = {};
                     if (movement.type === 'COMPRA') {
                         item.tamanhos[movement.size] = (item.tamanhos[movement.size] || 0) + movement.quantity;
                     } else {
-                        item.tamanhos[movement.size] = (item.tamanhos[movement.size] || 0) - movement.quantity;
+                        item.tamanhos[movement.size] = Math.max(0, (item.tamanhos[movement.size] || 0) - movement.quantity);
                     }
-                    // Atualiza quantidade total
                     item.quantidade = Object.values(item.tamanhos).reduce((acc, curr) => acc + curr, 0);
                 } else {
                     if (movement.type === 'COMPRA') {

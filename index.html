@@ -2765,7 +2765,7 @@ ALTER TABLE movements ADD COLUMN IF NOT EXISTS destination_warehouse_id TEXT;</p
 
                 return `<div class="card">
                     <div class="section-title" style="margin-bottom:4px;">
-                        <i class="ph ph-clipboard-text"></i> Contagem de Entrega ${num} ${savedBadge}
+                        <i class="ph ph-clipboard-text"></i> ${num === 1 ? 'Contagem de Entrega' : 'Contagem de Saída'} ${savedBadge}
                     </div>
                     <p style="font-size:12px;color:var(--text-3);margin-bottom:20px;">
                         ${num === 1
@@ -2897,11 +2897,11 @@ ALTER TABLE movements ADD COLUMN IF NOT EXISTS destination_warehouse_id TEXT;</p
                     <div class="tab-bar">
                         <button class="tab-btn ${tab === 'count1' ? 'active' : ''}"
                             onclick="switchContagemTab('count1')">
-                            <i class="ph ph-clipboard-text"></i> Contagem de Entrega (C1)
+                            <i class="ph ph-clipboard-text"></i> Contagem de Entrega
                         </button>
                         <button class="tab-btn ${tab === 'count2' ? 'active' : ''}"
                             onclick="switchContagemTab('count2')">
-                            <i class="ph ph-clipboard-check"></i> Contagem de Entrega (C2)
+                            <i class="ph ph-clipboard-check"></i> Contagem de Saída
                         </button>
                         <button class="tab-btn ${tab === 'history' ? 'active' : ''}"
                             onclick="switchContagemTab('history')">

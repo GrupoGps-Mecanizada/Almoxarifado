@@ -1432,6 +1432,8 @@
             navigateTo('transfer');
         }
 
+        function confirmTransfer() { transferItems(); }
+
         function cancelTransfer() {
             state.transferOperation = {
                 active: false, fromWarehouse: 'alm-1', toWarehouse: 'alm-2',
@@ -2679,6 +2681,10 @@ ALTER TABLE movements ADD COLUMN IF NOT EXISTS destination_warehouse_id TEXT;</p
     const toWh   = state.warehouses.find(w => w.id === op.toWarehouse);
     const sourceItems = state.items.filter(i => (i.warehouse_id||'alm-1') === op.fromWarehouse && i.quantidade > 0);
     const selectedItem = sourceItems.find(i => i.id === op.selectedItem);
+    const hasSizes = selectedItem?.tamanhos && Object.keys(selectedItem.tamanhos).length > 0;
+    const availableQty = hasSizes && op.size
+        ? (selectedItem.tamanhos[op.size] || 0)
+        : (selectedItem?.quantidade || 0);
 
     return `
         <div class="page-wrap">
@@ -2724,7 +2730,12 @@ ALTER TABLE movements ADD COLUMN IF NOT EXISTS destination_warehouse_id TEXT;</p
                             ` : `
                                 <select class="field-input field-select" onchange="state.transferOperation.selectedItem=this.value;state.transferOperation.size=null;render()" required>
                                     <option value="">-- Escolha um item --</option>
-                                    ${sourceItems.map(i => `<option value="${i.id}" ${op.selectedItem===i.id?'selected':''}>${i.nome} (Disponível: ${i.quantidade})</option>`).join('')}
+                                    ${sourceItems.map(i => {
+                                        const label = i.tamanhos && Object.keys(i.tamanhos).length > 0
+                                            ? `${i.nome} — ${Object.entries(i.tamanhos).filter(([,q])=>q>0).map(([s,q])=>`Tam ${s}: ${q}`).join(', ')}`
+                                            : `${i.nome} (Disponível: ${i.quantidade})`;
+                                        return `<option value="${i.id}" ${op.selectedItem===i.id?'selected':''}>${label}</option>`;
+                                    }).join('')}
                                 </select>
                             `}
                         </div>
@@ -2734,18 +2745,19 @@ ALTER TABLE movements ADD COLUMN IF NOT EXISTS destination_warehouse_id TEXT;</p
                                 <div>
                                     <div style="font-size:11px;color:var(--text-3);">Item selecionado</div>
                                     <div style="font-weight:700;font-size:15px;color:var(--text-1);">${selectedItem.nome}</div>
+                                    ${hasSizes && !op.size ? `<div style="font-size:11px;color:var(--orange);margin-top:4px;"><i class="ph ph-warning"></i> Selecione um tamanho</div>` : ''}
                                 </div>
                                 <div style="text-align:right;">
-                                    <div style="font-size:11px;color:var(--text-3);">Disponível</div>
-                                    <div style="font-size:22px;font-weight:700;color:var(--green);">${selectedItem.quantidade}</div>
+                                    <div style="font-size:11px;color:var(--text-3);">${hasSizes && op.size ? `Tam ${op.size}` : 'Disponível'}</div>
+                                    <div style="font-size:22px;font-weight:700;color:${availableQty > 0 ? 'var(--green)' : 'var(--red)'};">${availableQty}</div>
                                 </div>
                             </div>
-                            ${selectedItem.tamanhos && Object.keys(selectedItem.tamanhos).length > 0 ? `
+                            ${hasSizes ? `
                                 <div class="field-group">
                                     <label class="field-label">Tamanho *</label>
-                                    <select class="field-input field-select" onchange="state.transferOperation.size=this.value;render()" required>
-                                        <option value="">-- Selecione --</option>
-                                        ${Object.entries(selectedItem.tamanhos).map(([s,q]) => `<option value="${s}" ${op.size===s?'selected':''}>${s} (Disponível: ${q})</option>`).join('')}
+                                    <select class="field-input field-select" onchange="state.transferOperation.size=this.value;state.transferOperation.quantity=1;render()" required>
+                                        <option value="">-- Selecione o tamanho --</option>
+                                        ${Object.entries(selectedItem.tamanhos).filter(([,q])=>q>0).map(([s,q]) => `<option value="${s}" ${op.size===s?'selected':''}>${s} — ${q} disponível${q!==1?'is':''}</option>`).join('')}
                                     </select>
                                 </div>
                             ` : ''}
@@ -2753,7 +2765,8 @@ ALTER TABLE movements ADD COLUMN IF NOT EXISTS destination_warehouse_id TEXT;</p
 
                         <div class="field-group">
                             <label class="field-label">Quantidade *</label>
-                            <input class="field-input" type="number" value="${op.quantity}" oninput="state.transferOperation.quantity=parseInt(this.value)||1" min="1" max="${selectedItem?.quantidade||9999}" required>
+                            <input class="field-input" type="number" value="${op.quantity}" oninput="state.transferOperation.quantity=parseInt(this.value)||1" min="1" max="${availableQty||9999}" ${hasSizes && !op.size ? 'disabled' : ''} required>
+                            ${availableQty > 0 ? `<div style="font-size:11px;color:var(--text-3);margin-top:4px;">Máximo disponível: ${availableQty}</div>` : ''}
                         </div>
                         <div class="field-group">
                             <label class="field-label">Observações</label>

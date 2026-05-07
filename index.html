@@ -88,7 +88,6 @@
                 category: 'TODAS',
                 minQuantity: '',
                 maxQuantity: '',
-                location: '',
                 lowStockOnly: false
             },
 
@@ -1160,9 +1159,6 @@
                     unidade: op.newItemUnit || 'UN',
                     unidades_por_caixa: 1,
                     tamanhos: null,
-                    ca: '',
-                    validade: '',
-                    localizacao: '',
                     observacoes: '',
                     warehouse_id: op.targetWarehouse
                 };
@@ -1291,9 +1287,6 @@
                 unidade: document.getElementById('itemUnit').value,
                 unidades_por_caixa: parseInt(document.getElementById('itemUnitsPerBox')?.value) || 1,
                 tamanhos: tamanhos,
-                ca: document.getElementById('itemCA').value,
-                validade: document.getElementById('itemValidity').value,
-                localizacao: document.getElementById('itemLocation').value,
                 observacoes: document.getElementById('itemObs').value,
                 warehouse_id: selectedWarehouse?.value || state.activeWarehouse
             };
@@ -1452,12 +1445,6 @@
             // Filtro por categoria
             if (state.filters.category !== 'TODAS') {
                 filtered = filtered.filter(i => i.categoria === state.filters.category);
-            }
-
-            // Filtro por localização
-            if (state.filters.location) {
-                const loc = state.filters.location.toLowerCase();
-                filtered = filtered.filter(i => i.localizacao?.toLowerCase().includes(loc));
             }
 
             // Filtro por quantidade mínima

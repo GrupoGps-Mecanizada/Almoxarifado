@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover">
     <title>Almoxarifado EPI - GPS Mecanizada</title>
     <meta name="theme-color" content="#f5f7fa">
     <meta name="mobile-web-app-capable" content="yes">
@@ -3051,7 +3051,8 @@ ALTER TABLE movements ADD COLUMN IF NOT EXISTS destination_warehouse_id TEXT;</p
                         <i class="ph-fill ph-check-circle" style="color:var(--green);margin-right:6px;"></i>
                         Saída do dia — ${formatDate(state.contagem.date)}
                     </div>
-                    <div style="display:grid;grid-template-columns:1fr auto auto auto;gap:8px 12px;align-items:center;margin-bottom:4px;">
+                    <div class="contagem-result-scroll">
+                    <div style="display:grid;grid-template-columns:1fr auto auto auto;gap:8px 12px;align-items:center;margin-bottom:4px;min-width:320px;">
                         <span style="font-size:11px;color:var(--text-3);font-weight:600;">ITEM</span>
                         <span style="font-size:11px;color:var(--text-3);font-weight:600;text-align:right;">ENTREGA</span>
                         <span style="font-size:11px;color:var(--text-3);font-weight:600;text-align:right;">SAÍDA</span>
@@ -3066,13 +3067,14 @@ ALTER TABLE movements ADD COLUMN IF NOT EXISTS destination_warehouse_id TEXT;</p
                         const c1Label = r.c1_qtd != null
                             ? `${r.c1_qtd}<span style="font-size:10px;color:var(--text-3);"> (${r.c1_date ? formatDate(r.c1_date) : ''})</span>`
                             : '—';
-                        return `<div style="display:grid;grid-template-columns:1fr auto auto auto;gap:8px 12px;align-items:center;padding:8px 0;border-top:1px solid var(--border);">
+                        return `<div style="display:grid;grid-template-columns:1fr auto auto auto;gap:8px 12px;align-items:center;padding:8px 0;border-top:1px solid var(--border);min-width:320px;">
                             <span style="font-weight:500;font-size:13px;">${r.item_name}</span>
                             <span style="color:var(--text-3);font-size:13px;text-align:right;">${c1Label}</span>
                             <span style="color:var(--text-2);font-size:13px;text-align:right;">${r.c2_qtd}</span>
                             <span style="text-align:right;">${saidaTag}</span>
                         </div>`;
                     }).join('')}
+                    </div>
                     <div style="margin-top:20px;display:flex;gap:10px;flex-wrap:wrap;">
                         <button onclick="state.contagem.savedResult=null;state.contagem.entries2={};render()" class="btn-secondary">
                             <i class="ph ph-pencil"></i> Corrigir Contagem 2

@@ -62,8 +62,23 @@
 }
 .nav-menu-user-info { font-size: 12px; color: var(--text-2); display: flex; align-items: center; gap: 8px; }
 
+@media (max-width: 768px) {
+  /* Larger touch targets for icon buttons */
+  .topbar-icon-btn { width: 40px; height: 40px; font-size: 18px; }
+
+  /* Nav menu items: 44px tap target */
+  .nav-menu-item { min-height: 48px; padding: 12px 20px; font-size: 14px; }
+  .nav-menu-item i { font-size: 18px; }
+}
+
 @media (max-width: 480px) {
   .nav-menu-panel { width: 100vw; }
   .logo-gps { font-size: 12px; }
-  #topbar { padding: 6px 10px; }
+  #topbar { padding: 6px 10px; min-height: 52px; }
+}
+
+/* iOS safe-area top (notch / Dynamic Island) */
+@supports (padding-top: env(safe-area-inset-top)) {
+  #topbar { padding-top: max(8px, env(safe-area-inset-top)); }
+  .nav-menu-panel { padding-top: env(safe-area-inset-top); }
 }

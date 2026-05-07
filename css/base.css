@@ -337,18 +337,101 @@ textarea.field-input { resize: vertical; }
 .toast-info    { background: var(--accent); color: #fff; }
 
 /* ---- Responsive ---- */
+
+/* Prevent horizontal scroll globally */
+html, body { overflow-x: hidden; }
+
+/* Safe-area bottom padding (iOS notch / home bar) */
+.page-wrap { padding-bottom: max(24px, env(safe-area-inset-bottom)); }
+
+/* Tab bar: scrollable on small screens */
+.tab-bar {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.tab-bar::-webkit-scrollbar { display: none; }
+
 @media (max-width: 768px) {
+  /* Layout */
   .page-content, .page-content-sm { padding: 12px; gap: 16px; }
-  .card, .card-lg { padding: 16px; }
+  .card { padding: 16px; }
+  .card-lg { padding: 20px; }
+
+  /* Grids */
   .grid-3, .grid-4 { grid-template-columns: 1fr; }
-  .grid-cards { grid-template-columns: 1fr; }
-  .stat-value { font-size: 28px; }
+  .grid-cards { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+
+  /* Typography */
+  .stat-value { font-size: 26px; }
   .page-title { font-size: 18px; }
+
+  /* Buttons — ensure 44px touch target */
+  .btn-primary, .btn-secondary, .btn-cyan, .btn-ghost, .btn-danger {
+    padding: 10px 14px; font-size: 13px; min-height: 44px;
+  }
+
+  /* Tab buttons — don't shrink, allow horizontal scroll */
+  .tab-btn { flex: 0 0 auto; min-width: 110px; min-height: 44px; }
+
+  /* Info bar actions wrap */
+  .info-bar { flex-wrap: wrap; gap: 8px; }
+
+  /* Toast */
   #toast-container { top: 10px; right: 10px; left: 10px; }
   .toast { max-width: 100%; }
-  .btn-primary, .btn-secondary, .btn-cyan, .btn-ghost, .btn-danger { padding: 8px 14px; font-size: 12px; }
+
+  /* Form inputs — 16px prevents iOS auto-zoom */
+  .field-input, .field-select, input[type="text"], input[type="number"],
+  input[type="date"], input[type="email"], input[type="password"], select, textarea {
+    font-size: 16px !important;
+    min-height: 44px;
+  }
+
+  /* Transfer form radio grid — stack on mobile */
+  .radio-group { grid-template-columns: 1fr !important; }
+
+  /* Movement row — stack label+value */
+  .movement-row { flex-wrap: wrap; gap: 6px; }
+  .movement-row .movement-label { min-width: unset; width: 100%; }
+
+  /* Contagem result grid — 2 cols on tablet */
+  .contagem-result-grid { grid-template-columns: repeat(2, 1fr) !important; }
+
+  /* Topbar icon buttons touch target */
+  .topbar-icon-btn { width: 40px; height: 40px; }
 }
+
 @media (max-width: 480px) {
+  /* Single-column grids */
   .grid-2 { grid-template-columns: 1fr; }
+  .grid-cards { grid-template-columns: 1fr; }
+
+  /* Cards */
   .action-card { padding: 14px; }
+  .card-sm { padding: 12px; }
+
+  /* Typography */
+  .page-title { font-size: 16px; }
+  .stat-value { font-size: 22px; }
+  .stat-label { font-size: 11px; }
+
+  /* Contagem result grid — single col on phone */
+  .contagem-result-grid { grid-template-columns: 1fr !important; }
+
+  /* Contagem result table — allow horizontal scroll on tiny screens */
+  .contagem-result-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  /* Movement qty — smaller on phone */
+  .movement-qty { font-size: 20px; }
+  .movement-type-icon { width: 36px; height: 36px; font-size: 16px; }
+
+  /* Buttons full-width in stacked contexts */
+  .btn-block-mobile { width: 100%; justify-content: center; }
+
+  /* Topbar tighter on very small screens */
+  #topbar { padding: 6px 10px; }
+
+  /* Safe area bottom on mobile footer/actions */
+  .page-wrap { padding-bottom: max(20px, env(safe-area-inset-bottom)); }
 }

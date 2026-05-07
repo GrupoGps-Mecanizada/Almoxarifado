@@ -19,7 +19,7 @@
     <link rel="stylesheet" href="css/topbar.css">
 </head>
 
-<body class="text-slate-800">
+<body>
     <div id="app"></div>
     <div id="toast-container"></div>
 
@@ -249,16 +249,15 @@
             const toast = document.createElement('div');
             toast.className = `toast toast-${type}`;
             toast.innerHTML = `
-                <div class="flex items-center gap-3">
-                    <i class="ph-fill ph-${type === 'success' ? 'check-circle' : type === 'error' ? 'x-circle' : 'info'} text-2xl"></i>
-                    <span class="font-semibold">${message}</span>
-                </div>
-            `;
+        <i class="ph-fill ph-${type === 'success' ? 'check-circle' : type === 'error' ? 'x-circle' : 'info'}" style="font-size:18px;flex-shrink:0;"></i>
+        <span>${message}</span>
+    `;
             container.appendChild(toast);
-
             setTimeout(() => {
-                toast.style.animation = 'slideInRight 0.3s ease-out reverse';
-                setTimeout(() => container.removeChild(toast), 300);
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateX(120%)';
+                toast.style.transition = 'all 0.3s ease';
+                setTimeout(() => { if (toast.parentNode) container.removeChild(toast); }, 300);
             }, duration);
         }
 

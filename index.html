@@ -123,7 +123,8 @@
             // Almoxarifados
             warehouses: [
                 { id: 'alm-1', nome: 'Almoxarifado Central', descricao: 'Estoque principal de EPIs' },
-                { id: 'alm-2', nome: 'Almoxarifado Distribuição', descricao: 'Itens prontos para distribuição' }
+                { id: 'alm-2', nome: 'Almoxarifado Distribuição', descricao: 'Itens prontos para distribuição' },
+                { id: 'alm-emergencial', nome: 'Emergencial', descricao: 'Saídas emergenciais e distribuição imediata' }
             ],
             activeWarehouse: 'alm-1',
 
@@ -650,7 +651,8 @@
                 // Fallback se a tabela ainda não existir
                 const defaults = [
                     { id: 'alm-1', nome: 'Almoxarifado Central', descricao: 'Estoque principal de EPIs' },
-                    { id: 'alm-2', nome: 'Almoxarifado Distribuição', descricao: 'Itens prontos para distribuição' }
+                    { id: 'alm-2', nome: 'Almoxarifado Distribuição', descricao: 'Itens prontos para distribuição' },
+                    { id: 'alm-emergencial', nome: 'Emergencial', descricao: 'Saídas emergenciais e distribuição imediata' }
                 ];
                 cache.warehouses = defaults;
                 cache.warehousesTimestamp = Date.now();
@@ -1414,10 +1416,14 @@
         }
 
         function startTransfer(fromWarehouseId) {
+            const from = fromWarehouseId || state.activeWarehouse;
+            // Destino padrão: próximo na lista, excluindo a origem
+            const others = state.warehouses.filter(w => w.id !== from);
+            const defaultTo = others[0]?.id || 'alm-2';
             state.transferOperation = {
                 active: true,
-                fromWarehouse: fromWarehouseId || state.activeWarehouse,
-                toWarehouse: fromWarehouseId === 'alm-1' ? 'alm-2' : 'alm-1',
+                fromWarehouse: from,
+                toWarehouse: defaultTo,
                 selectedItem: null,
                 size: null,
                 quantity: 1,
@@ -1688,8 +1694,8 @@
         }
 
         function getFilteredItems() {
-            // Aba emergencial não usa a grade de itens
-            if (state.activeWarehouse === 'emergencial') return [];
+            // Aba emergencial não usa a grade de itens padrão
+            if (state.activeWarehouse === 'alm-emergencial') return [];
 
             let filtered = state.items;
 
@@ -2357,32 +2363,33 @@
 
                 <div class="card" style="padding:0;overflow:hidden;">
                     <div class="tab-bar">
-                        ${state.warehouses.map(wh => `
-                            <button class="tab-btn ${state.activeWarehouse === wh.id ? 'active' : ''}"
-                                onclick="state.activeWarehouse='${wh.id}';state.filters.category='TODAS';state.filters.searchTerm='';render()">
-                                <i class="ph-fill ph-${wh.id === 'alm-1' ? 'warehouse' : 'truck'}"></i>
+                        ${state.warehouses.map(wh => {
+                            const icon = wh.id === 'alm-1' ? 'warehouse' : wh.id === 'alm-2' ? 'truck' : 'warning-circle';
+                            const isEmg = wh.id === 'alm-emergencial';
+                            const count = wh.id === 'alm-emergencial'
+                                ? (state.emergency.cart.length > 0
+                                    ? `<span class="tab-count" style="background:var(--red);color:#fff;">${state.emergency.cart.length}</span>`
+                                    : `<span class="tab-count">${state.items.filter(i=>(i.warehouse_id||'alm-1')===wh.id).length}</span>`)
+                                : `<span class="tab-count">${state.items.filter(i=>(i.warehouse_id||'alm-1')===wh.id).length}</span>`;
+                            return `<button class="tab-btn ${state.activeWarehouse === wh.id ? 'active' : ''}"
+                                onclick="state.activeWarehouse='${wh.id}';state.filters.category='TODAS';state.filters.searchTerm='';render()"
+                                style="${isEmg && state.activeWarehouse !== wh.id ? 'color:var(--red);' : ''}">
+                                <i class="ph-fill ph-${icon}"></i>
                                 ${wh.nome}
-                                <span class="tab-count">${state.items.filter(i => (i.warehouse_id||'alm-1') === wh.id).length}</span>
-                            </button>
-                        `).join('')}
-                        <button class="tab-btn ${state.activeWarehouse === 'emergencial' ? 'active' : ''}"
-                            onclick="state.activeWarehouse='emergencial';render()"
-                            style="${state.activeWarehouse === 'emergencial' ? '' : 'color:var(--red);'}">
-                            <i class="ph-fill ph-warning-circle"></i>
-                            Emergencial
-                            ${state.emergency.cart.length > 0 ? `<span class="tab-count" style="background:var(--red);color:#fff;">${state.emergency.cart.length}</span>` : ''}
-                        </button>
+                                ${count}
+                            </button>`;
+                        }).join('')}
                     </div>
                     <div class="info-bar">
                         <div>
-                            <div class="info-bar-title">${state.activeWarehouse === 'emergencial' ? 'Saída Emergencial' : (activeWh?.nome || 'Almoxarifado')}</div>
-                            <div class="info-bar-sub">${state.activeWarehouse === 'emergencial' ? 'Retira itens de qualquer almoxarifado' : (activeWh?.descricao || '')}</div>
+                            <div class="info-bar-title">${activeWh?.nome || 'Almoxarifado'}</div>
+                            <div class="info-bar-sub">${activeWh?.descricao || ''}</div>
                         </div>
                         <div class="row">
-                            <button onclick="startTransfer('${state.activeWarehouse === 'emergencial' ? 'alm-1' : state.activeWarehouse}')" class="btn-cyan" style="font-size:12px;padding:7px 12px;">
+                            <button onclick="startTransfer('${state.activeWarehouse}')" class="btn-cyan" style="font-size:12px;padding:7px 12px;">
                                 <i class="ph-fill ph-arrows-left-right"></i> Transferência
                             </button>
-                            ${state.activeWarehouse !== 'emergencial' ? `
+                            ${state.activeWarehouse !== 'alm-emergencial' ? `
                             <button onclick="navigateToWarehouses()" class="btn-ghost" style="font-size:12px;padding:7px 12px;">
                                 <i class="ph-fill ph-gear"></i> Configurar
                             </button>` : ''}
@@ -2390,7 +2397,7 @@
                     </div>
                 </div>
 
-                ${state.activeWarehouse === 'emergencial' ? renderEmergencial() : `
+                ${state.activeWarehouse === 'alm-emergencial' ? renderEmergencial() : `
                 <div class="card">
                     <div class="section-title" style="margin-bottom:14px;"><i class="ph ph-funnel" style="margin-right:6px;"></i>Filtros</div>
                     <div class="grid-2" style="margin-bottom:12px;">
@@ -2535,6 +2542,39 @@
 
             return `
                 ${addFormHtml}
+
+                ${(() => {
+                    // Estoque atual no almoxarifado Emergencial
+                    const emgItems = state.items.filter(i => (i.warehouse_id||'alm-1') === 'alm-emergencial');
+                    if (emgItems.length === 0) return '';
+                    return `<div class="card">
+                        <div class="section-title" style="margin-bottom:12px;">
+                            <i class="ph ph-package"></i> Itens no Emergencial
+                            <span class="badge badge-gray" style="margin-left:8px;">${emgItems.length} itens</span>
+                        </div>
+                        <div class="grid-cards" style="--min-card:180px;">
+                            ${emgItems.map(item => `
+                                <div class="item-card" style="border-left:3px solid var(--red);">
+                                    <div class="item-card-name">${item.nome}</div>
+                                    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+                                        <span class="badge badge-blue">${item.categoria}</span>
+                                        <span class="badge badge-gray">${item.unidade}</span>
+                                    </div>
+                                    <div style="display:flex;justify-content:space-between;align-items:flex-end;">
+                                        <span style="font-size:11px;text-transform:uppercase;color:var(--text-3);">Qtd</span>
+                                        <span class="item-card-qty ${item.quantidade < 5 ? 'low' : 'ok'}">${item.quantidade}</span>
+                                    </div>
+                                    ${item.tamanhos && Object.keys(item.tamanhos).length > 0 ? `
+                                        <div class="sizes-grid" style="margin-top:8px;">
+                                            ${Object.entries(item.tamanhos).map(([s,q]) => `
+                                                <div class="size-chip"><strong>${s}:</strong> <span class="qty ${q>0?'ok':'low'}">${q}</span></div>
+                                            `).join('')}
+                                        </div>` : ''}
+                                </div>`).join('')}
+                        </div>
+                    </div>`;
+                })()}
+
                 <div class="card">
                     <div class="row-between" style="margin-bottom:16px;">
                         <div>
@@ -2653,7 +2693,7 @@ ALTER TABLE movements ADD COLUMN IF NOT EXISTS destination_warehouse_id TEXT;</p
                     <form onsubmit="event.preventDefault();confirmTransfer();" class="stack">
                         <div class="field-group">
                             <label class="field-label">De (Origem)</label>
-                            <div class="grid-2">
+                            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;">
                                 ${state.warehouses.map(wh => `
                                     <label class="radio-card ${op.fromWarehouse===wh.id?'selected':''}">
                                         <input type="radio" name="fromWarehouse" value="${wh.id}" ${op.fromWarehouse===wh.id?'checked':''}
@@ -2666,7 +2706,7 @@ ALTER TABLE movements ADD COLUMN IF NOT EXISTS destination_warehouse_id TEXT;</p
 
                         <div class="field-group">
                             <label class="field-label">Para (Destino)</label>
-                            <div class="grid-2">
+                            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;">
                                 ${state.warehouses.map(wh => `
                                     <label class="radio-card ${op.toWarehouse===wh.id?'selected':''}">
                                         <input type="radio" name="toWarehouse" value="${wh.id}" ${op.toWarehouse===wh.id?'checked':''}

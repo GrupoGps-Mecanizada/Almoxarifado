@@ -3183,66 +3183,93 @@ ALTER TABLE movements ADD COLUMN IF NOT EXISTS destination_warehouse_id TEXT;</p
         }
 
         function renderHeader() {
+            const views = [
+                { id: 'dashboard',   label: 'Dashboard',      icon: 'ph-fill ph-house' },
+                { id: 'stock',       label: 'Estoque',         icon: 'ph-fill ph-warehouse' },
+                { id: 'history',     label: 'Histórico',       icon: 'ph-fill ph-clock-counter-clockwise' },
+                { id: 'analytics',   label: 'Analytics',       icon: 'ph-fill ph-chart-line' },
+                { id: 'warehouses',  label: 'Almoxarifados',   icon: 'ph-fill ph-gear' },
+            ];
             return `
-                <header class="bg-white border-b border-slate-200 p-3 md:p-4 sticky top-0 z-30 shadow-sm">
-                    <div class="max-w-7xl mx-auto flex justify-between items-center">
-                        <div class="flex items-center gap-3 md:gap-4">
-                            <div class="w-10 h-10 md:w-12 md:h-12 bg-emerald-500/10 rounded-lg flex items-center justify-center">
-                                <i class="ph-fill ph-package text-emerald-600 text-xl md:text-2xl"></i>
-                            </div>
+                <div id="global-sync-bar"></div>
+                <div id="topbar">
+                    <div id="topbar-left">
+                        <button class="topbar-icon-btn" onclick="openSidebar()" aria-label="Menu" title="Menu">
+                            <i class="ph ph-list"></i>
+                        </button>
+                    </div>
+                    <div class="logo">
+                        <span class="logo-gps">Grupo GPS</span>
+                        <div class="logo-divider"></div>
+                        <span class="logo-gestao">Almoxarifado EPI</span>
+                    </div>
+                    <div id="topbar-right">
+                        <button class="topbar-icon-btn" onclick="exportAll()" title="Exportar" aria-label="Exportar">
+                            <i class="ph ph-download-simple"></i>
+                        </button>
+                        <button class="topbar-icon-btn" onclick="handleLogout()" title="Sair" aria-label="Sair" style="color:var(--red)">
+                            <i class="ph ph-sign-out"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div id="nav-menu-overlay" class="nav-menu-overlay hidden" onclick="closeSidebar()">
+                    <div class="nav-menu-panel" onclick="event.stopPropagation()">
+                        <div class="nav-menu-header">
                             <div>
-                                <h1 class="font-bold text-base md:text-xl font-mono text-slate-800">ALMOXARIFADO</h1>
-                                <p class="text-xs md:text-sm text-slate-500 truncate max-w-[120px] md:max-w-none">${state.user?.nome || 'Sistema'}</p>
+                                <div style="font-weight:800;font-size:16px;color:#0f3868;letter-spacing:-0.01em;">Grupo GPS</div>
+                                <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.15em;color:var(--accent);">Mecanizada</div>
+                                <div style="height:1px;background:var(--border);margin:6px 0;"></div>
+                                <div style="font-size:11px;color:var(--text-3);font-weight:500;">Almoxarifado EPI</div>
                             </div>
                         </div>
-                        
-                        <nav class="flex gap-1 md:gap-2">
-                            <button 
-                                onclick="navigateTo('dashboard')"
-                                class="px-3 md:px-4 py-2 rounded-lg hover:bg-slate-100 transition-all ${state.view === 'dashboard' ? 'bg-slate-100 text-emerald-600' : 'text-slate-600'}"
-                                title="Dashboard"
-                            >
-                                <i class="ph-fill ph-house text-lg md:text-xl"></i>
+                        <div class="nav-menu-body">
+                            ${views.map(v => `
+                                <button class="nav-menu-item ${state.view === v.id ? 'active' : ''}"
+                                    onclick="closeSidebar(); navigateTo('${v.id}')">
+                                    <i class="${v.icon}"></i>
+                                    ${v.label}
+                                </button>
+                            `).join('')}
+                            <button class="nav-menu-item" onclick="closeSidebar(); startMovement('COMPRA')">
+                                <i class="ph-fill ph-shopping-cart"></i>
+                                Nova Compra
                             </button>
-                            <button 
-                                onclick="navigateTo('stock')"
-                                class="px-3 md:px-4 py-2 rounded-lg hover:bg-slate-100 transition-all ${state.view === 'stock' ? 'bg-slate-100 text-emerald-600' : 'text-slate-600'}"
-                                title="Estoque"
-                            >
-                                <i class="ph-fill ph-warehouse text-lg md:text-xl"></i>
+                            <button class="nav-menu-item" onclick="closeSidebar(); startTransfer(state.activeWarehouse)">
+                                <i class="ph-fill ph-arrows-left-right"></i>
+                                Transferência
                             </button>
-                            <button 
-                                onclick="navigateToHistory()"
-                                class="px-3 md:px-4 py-2 rounded-lg hover:bg-slate-100 transition-all ${state.view === 'history' ? 'bg-slate-100 text-emerald-600' : 'text-slate-600'}"
-                                title="Histórico"
-                            >
-                                <i class="ph-fill ph-clock-counter-clockwise text-lg md:text-xl"></i>
+                        </div>
+                        <div class="nav-menu-footer">
+                            <div class="nav-menu-user-info">
+                                <i class="ph-fill ph-user-circle" style="font-size:18px;color:var(--text-3);"></i>
+                                <span>${state.user?.nome || state.user?.email || '—'}</span>
+                            </div>
+                            <button class="btn-ghost" onclick="closeSidebar(); handleLogout()" style="width:100%;justify-content:flex-start;gap:8px;">
+                                <i class="ph ph-sign-out"></i> Sair
                             </button>
-                            <button 
-                                onclick="startTransfer(state.activeWarehouse)"
-                                class="px-3 md:px-4 py-2 rounded-lg hover:bg-slate-100 transition-all ${state.view === 'transfer' ? 'bg-slate-100 text-cyan-600' : 'text-slate-600'}"
-                                title="Transferência"
-                            >
-                                <i class="ph-fill ph-arrows-left-right text-lg md:text-xl"></i>
-                            </button>
-                            <button 
-                                onclick="navigateToWarehouses()"
-                                class="px-3 md:px-4 py-2 rounded-lg hover:bg-slate-100 transition-all ${state.view === 'warehouses' ? 'bg-slate-100 text-slate-700' : 'text-slate-600'}"
-                                title="Almoxarifados"
-                            >
-                                <i class="ph-fill ph-gear text-lg md:text-xl"></i>
-                            </button>
-                            <button 
-                                onclick="handleLogout()"
-                                class="px-3 md:px-4 py-2 rounded-lg hover:bg-red-50 transition-all text-red-500 hover:text-red-600"
-                                title="Sair"
-                            >
-                                <i class="ph-fill ph-sign-out text-lg md:text-xl"></i>
-                            </button>
-                        </nav>
+                        </div>
                     </div>
-                </header>
+                </div>
             `;
+        }
+
+        function openSidebar() {
+            const overlay = document.getElementById('nav-menu-overlay');
+            if (overlay) overlay.classList.remove('hidden');
+        }
+
+        function closeSidebar() {
+            const overlay = document.getElementById('nav-menu-overlay');
+            if (overlay) overlay.classList.add('hidden');
+        }
+
+        function exportAll() {
+            if (state.view === 'history') {
+                exportMovementsToXLSX();
+            } else {
+                exportStockToXLSX();
+            }
         }
 
         // ============================================

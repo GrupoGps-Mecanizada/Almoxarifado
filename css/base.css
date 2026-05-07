@@ -197,7 +197,7 @@ textarea.field-input { resize: vertical; }
   border-radius: var(--radius); padding: 20px; transition: border-color .15s;
 }
 .item-card:hover { border-color: var(--accent); }
-.item-card-name { font-size: 16px; font-weight: 700; color: var(--text-1); margin-bottom: 8px; word-break: break-word; }
+.item-card-name { font-size: 16px; font-weight: 700; color: var(--text-1); margin-bottom: 8px; word-break: break-word; text-transform: uppercase; }
 .item-card-qty { font-size: 28px; font-weight: 700; line-height: 1; }
 .item-card-qty.low { color: var(--orange); }
 .item-card-qty.ok  { color: var(--green); }

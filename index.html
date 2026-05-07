@@ -1270,7 +1270,7 @@
                 const newItemId = 'ITEM-' + Date.now();
                 const newItem = {
                     id: newItemId,
-                    nome: op.newItemName,
+                    nome: op.newItemName.trim().toUpperCase(),
                     categoria: op.newItemCategory,
                     quantidade: 0,
                     unidade: op.newItemUnit || 'UN',
@@ -1399,7 +1399,7 @@
             const selectedWarehouse = document.querySelector('input[name="itemWarehouse"]:checked');
             const itemData = {
                 id: state.editingItem?.id || 'ITEM-' + Date.now(),
-                nome: document.getElementById('itemName').value,
+                nome: document.getElementById('itemName').value.trim().toUpperCase(),
                 categoria: document.getElementById('itemCategory').value,
                 quantidade: quantidade,
                 unidade: document.getElementById('itemUnit').value,

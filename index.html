@@ -127,6 +127,15 @@
             ],
             activeWarehouse: 'alm-1',
 
+            // Saída Emergencial
+            emergency: {
+                cart: [],           // [{ item_id, item_name, unidade, quantidade, max }]
+                saving: false,
+                showForm: false,
+                formItemId: '',
+                formQty: 1
+            },
+
             // Operação de transferência
             transferOperation: {
                 active: false,
@@ -806,6 +815,80 @@
                 showToast('Erro na transferência: ' + error.message, 'error');
                 await loadItems(true);
             }
+        }
+
+        // ============================================
+        // SAÍDA EMERGENCIAL
+        // ============================================
+        function emergencyAddToCart() {
+            const em = state.emergency;
+            const item = state.items.find(i => i.id === em.formItemId);
+            if (!item) { showToast('Selecione um item', 'error'); return; }
+            const qty = Math.max(1, parseInt(em.formQty) || 1);
+            if (qty > item.quantidade) {
+                showToast(`Quantidade maior que o estoque (${item.quantidade})`, 'error');
+                return;
+            }
+            // Se já está no carrinho, soma
+            const existing = em.cart.find(c => c.item_id === item.id);
+            if (existing) {
+                const total = existing.quantidade + qty;
+                if (total > item.quantidade) {
+                    showToast(`Total (${total}) maior que o estoque (${item.quantidade})`, 'error');
+                    return;
+                }
+                existing.quantidade = total;
+            } else {
+                em.cart.push({ item_id: item.id, item_name: item.nome, unidade: item.unidade, quantidade: qty, max: item.quantidade });
+            }
+            em.formItemId = '';
+            em.formQty = 1;
+            em.showForm = false;
+            render();
+        }
+
+        function emergencyRemoveFromCart(item_id) {
+            state.emergency.cart = state.emergency.cart.filter(c => c.item_id !== item_id);
+            render();
+        }
+
+        async function confirmEmergencySaida() {
+            const em = state.emergency;
+            if (em.cart.length === 0) { showToast('Carrinho vazio', 'error'); return; }
+            em.saving = true;
+            render();
+            try {
+                for (const entry of em.cart) {
+                    const item = state.items.find(i => i.id === entry.item_id);
+                    if (!item) continue;
+                    const novaQtd = item.quantidade - entry.quantidade;
+                    const { error: updErr } = await sbClient
+                        .from('items')
+                        .update({ quantidade: novaQtd })
+                        .eq('id', item.id);
+                    if (updErr) throw updErr;
+                    // Registra movimento
+                    await sbClient.from('movements').insert({
+                        date: getCurrentDate(),
+                        type: 'saida',
+                        item_id: item.id,
+                        item_name: item.nome,
+                        quantity: entry.quantidade,
+                        warehouse_id: 'alm-2',
+                        user_name: state.user.nome,
+                        observations: 'Saída Emergencial'
+                    });
+                }
+                await loadItems(true);
+                em.cart = [];
+                em.showForm = false;
+                showToast('Saída emergencial registrada!', 'success');
+            } catch (e) {
+                showToast('Erro ao registrar saída: ' + e.message, 'error');
+                console.error(e);
+            }
+            em.saving = false;
+            render();
         }
 
         // ============================================
@@ -1605,6 +1688,9 @@
         }
 
         function getFilteredItems() {
+            // Aba emergencial não usa a grade de itens
+            if (state.activeWarehouse === 'emergencial') return [];
+
             let filtered = state.items;
 
             // Filtro por almoxarifado
@@ -2279,7 +2365,15 @@
                                 <span class="tab-count">${state.items.filter(i => (i.warehouse_id||'alm-1') === wh.id).length}</span>
                             </button>
                         `).join('')}
+                        <button class="tab-btn ${state.activeWarehouse === 'emergencial' ? 'active' : ''}"
+                            onclick="state.activeWarehouse='emergencial';render()"
+                            style="${state.activeWarehouse === 'emergencial' ? '' : 'color:var(--red);'}">
+                            <i class="ph-fill ph-warning-circle"></i>
+                            Emergencial
+                            ${state.emergency.cart.length > 0 ? `<span class="tab-count" style="background:var(--red);color:#fff;">${state.emergency.cart.length}</span>` : ''}
+                        </button>
                     </div>
+                    ${state.activeWarehouse !== 'emergencial' ? `
                     <div class="info-bar">
                         <div>
                             <div class="info-bar-title">${activeWh?.nome || 'Almoxarifado'}</div>
@@ -2293,9 +2387,10 @@
                                 <i class="ph-fill ph-gear"></i> Configurar
                             </button>
                         </div>
-                    </div>
+                    </div>` : ''}
                 </div>
 
+                ${state.activeWarehouse === 'emergencial' ? renderEmergencial() : `
                 <div class="card">
                     <div class="section-title" style="margin-bottom:14px;"><i class="ph ph-funnel" style="margin-right:6px;"></i>Filtros</div>
                     <div class="grid-2" style="margin-bottom:12px;">
@@ -2370,10 +2465,102 @@
                         `).join('')}
                     </div>
                 `}
+                `}
             </div>
         </div>
     `;
 }
+
+        function renderEmergencial() {
+            const em = state.emergency;
+            const alm2Items = state.items
+                .filter(i => (i.warehouse_id || 'alm-1') === 'alm-2' && i.quantidade > 0)
+                .sort((a, b) => a.nome.localeCompare(b.nome));
+
+            const cartHtml = em.cart.length === 0
+                ? `<p style="color:var(--text-3);font-size:13px;text-align:center;padding:16px 0;">Nenhum item adicionado ainda</p>`
+                : em.cart.map(entry => `
+                    <div class="resultado-row">
+                        <div>
+                            <span style="font-weight:600;font-size:14px;">${entry.item_name}</span>
+                            <span class="badge badge-gray" style="margin-left:6px;">${entry.unidade}</span>
+                        </div>
+                        <div style="display:flex;align-items:center;gap:10px;">
+                            <span style="font-size:15px;font-weight:700;color:var(--red);">−${entry.quantidade}</span>
+                            <button onclick="emergencyRemoveFromCart('${entry.item_id}')" class="btn-icon" title="Remover">
+                                <i class="ph ph-x"></i>
+                            </button>
+                        </div>
+                    </div>`).join('');
+
+            const addFormHtml = em.showForm ? `
+                <div class="card" style="border:2px solid var(--red);margin-top:0;">
+                    <div class="section-title" style="margin-bottom:14px;color:var(--red);">
+                        <i class="ph-fill ph-plus-circle"></i> Adicionar Item
+                    </div>
+                    <div class="stack-sm">
+                        <div class="field-group">
+                            <label class="field-label">Item do Almoxarifado Distribuição *</label>
+                            <select class="field-input field-select" id="emgItemId"
+                                onchange="state.emergency.formItemId=this.value;render()">
+                                <option value="">— Selecione —</option>
+                                ${alm2Items.map(i => {
+                                    const inCart = em.cart.find(c => c.item_id === i.id);
+                                    const avail = i.quantidade - (inCart?.quantidade || 0);
+                                    return `<option value="${i.id}" ${em.formItemId===i.id?'selected':''}>${i.nome} (disp: ${avail} ${i.unidade})</option>`;
+                                }).join('')}
+                            </select>
+                        </div>
+                        <div class="field-group">
+                            <label class="field-label">Quantidade *</label>
+                            <input class="field-input" type="number" min="1" id="emgQty"
+                                value="${em.formQty}"
+                                oninput="state.emergency.formQty=this.value">
+                        </div>
+                        <div style="display:flex;gap:10px;margin-top:4px;">
+                            <button onclick="emergencyAddToCart()" class="btn-primary">
+                                <i class="ph-fill ph-plus-circle"></i> Adicionar ao Carrinho
+                            </button>
+                            <button onclick="state.emergency.showForm=false;render()" class="btn-secondary">
+                                Cancelar
+                            </button>
+                        </div>
+                    </div>
+                </div>` : '';
+
+            return `
+                ${addFormHtml}
+                <div class="card">
+                    <div class="row-between" style="margin-bottom:16px;">
+                        <div>
+                            <div class="section-title" style="color:var(--red);margin-bottom:2px;">
+                                <i class="ph-fill ph-warning-circle"></i> Saída Emergencial
+                            </div>
+                            <p style="font-size:12px;color:var(--text-3);">Retira itens diretamente do Almoxarifado Distribuição</p>
+                        </div>
+                        <button onclick="state.emergency.showForm=true;state.emergency.formItemId='';state.emergency.formQty=1;render()"
+                            class="btn-primary" style="background:var(--red);border-color:var(--red);" ${em.showForm?'disabled':''}>
+                            <i class="ph-fill ph-plus-circle"></i> Adicionar
+                        </button>
+                    </div>
+                    <div style="border-top:1px solid var(--border);padding-top:12px;">
+                        ${cartHtml}
+                    </div>
+                    ${em.cart.length > 0 ? `
+                    <div style="margin-top:20px;display:flex;justify-content:flex-end;gap:10px;">
+                        <button onclick="state.emergency.cart=[];render()" class="btn-secondary">
+                            <i class="ph ph-trash"></i> Limpar
+                        </button>
+                        <button onclick="confirmEmergencySaida()" class="btn-primary"
+                            style="background:var(--red);border-color:var(--red);"
+                            ${em.saving?'disabled':''}>
+                            ${em.saving
+                                ? `<span class="loading-spinner" style="width:16px;height:16px;border-width:2px;"></span> Registrando...`
+                                : `<i class="ph-fill ph-check-circle"></i> Confirmar Saída (${em.cart.reduce((s,c)=>s+c.quantidade,0)} itens)`}
+                        </button>
+                    </div>` : ''}
+                </div>`;
+        }
 
 
 

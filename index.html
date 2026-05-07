@@ -1779,154 +1779,103 @@
 }
 
         function renderDashboard() {
-            const totalItems = state.items.length;
-            const totalQuantity = state.items.reduce((sum, item) => sum + item.quantidade, 0);
-            const lowStock = state.items.filter(item => item.quantidade < 10).length;
+    const totalItems = state.items.length;
+    const totalQty = state.items.reduce((s, i) => s + i.quantidade, 0);
+    const lowStock = state.items.filter(i => i.quantidade < 10).length;
 
-            return `
-                <div class="min-h-screen pb-6">
-                    ${renderHeader()}
-                    
-                    <main class="p-4 max-w-7xl mx-auto space-y-6">
-                        <!-- Statistics Cards -->
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 fade-in">
-                            <div class="glass p-6 rounded-xl border-l-4 border-emerald-500">
-                                <div class="flex items-center justify-between">
-                                    <div>
-                                        <p class="text-slate-500 text-sm uppercase tracking-wide font-semibold">Total de Itens</p>
-                                        <p class="text-4xl font-bold font-mono mt-2">${totalItems}</p>
-                                    </div>
-                                    <div class="w-16 h-16 bg-emerald-500/20 rounded-xl flex items-center justify-center">
-                                        <i class="ph-fill ph-package text-emerald-400 text-3xl"></i>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div class="glass p-6 rounded-xl border-l-4 border-blue-500">
-                                <div class="flex items-center justify-between">
-                                    <div>
-                                        <p class="text-slate-500 text-sm uppercase tracking-wide font-semibold">Quantidade Total</p>
-                                        <p class="text-4xl font-bold font-mono mt-2">${totalQuantity}</p>
-                                    </div>
-                                    <div class="w-16 h-16 bg-blue-500/20 rounded-xl flex items-center justify-center">
-                                        <i class="ph-fill ph-stack text-blue-400 text-3xl"></i>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div class="glass p-6 rounded-xl border-l-4 border-amber-500">
-                                <div class="flex items-center justify-between">
-                                    <div>
-                                        <p class="text-slate-500 text-sm uppercase tracking-wide font-semibold">Estoque Baixo</p>
-                                        <p class="text-4xl font-bold font-mono mt-2">${lowStock}</p>
-                                    </div>
-                                    <div class="w-16 h-16 bg-amber-500/20 rounded-xl flex items-center justify-center">
-                                        <i class="ph-fill ph-warning text-amber-400 text-3xl"></i>
-                                    </div>
-                                </div>
-                            </div>
+    return `
+        <div class="page-wrap">
+            ${renderHeader()}
+            <div class="page-content">
+                <div class="grid-3">
+                    <div class="card accent-green" style="display:flex;align-items:center;justify-content:space-between;">
+                        <div>
+                            <div class="stat-label">Total de Itens</div>
+                            <div class="stat-value text-green">${totalItems}</div>
                         </div>
-
-                        <!-- Quick Actions -->
-                        <div class="glass p-6 rounded-xl slide-in">
-                            <h2 class="text-xl font-bold mb-4 flex items-center gap-2">
-                                <i class="ph-fill ph-lightning text-amber-400"></i>
-                                Ações Rápidas
-                            </h2>
-                            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                                <button onclick="startMovement('COMPRA')" class="glass p-5 rounded-lg hover:border-emerald-500 border-2 border-transparent transition-all text-center group">
-                                    <div class="w-12 h-12 bg-emerald-500/20 rounded-lg flex items-center justify-center mb-3 group-hover:scale-110 transition-transform mx-auto">
-                                        <i class="ph-fill ph-shopping-cart text-emerald-400 text-2xl"></i>
-                                    </div>
-                                    <h3 class="font-bold text-sm mb-1">Compra de Estoque</h3>
-                                    <p class="text-slate-500 text-xs">Registrar compra</p>
-                                </button>
-
-                                <button onclick="navigateTo('stock')" class="glass p-5 rounded-lg hover:border-blue-500 border-2 border-transparent transition-all text-center group">
-                                    <div class="w-12 h-12 bg-blue-500/20 rounded-lg flex items-center justify-center mb-3 group-hover:scale-110 transition-transform mx-auto">
-                                        <i class="ph-fill ph-warehouse text-blue-400 text-2xl"></i>
-                                    </div>
-                                    <h3 class="font-bold text-sm mb-1">Estoque</h3>
-                                    <p class="text-slate-500 text-xs">Visualizar</p>
-                                </button>
-
-                                <button onclick="navigateToHistory()" class="glass p-5 rounded-lg hover:border-purple-500 border-2 border-transparent transition-all text-center group">
-                                    <div class="w-12 h-12 bg-purple-500/20 rounded-lg flex items-center justify-center mb-3 group-hover:scale-110 transition-transform mx-auto">
-                                        <i class="ph-fill ph-clock-counter-clockwise text-purple-400 text-2xl"></i>
-                                    </div>
-                                    <h3 class="font-bold text-sm mb-1">Histórico</h3>
-                                    <p class="text-slate-500 text-xs">Ver</p>
-                                </button>
-
-                                <button onclick="startTransfer('alm-1')" class="glass p-5 rounded-lg hover:border-cyan-500 border-2 border-transparent transition-all text-center group">
-                                    <div class="w-12 h-12 bg-cyan-500/20 rounded-lg flex items-center justify-center mb-3 group-hover:scale-110 transition-transform mx-auto">
-                                        <i class="ph-fill ph-arrows-left-right text-cyan-400 text-2xl"></i>
-                                    </div>
-                                    <h3 class="font-bold text-sm mb-1">Transferência</h3>
-                                    <p class="text-slate-500 text-xs">Entre almox.</p>
-                                </button>
-
-                                <button onclick="navigateToDashboardAnalytics()" class="glass p-5 rounded-lg hover:border-pink-500 border-2 border-transparent transition-all text-center group">
-                                    <div class="w-12 h-12 bg-pink-500/20 rounded-lg flex items-center justify-center mb-3 group-hover:scale-110 transition-transform mx-auto">
-                                        <i class="ph-fill ph-chart-line text-pink-400 text-2xl"></i>
-                                    </div>
-                                    <h3 class="font-bold text-sm mb-1">Analytics</h3>
-                                    <p class="text-slate-500 text-xs">Relatórios</p>
-                                </button>
-
-                                <button onclick="openNewItem()" class="glass p-5 rounded-lg hover:border-amber-500 border-2 border-transparent transition-all text-center group">
-                                    <div class="w-12 h-12 bg-amber-500/20 rounded-lg flex items-center justify-center mb-3 group-hover:scale-110 transition-transform mx-auto">
-                                        <i class="ph-fill ph-plus-circle text-amber-400 text-2xl"></i>
-                                    </div>
-                                    <h3 class="font-bold text-sm mb-1">Novo Item</h3>
-                                    <p class="text-slate-500 text-xs">Cadastrar</p>
-                                </button>
-
-                                <button onclick="navigateToWarehouses()" class="glass p-5 rounded-lg hover:border-slate-500 border-2 border-transparent transition-all text-center group">
-                                    <div class="w-12 h-12 bg-slate-500/20 rounded-lg flex items-center justify-center mb-3 group-hover:scale-110 transition-transform mx-auto">
-                                        <i class="ph-fill ph-gear text-slate-400 text-2xl"></i>
-                                    </div>
-                                    <h3 class="font-bold text-sm mb-1">Almoxarifados</h3>
-                                    <p class="text-slate-500 text-xs">Configurar</p>
-                                </button>
-                            </div>
+                        <div class="stat-icon icon-green"><i class="ph-fill ph-package"></i></div>
+                    </div>
+                    <div class="card accent-blue" style="display:flex;align-items:center;justify-content:space-between;">
+                        <div>
+                            <div class="stat-label">Quantidade Total</div>
+                            <div class="stat-value text-blue">${totalQty}</div>
                         </div>
-
-                        <!-- Recent Items -->
-                        <div class="glass p-6 rounded-xl">
-                            <h2 class="text-xl font-bold mb-4 flex items-center gap-2">
-                                <i class="ph-fill ph-list text-blue-400"></i>
-                                Itens Recentes
-                            </h2>
-                            ${state.items.length === 0 ? `
-                                <div class="text-center py-12 text-slate-500">
-                                    <i class="ph ph-package text-6xl mb-4 opacity-50"></i>
-                                    <p>Nenhum item cadastrado</p>
-                                </div>
-                            ` : `
-                                <div class="space-y-2">
-                                    ${state.items.slice(0, 5).map(item => `
-                                        <div class="glass p-4 rounded-lg flex items-center justify-between hover:border-slate-600 border-2 border-transparent transition-all">
-                                            <div class="flex-1">
-                                                <h3 class="font-bold text-lg">${item.nome}</h3>
-                                                <div class="flex gap-2 mt-1">
-                                                    <span class="text-xs px-2 py-1 bg-blue-500/20 text-blue-400 rounded-full font-semibold">${item.categoria}</span>
-                                                    <span class="text-xs px-2 py-1 bg-slate-500/20 text-slate-500 rounded-full font-mono">${item.unidade}</span>
-                                                </div>
-                                            </div>
-                                            <div class="text-right">
-                                                <p class="text-2xl font-bold font-mono ${item.quantidade < 10 ? 'text-amber-400' : 'text-emerald-400'}">${item.quantidade}</p>
-                                                <p class="text-xs text-slate-500 uppercase">Em estoque</p>
-                                            </div>
-                                        </div>
-                                    `).join('')}
-                                </div>
-                            `}
+                        <div class="stat-icon icon-blue"><i class="ph-fill ph-stack"></i></div>
+                    </div>
+                    <div class="card accent-amber" style="display:flex;align-items:center;justify-content:space-between;">
+                        <div>
+                            <div class="stat-label">Estoque Baixo</div>
+                            <div class="stat-value text-amber">${lowStock}</div>
                         </div>
-                    </main>
+                        <div class="stat-icon icon-amber"><i class="ph-fill ph-warning"></i></div>
+                    </div>
                 </div>
-            `;
-        }
+
+                <div class="card">
+                    <div class="section-title" style="margin-bottom:16px;">Ações Rápidas</div>
+                    <div class="grid-4">
+                        <button onclick="startMovement('COMPRA')" class="action-card">
+                            <div class="action-icon icon-green"><i class="ph-fill ph-shopping-cart"></i></div>
+                            <h3>Compra</h3><p>Registrar entrada</p>
+                        </button>
+                        <button onclick="navigateTo('stock')" class="action-card">
+                            <div class="action-icon icon-blue"><i class="ph-fill ph-warehouse"></i></div>
+                            <h3>Estoque</h3><p>Visualizar</p>
+                        </button>
+                        <button onclick="navigateToHistory()" class="action-card">
+                            <div class="action-icon icon-purple"><i class="ph-fill ph-clock-counter-clockwise"></i></div>
+                            <h3>Histórico</h3><p>Ver movimentações</p>
+                        </button>
+                        <button onclick="startTransfer(state.activeWarehouse)" class="action-card">
+                            <div class="action-icon icon-cyan"><i class="ph-fill ph-arrows-left-right"></i></div>
+                            <h3>Transferência</h3><p>Entre almox.</p>
+                        </button>
+                        <button onclick="navigateToDashboardAnalytics()" class="action-card">
+                            <div class="action-icon icon-red" style="background:color-mix(in srgb,#e879a0 12%,transparent);color:#e879a0;"><i class="ph-fill ph-chart-line"></i></div>
+                            <h3>Analytics</h3><p>Relatórios</p>
+                        </button>
+                        <button onclick="openNewItem()" class="action-card">
+                            <div class="action-icon icon-amber"><i class="ph-fill ph-plus-circle"></i></div>
+                            <h3>Novo Item</h3><p>Cadastrar</p>
+                        </button>
+                        <button onclick="navigateToWarehouses()" class="action-card">
+                            <div class="action-icon icon-gray"><i class="ph-fill ph-gear"></i></div>
+                            <h3>Almoxarifados</h3><p>Configurar</p>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="section-title" style="margin-bottom:16px;">Itens Recentes</div>
+                    ${state.items.length === 0 ? `
+                        <div class="empty-state">
+                            <i class="ph ph-package"></i>
+                            <p>Nenhum item cadastrado</p>
+                        </div>
+                    ` : `
+                        <div class="stack-sm">
+                            ${state.items.slice(0, 5).map(item => `
+                                <div class="card-sm" style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+                                    <div style="flex:1;min-width:0;">
+                                        <div style="font-weight:700;font-size:14px;color:var(--text-1);margin-bottom:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${item.nome}</div>
+                                        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                                            <span class="badge badge-blue">${item.categoria}</span>
+                                            <span class="badge badge-gray">${item.unidade}</span>
+                                        </div>
+                                    </div>
+                                    <div style="text-align:right;flex-shrink:0;">
+                                        <div style="font-size:24px;font-weight:700;color:${item.quantidade < 10 ? 'var(--orange)' : 'var(--green)'};">${item.quantidade}</div>
+                                        <div style="font-size:10px;color:var(--text-3);text-transform:uppercase;">em estoque</div>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    `}
+                </div>
+            </div>
+        </div>
+    `;
+}
 
         function renderAnalytics() {
             return `

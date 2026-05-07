@@ -139,7 +139,20 @@
             },
 
             // Edição de almoxarifado
-            editingWarehouse: null
+            editingWarehouse: null,
+
+            // Contagem Diária
+            contagem: {
+                loading: false,
+                date: getCurrentDate(),
+                entries: {},
+                lastCounts: {},
+                saving: false,
+                savedResult: null,
+                tab: 'count',
+                history: [],
+                historyLoading: false
+            }
         };
 
         // Navigation history para o botão voltar
@@ -1391,6 +1404,111 @@
 
             // Renderiza gráficos após um pequeno delay para garantir que o DOM está pronto
             setTimeout(() => renderCharts(), 100);
+        }
+
+        async function navigateToContagem() {
+            state.contagem.entries = {};
+            state.contagem.savedResult = null;
+            state.contagem.tab = 'count';
+            state.contagem.date = getCurrentDate();
+            state.contagem.loading = true;
+            navigateTo('contagem');
+            render();
+            await loadContagem();
+        }
+
+        async function loadContagem() {
+            const alm2Items = state.items.filter(i => (i.warehouse_id || 'alm-1') === 'alm-2');
+            if (alm2Items.length === 0) {
+                state.contagem.loading = false;
+                render();
+                return;
+            }
+            try {
+                const itemIds = alm2Items.map(i => i.id);
+                const { data, error } = await sbClient
+                    .from('daily_counts')
+                    .select('*')
+                    .in('item_id', itemIds)
+                    .order('date', { ascending: false });
+                if (!error && data) {
+                    const lastCounts = {};
+                    data.forEach(row => {
+                        if (!lastCounts[row.item_id]) lastCounts[row.item_id] = row;
+                    });
+                    state.contagem.lastCounts = lastCounts;
+                }
+            } catch (e) {
+                console.error('Erro ao carregar contagens:', e);
+            }
+            state.contagem.loading = false;
+            render();
+        }
+
+        async function saveContagem() {
+            const validEntries = Object.entries(state.contagem.entries)
+                .filter(([, qty]) => qty !== '' && qty !== null && qty !== undefined);
+            if (validEntries.length === 0) {
+                showToast('Preencha ao menos um item', 'error');
+                return;
+            }
+            state.contagem.saving = true;
+            render();
+            const rows = validEntries.map(([item_id, qty]) => ({
+                date: state.contagem.date,
+                item_id,
+                item_name: state.items.find(i => i.id === item_id)?.nome || item_id,
+                quantidade: parseInt(qty) || 0,
+                user_name: state.user.nome
+            }));
+            try {
+                const { error } = await sbClient.from('daily_counts').insert(rows);
+                if (error) throw error;
+                const result = rows.map(row => {
+                    const prev = state.contagem.lastCounts[row.item_id];
+                    const saida = prev != null ? prev.quantidade - row.quantidade : null;
+                    return { item_name: row.item_name, saida, date_anterior: prev?.date || null };
+                });
+                rows.forEach(row => {
+                    state.contagem.lastCounts[row.item_id] = {
+                        item_id: row.item_id, date: row.date, quantidade: row.quantidade
+                    };
+                });
+                state.contagem.savedResult = result;
+                state.contagem.entries = {};
+                showToast('Contagem salva!', 'success');
+            } catch (e) {
+                showToast('Erro ao salvar contagem', 'error');
+                console.error(e);
+            }
+            state.contagem.saving = false;
+            render();
+        }
+
+        async function loadContagemHistory() {
+            state.contagem.historyLoading = true;
+            render();
+            try {
+                const { data, error } = await sbClient
+                    .from('daily_counts')
+                    .select('*')
+                    .order('date', { ascending: false })
+                    .limit(300);
+                if (!error && data) state.contagem.history = data;
+            } catch (e) {
+                console.error('Erro ao carregar histórico de contagens:', e);
+            }
+            state.contagem.historyLoading = false;
+            render();
+        }
+
+        function switchContagemTab(tab) {
+            state.contagem.tab = tab;
+            if (tab === 'history' && state.contagem.history.length === 0) {
+                loadContagemHistory();
+            } else {
+                render();
+            }
         }
 
         function changePage(delta) {

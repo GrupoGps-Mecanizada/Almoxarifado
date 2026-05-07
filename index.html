@@ -145,9 +145,10 @@
             contagem: {
                 loading: false,
                 date: getCurrentDate(),
-                entries1: {},        // inputs da Contagem 1
-                entries2: {},        // inputs da Contagem 2
+                entries1: {},        // inputs da Contagem de Entrega (C1)
+                entries2: {},        // inputs da Contagem de Saída (C2)
                 todayCounts: {},     // { item_id: { c1: row, c2: row } } para a data selecionada
+                lastC1: {},          // { item_id: row } — C1 mais recente de qualquer data (referência para C2)
                 saving: false,
                 savedResult: null,   // resultado após salvar C2
                 tab: 'count1',       // 'count1' | 'count2' | 'history'
@@ -1430,30 +1431,43 @@
             }
             try {
                 const itemIds = alm2Items.map(i => i.id);
-                const { data, error } = await sbClient
+
+                // C1 mais recente por item em qualquer data (referência para Contagem de Saída)
+                const { data: allC1 } = await sbClient
+                    .from('daily_counts')
+                    .select('*')
+                    .in('item_id', itemIds)
+                    .eq('contagem_num', 1)
+                    .order('date', { ascending: false })
+                    .order('created_at', { ascending: false });
+                const lastC1 = {};
+                if (allC1) allC1.forEach(row => { if (!lastC1[row.item_id]) lastC1[row.item_id] = row; });
+                state.contagem.lastC1 = lastC1;
+
+                // Contagens já salvas para a data selecionada (prefill)
+                const { data: todayData } = await sbClient
                     .from('daily_counts')
                     .select('*')
                     .in('item_id', itemIds)
                     .eq('date', state.contagem.date)
                     .order('created_at', { ascending: true });
-                if (!error && data) {
-                    const todayCounts = {};
-                    data.forEach(row => {
+                const todayCounts = {};
+                if (todayData) {
+                    todayData.forEach(row => {
                         if (!todayCounts[row.item_id]) todayCounts[row.item_id] = {};
-                        const key = row.contagem_num === 2 ? 'c2' : 'c1';
-                        todayCounts[row.item_id][key] = row;
+                        todayCounts[row.item_id][row.contagem_num === 2 ? 'c2' : 'c1'] = row;
                     });
-                    state.contagem.todayCounts = todayCounts;
-                    // Pre-fill inputs com valores já salvos
-                    const entries1 = {};
-                    const entries2 = {};
-                    Object.entries(todayCounts).forEach(([id, counts]) => {
-                        if (counts.c1) entries1[id] = String(counts.c1.quantidade);
-                        if (counts.c2) entries2[id] = String(counts.c2.quantidade);
-                    });
-                    state.contagem.entries1 = entries1;
-                    state.contagem.entries2 = entries2;
                 }
+                state.contagem.todayCounts = todayCounts;
+
+                const entries1 = {}, entries2 = {};
+                Object.entries(todayCounts).forEach(([id, counts]) => {
+                    if (counts.c1) entries1[id] = String(counts.c1.quantidade);
+                    if (counts.c2) entries2[id] = String(counts.c2.quantidade);
+                });
+                state.contagem.entries1 = entries1;
+                state.contagem.entries2 = entries2;
+
             } catch (e) {
                 console.error('Erro ao carregar contagens:', e);
             }
@@ -1498,18 +1512,28 @@
                 });
 
                 if (num === 2) {
-                    // Calcula saída: C1 - C2
+                    // Saída = C1 mais recente (qualquer data) - C2 atual
                     const result = rows.map(row => {
-                        const c1 = state.contagem.todayCounts[row.item_id]?.c1;
+                        const c1 = state.contagem.lastC1[row.item_id];
                         const saida = c1 != null ? c1.quantidade - row.quantidade : null;
-                        return { item_name: row.item_name, saida, c1_qtd: c1?.quantidade ?? null, c2_qtd: row.quantidade };
+                        return {
+                            item_name: row.item_name,
+                            saida,
+                            c1_qtd: c1?.quantidade ?? null,
+                            c1_date: c1?.date ?? null,
+                            c2_qtd: row.quantidade
+                        };
                     });
                     state.contagem.savedResult = result;
                     state.contagem.history = []; // força recarregar histórico
-                    showToast('Contagem 2 salva! Resultado disponível.', 'success');
+                    showToast('Contagem de Saída salva!', 'success');
                 } else {
-                    showToast('Contagem 1 salva!', 'success');
-                    state.contagem.tab = 'count2'; // avança para C2
+                    // Atualiza lastC1 com os novos valores salvos hoje
+                    rows.forEach(row => {
+                        state.contagem.lastC1[row.item_id] = { item_id: row.item_id, date: row.date, quantidade: row.quantidade };
+                    });
+                    showToast('Contagem de Entrega salva!', 'success');
+                    state.contagem.tab = 'count2'; // avança para Contagem de Saída
                 }
             } catch (e) {
                 showToast('Erro ao salvar contagem', 'error');
@@ -2736,12 +2760,16 @@ ALTER TABLE movements ADD COLUMN IF NOT EXISTS destination_warehouse_id TEXT;</p
                 }
 
                 const rows = alm2Items.map(item => {
-                    const counts = state.contagem.todayCounts[item.id] || {};
                     let refText = '';
                     if (num === 2) {
-                        refText = counts.c1 != null
-                            ? `${refLabel}: <strong>${counts.c1.quantidade}</strong>`
-                            : `${refLabel}: —`;
+                        // Usa a C1 mais recente de qualquer data como referência
+                        const c1ref = state.contagem.lastC1[item.id];
+                        if (c1ref) {
+                            const dateLabel = c1ref.date === state.contagem.date ? 'hoje' : formatDate(c1ref.date);
+                            refText = `Entrega (${dateLabel}): <strong>${c1ref.quantidade}</strong>`;
+                        } else {
+                            refText = `Sem contagem de entrega`;
+                        }
                     }
                     const sizesRef = item.tamanhos && Object.keys(item.tamanhos).length > 0
                         ? `<div style="font-size:11px;color:var(--text-3);margin-top:2px;">${Object.entries(item.tamanhos).map(([s,q])=>`${s}:${q}`).join(' · ')}</div>`
@@ -2793,19 +2821,22 @@ ALTER TABLE movements ADD COLUMN IF NOT EXISTS destination_warehouse_id TEXT;</p
                     </div>
                     <div style="display:grid;grid-template-columns:1fr auto auto auto;gap:8px 12px;align-items:center;margin-bottom:4px;">
                         <span style="font-size:11px;color:var(--text-3);font-weight:600;">ITEM</span>
-                        <span style="font-size:11px;color:var(--text-3);font-weight:600;text-align:right;">C1</span>
-                        <span style="font-size:11px;color:var(--text-3);font-weight:600;text-align:right;">C2</span>
+                        <span style="font-size:11px;color:var(--text-3);font-weight:600;text-align:right;">ENTREGA</span>
                         <span style="font-size:11px;color:var(--text-3);font-weight:600;text-align:right;">SAÍDA</span>
+                        <span style="font-size:11px;color:var(--text-3);font-weight:600;text-align:right;">DIFERENÇA</span>
                     </div>
                     ${state.contagem.savedResult.map(r => {
                         let saidaTag = '';
-                        if (r.saida === null) saidaTag = `<span class="resultado-saida-zero">—</span>`;
+                        if (r.saida === null) saidaTag = `<span class="resultado-saida-zero">sem ref.</span>`;
                         else if (r.saida > 0) saidaTag = `<span class="resultado-saida-out">▼ ${r.saida}</span>`;
                         else if (r.saida < 0) saidaTag = `<span class="resultado-saida-in">▲ ${Math.abs(r.saida)}</span>`;
-                        else saidaTag = `<span class="resultado-saida-zero">0</span>`;
+                        else saidaTag = `<span class="resultado-saida-zero">= 0</span>`;
+                        const c1Label = r.c1_qtd != null
+                            ? `${r.c1_qtd}<span style="font-size:10px;color:var(--text-3);"> (${r.c1_date ? formatDate(r.c1_date) : ''})</span>`
+                            : '—';
                         return `<div style="display:grid;grid-template-columns:1fr auto auto auto;gap:8px 12px;align-items:center;padding:8px 0;border-top:1px solid var(--border);">
                             <span style="font-weight:500;font-size:13px;">${r.item_name}</span>
-                            <span style="color:var(--text-3);font-size:13px;text-align:right;">${r.c1_qtd ?? '—'}</span>
+                            <span style="color:var(--text-3);font-size:13px;text-align:right;">${c1Label}</span>
                             <span style="color:var(--text-2);font-size:13px;text-align:right;">${r.c2_qtd}</span>
                             <span style="text-align:right;">${saidaTag}</span>
                         </div>`;
@@ -2835,37 +2866,86 @@ ALTER TABLE movements ADD COLUMN IF NOT EXISTS destination_warehouse_id TEXT;</p
                         <p>Nenhuma contagem registrada ainda</p>
                     </div></div>`;
                 } else {
-                    // Agrupa por data, depois por item_id, separa c1/c2
-                    const byDate = {};
-                    state.contagem.history.forEach(row => {
-                        if (!byDate[row.date]) byDate[row.date] = {};
-                        if (!byDate[row.date][row.item_id]) byDate[row.date][row.item_id] = { item_name: row.item_name, c1: null, c2: null };
-                        const key = row.contagem_num === 2 ? 'c2' : 'c1';
-                        byDate[row.date][row.item_id][key] = row.quantidade;
+                    const allRows = state.contagem.history;
+                    // c1Rows e c2Rows por item_id
+                    const c1ByItem = {}; // item_id → [rows desc]
+                    const c2ByDate = {}; // date → { item_id → row }
+                    allRows.forEach(row => {
+                        if (row.contagem_num === 2) {
+                            if (!c2ByDate[row.date]) c2ByDate[row.date] = {};
+                            c2ByDate[row.date][row.item_id] = row;
+                        } else {
+                            if (!c1ByItem[row.item_id]) c1ByItem[row.item_id] = [];
+                            c1ByItem[row.item_id].push(row);
+                        }
                     });
-                    historyContent = Object.entries(byDate).map(([date, items]) => {
-                        const rowsHtml = Object.values(items).map(item => {
-                            const saida = item.c1 != null && item.c2 != null ? item.c1 - item.c2 : null;
+                    // Garante c1 ordenado desc por data
+                    Object.values(c1ByItem).forEach(arr => arr.sort((a, b) => b.date.localeCompare(a.date)));
+
+                    const histCards = [];
+
+                    // Cards das Contagens de Saída (C2), ordenadas desc
+                    Object.keys(c2ByDate).sort((a, b) => b.localeCompare(a)).forEach(date => {
+                        const itemsC2 = c2ByDate[date];
+                        const rowsHtml = Object.values(itemsC2).map(row => {
+                            // C1 mais recente com date <= C2 date para este item
+                            const c1ref = (c1ByItem[row.item_id] || []).find(r => r.date <= date);
+                            const c1Val = c1ref?.quantidade ?? null;
+                            const c1DateLabel = c1ref
+                                ? (c1ref.date === date ? 'mesmo dia' : formatDate(c1ref.date))
+                                : null;
+                            const saida = c1Val != null ? c1Val - row.quantidade : null;
                             let saidaTag = '';
-                            if (saida === null) saidaTag = `<span class="resultado-saida-zero">${item.c2 != null ? 'sem C1' : 'sem C2'}</span>`;
+                            if (saida === null) saidaTag = `<span class="resultado-saida-zero">sem entrega ref.</span>`;
                             else if (saida > 0) saidaTag = `<span class="resultado-saida-out">▼ ${saida} saíram</span>`;
                             else if (saida < 0) saidaTag = `<span class="resultado-saida-in">▲ ${Math.abs(saida)} entraram</span>`;
                             else saidaTag = `<span class="resultado-saida-zero">= sem movimento</span>`;
                             return `<div class="resultado-row">
-                                <span style="font-weight:500">${item.item_name}</span>
+                                <span style="font-weight:500">${row.item_name}</span>
                                 <span style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-                                    <span style="color:var(--text-3);font-size:11px;">C1: ${item.c1 ?? '—'} · C2: ${item.c2 ?? '—'}</span>
+                                    <span style="color:var(--text-3);font-size:11px;">
+                                        Entrega${c1DateLabel ? ` (${c1DateLabel})` : ''}: ${c1Val ?? '—'} · Saída: ${row.quantidade}
+                                    </span>
                                     ${saidaTag}
                                 </span>
                             </div>`;
                         }).join('');
-                        return `<div class="card">
-                            <div style="font-weight:700;color:var(--text-1);margin-bottom:12px;font-size:14px;">
-                                <i class="ph ph-calendar-blank"></i> ${formatDate(date)}
+                        histCards.push(`<div class="card">
+                            <div style="font-weight:700;color:var(--text-1);margin-bottom:4px;font-size:14px;">
+                                <i class="ph ph-clipboard-check"></i> ${formatDate(date)}
                             </div>
+                            <div style="font-size:11px;color:var(--text-3);margin-bottom:12px;">Contagem de Saída</div>
                             ${rowsHtml}
-                        </div>`;
-                    }).join('');
+                        </div>`);
+                    });
+
+                    // Cards de Contagem de Entrega isolada (datas sem C2)
+                    const c1OnlyDates = {};
+                    Object.values(c1ByItem).flat().forEach(row => {
+                        if (!c2ByDate[row.date]) {
+                            if (!c1OnlyDates[row.date]) c1OnlyDates[row.date] = {};
+                            c1OnlyDates[row.date][row.item_id] = row;
+                        }
+                    });
+                    Object.keys(c1OnlyDates).sort((a, b) => b.localeCompare(a)).forEach(date => {
+                        const rowsHtml = Object.values(c1OnlyDates[date]).map(row =>
+                            `<div class="resultado-row">
+                                <span style="font-weight:500">${row.item_name}</span>
+                                <span style="color:var(--text-3);font-size:12px;">${row.quantidade} unid.</span>
+                            </div>`
+                        ).join('');
+                        histCards.push(`<div class="card">
+                            <div style="font-weight:700;color:var(--text-1);margin-bottom:4px;font-size:14px;">
+                                <i class="ph ph-clipboard-text"></i> ${formatDate(date)}
+                            </div>
+                            <div style="font-size:11px;color:var(--text-3);margin-bottom:12px;">Contagem de Entrega</div>
+                            ${rowsHtml}
+                        </div>`);
+                    });
+
+                    historyContent = histCards.join('') || `<div class="card"><div class="empty-state">
+                        <i class="ph ph-clipboard-text"></i><p>Nenhum registro encontrado</p>
+                    </div></div>`;
                 }
             }
 

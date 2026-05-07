@@ -130,10 +130,11 @@
 
             // Saída Emergencial
             emergency: {
-                cart: [],           // [{ item_id, item_name, unidade, quantidade, max }]
+                cart: [],           // [{ item_id, item_name, unidade, quantidade, max, warehouse_id, size }]
                 saving: false,
                 showForm: false,
                 formItemId: '',
+                formSize: '',
                 formQty: 1
             },
 
@@ -797,31 +798,51 @@
             const em = state.emergency;
             const item = state.items.find(i => i.id === em.formItemId);
             if (!item) { showToast('Selecione um item', 'error'); return; }
-            const qty = Math.max(1, parseInt(em.formQty) || 1);
-            if (qty > item.quantidade) {
-                showToast(`Quantidade maior que o estoque (${item.quantidade})`, 'error');
+
+            const hasSizes = item.tamanhos && Object.keys(item.tamanhos).length > 0;
+            if (hasSizes && !em.formSize) {
+                showToast('Selecione um tamanho', 'error');
                 return;
             }
-            // Se já está no carrinho, soma
-            const existing = em.cart.find(c => c.item_id === item.id);
+
+            const maxQty = hasSizes ? (item.tamanhos[em.formSize] || 0) : item.quantidade;
+            const qty = Math.max(1, parseInt(em.formQty) || 1);
+            if (qty > maxQty) {
+                showToast(`Quantidade maior que o estoque disponível (${maxQty})`, 'error');
+                return;
+            }
+
+            // Chave única no carrinho: item_id + tamanho
+            const cartKey = hasSizes ? em.formSize : null;
+            const existing = em.cart.find(c => c.item_id === item.id && c.size === cartKey);
             if (existing) {
                 const total = existing.quantidade + qty;
-                if (total > item.quantidade) {
-                    showToast(`Total (${total}) maior que o estoque (${item.quantidade})`, 'error');
+                if (total > maxQty) {
+                    showToast(`Total (${total}) maior que o estoque disponível (${maxQty})`, 'error');
                     return;
                 }
                 existing.quantidade = total;
             } else {
-                em.cart.push({ item_id: item.id, item_name: item.nome, unidade: item.unidade, quantidade: qty, max: item.quantidade, warehouse_id: item.warehouse_id || 'alm-1' });
+                const label = hasSizes ? `${item.nome} (Tam: ${em.formSize})` : item.nome;
+                em.cart.push({
+                    item_id: item.id,
+                    item_name: label,
+                    unidade: item.unidade,
+                    quantidade: qty,
+                    max: maxQty,
+                    warehouse_id: item.warehouse_id || 'alm-1',
+                    size: cartKey
+                });
             }
             em.formItemId = '';
+            em.formSize = '';
             em.formQty = 1;
             em.showForm = false;
             render();
         }
 
-        function emergencyRemoveFromCart(item_id) {
-            state.emergency.cart = state.emergency.cart.filter(c => c.item_id !== item_id);
+        function emergencyRemoveFromCart(idx) {
+            state.emergency.cart.splice(idx, 1);
             render();
         }
 
@@ -834,18 +855,29 @@
                 for (const entry of em.cart) {
                     const item = state.items.find(i => i.id === entry.item_id);
                     if (!item) continue;
-                    const novaQtd = item.quantidade - entry.quantidade;
+
+                    // Atualiza tamanhos se o item tem numeração
+                    let novosTamanhos = item.tamanhos ? JSON.parse(JSON.stringify(item.tamanhos)) : null;
+                    if (entry.size && novosTamanhos) {
+                        novosTamanhos[entry.size] = Math.max(0, (novosTamanhos[entry.size] || 0) - entry.quantidade);
+                    }
+                    const novaQtd = novosTamanhos
+                        ? Object.values(novosTamanhos).reduce((a, b) => a + b, 0)
+                        : item.quantidade - entry.quantidade;
+
                     const { error: updErr } = await sbClient
                         .from('items')
-                        .update({ quantidade: novaQtd })
+                        .update({ quantidade: novaQtd, tamanhos: novosTamanhos })
                         .eq('id', item.id);
                     if (updErr) throw updErr;
-                    // Registra movimento
+
+                    // Registra movimento com tamanho
                     await sbClient.from('movements').insert({
                         date: getCurrentDate(),
-                        type: 'saida',
+                        type: 'SAIDA',
                         item_id: item.id,
-                        item_name: item.nome,
+                        item_name: entry.size ? `${item.nome} (Tam: ${entry.size})` : item.nome,
+                        size: entry.size || null,
                         quantity: entry.quantidade,
                         warehouse_id: item.warehouse_id || 'alm-1',
                         user_name: state.user.nome,

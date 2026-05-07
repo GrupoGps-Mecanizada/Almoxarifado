@@ -1878,75 +1878,49 @@
 }
 
         function renderAnalytics() {
-            return `
-                <div class="min-h-screen pb-6">
-                    ${renderHeader()}
-                    
-                    <main class="p-4 max-w-7xl mx-auto space-y-6">
-                        <h1 class="text-3xl font-bold flex items-center gap-3 fade-in">
-                            <i class="ph-fill ph-chart-line text-pink-400"></i>
-                            Analytics e Relatórios
-                        </h1>
+    return `
+        <div class="page-wrap">
+            ${renderHeader()}
+            <div class="page-content">
+                <h1 class="page-title"><i class="ph-fill ph-chart-line" style="color:#e879a0;"></i> Analytics e Relatórios</h1>
 
-                        ${state.isLoading ? `
-                            <div class="glass p-12 rounded-xl text-center">
-                                <i class="ph ph-spinner animate-spin text-6xl text-blue-400 mb-4"></i>
-                                <p class="text-slate-500">${state.loadingMessage}</p>
+                ${state.isLoading ? `
+                    <div class="card"><div class="loading-overlay"><div class="loading-spinner"></div><span>${state.loadingMessage}</span></div></div>
+                ` : `
+                    <div class="grid-2">
+                        <div class="card" style="padding:16px;"><div style="position:relative;height:280px;"><canvas id="categoryChart"></canvas></div></div>
+                        <div class="card" style="padding:16px;"><div style="position:relative;height:280px;"><canvas id="movementsTypeChart"></canvas></div></div>
+                    </div>
+                    <div class="card" style="padding:16px;"><div style="position:relative;height:280px;"><canvas id="topItemsChart"></canvas></div></div>
+
+                    ${state.statistics ? `
+                        <div class="card">
+                            <div class="section-title" style="margin-bottom:16px;">Estatísticas Detalhadas</div>
+                            <div class="grid-4">
+                                <div style="text-align:center;padding:16px;background:color-mix(in srgb,var(--green) 8%,transparent);border-radius:var(--radius-sm);">
+                                    <div style="font-size:28px;font-weight:700;color:var(--green);">${state.statistics.totalMovements}</div>
+                                    <div style="font-size:11px;color:var(--text-2);margin-top:4px;">Total Movimentações</div>
+                                </div>
+                                <div style="text-align:center;padding:16px;background:var(--accent-glow);border-radius:var(--radius-sm);">
+                                    <div style="font-size:28px;font-weight:700;color:var(--accent);">${state.statistics.movementsByType?.COMPRA || 0}</div>
+                                    <div style="font-size:11px;color:var(--text-2);margin-top:4px;">Compras</div>
+                                </div>
+                                <div style="text-align:center;padding:16px;background:color-mix(in srgb,var(--purple) 10%,transparent);border-radius:var(--radius-sm);">
+                                    <div style="font-size:28px;font-weight:700;color:var(--purple);">${state.statistics.movementsByType?.DISTRIBUICAO || 0}</div>
+                                    <div style="font-size:11px;color:var(--text-2);margin-top:4px;">Distribuições</div>
+                                </div>
+                                <div style="text-align:center;padding:16px;background:color-mix(in srgb,var(--orange) 10%,transparent);border-radius:var(--radius-sm);">
+                                    <div style="font-size:28px;font-weight:700;color:var(--orange);">${state.statistics.lowStock}</div>
+                                    <div style="font-size:11px;color:var(--text-2);margin-top:4px;">Estoque Baixo</div>
+                                </div>
                             </div>
-                        ` : `
-                            <!-- Gráficos -->
-                            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                                <div class="glass p-6 rounded-xl slide-in">
-                                    <div class="chart-container">
-                                        <canvas id="categoryChart"></canvas>
-                                    </div>
-                                </div>
-
-                                <div class="glass p-6 rounded-xl slide-in">
-                                    <div class="chart-container">
-                                        <canvas id="movementsTypeChart"></canvas>
-                                    </div>
-                                </div>
-
-                                <div class="glass p-6 rounded-xl slide-in lg:col-span-2">
-                                    <div class="chart-container">
-                                        <canvas id="topItemsChart"></canvas>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Estatísticas Detalhadas -->
-                            ${state.statistics ? `
-                                <div class="glass p-6 rounded-xl">
-                                    <h2 class="text-xl font-bold mb-4 flex items-center gap-2">
-                                        <i class="ph-fill ph-chart-bar text-blue-400"></i>
-                                        Estatísticas Detalhadas
-                                    </h2>
-                                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                        <div class="text-center p-4 bg-emerald-500/10 rounded-lg">
-                                            <p class="text-emerald-400 text-3xl font-bold font-mono">${state.statistics.totalMovements}</p>
-                                            <p class="text-slate-500 text-sm mt-1">Total Movimentações</p>
-                                        </div>
-                                        <div class="text-center p-4 bg-blue-500/10 rounded-lg">
-                                            <p class="text-blue-400 text-3xl font-bold font-mono">${state.statistics.movementsByType.COMPRA || 0}</p>
-                                            <p class="text-slate-500 text-sm mt-1">Compras</p>
-                                        </div>
-                                        <div class="text-center p-4 bg-purple-500/10 rounded-lg">
-                                            <p class="text-purple-400 text-3xl font-bold font-mono">${state.statistics.movementsByType.DISTRIBUICAO || 0}</p>
-                                            <p class="text-slate-500 text-sm mt-1">Distribuições</p>
-                                        </div>
-                                        <div class="text-center p-4 bg-amber-500/10 rounded-lg">
-                                            <p class="text-amber-400 text-3xl font-bold font-mono">${state.statistics.lowStock}</p>
-                                            <p class="text-slate-500 text-sm mt-1">Estoque Baixo</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            ` : ''}
-                        `}
-                    </main>
-                </div>
-            `;
-        }
+                        </div>
+                    ` : ''}
+                `}
+            </div>
+        </div>
+    `;
+}
 
         function renderMovementSelector() {
             return `

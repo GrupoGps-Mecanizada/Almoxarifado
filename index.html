@@ -343,39 +343,10 @@
         // ============================================
         // PERSISTÊNCIA DE LOGIN (7 DIAS)
         // ============================================
-        function saveSession(user) {
-            const session = {
-                user: user,
-                timestamp: Date.now(),
-                expiresIn: 7 * 24 * 60 * 60 * 1000 // 7 dias
-            };
-            localStorage.setItem('epi_session', JSON.stringify(session));
-        }
-
-        function loadSession() {
-            const sessionData = localStorage.getItem('epi_session');
-            if (!sessionData) return null;
-
-            try {
-                const session = JSON.parse(sessionData);
-                const now = Date.now();
-
-                // Verifica se a sessão ainda é válida
-                if (session.timestamp + session.expiresIn > now) {
-                    return session.user;
-                } else {
-                    localStorage.removeItem('epi_session');
-                    return null;
-                }
-            } catch (e) {
-                localStorage.removeItem('epi_session');
-                return null;
-            }
-        }
-
-        function clearSession() {
-            localStorage.removeItem('epi_session');
-        }
+        // Sessão gerenciada pelo próprio Supabase (persistSession: true por padrão)
+        function saveSession() {} // mantido para compatibilidade — Supabase salva automaticamente
+        function loadSession()  { return null; } // não usado — ver DOMContentLoaded
+        function clearSession() { localStorage.removeItem('epi_session'); }
 
         // ============================================
         // SERVIÇOS / API COM OPTIMISTIC UI
@@ -914,8 +885,6 @@
 
             if (result.success) {
                 state.user = result.user;
-                saveSession(result.user);
-
                 state.loadingMessage = 'Carregando dados...';
                 render();
 
@@ -1166,7 +1135,8 @@
             }
         }
 
-        function handleLogout() {
+        async function handleLogout() {
+            await sbClient.auth.signOut();
             clearSession();
             state.user = null;
             state.items = [];
@@ -3334,24 +3304,56 @@ ALTER TABLE movements ADD COLUMN IF NOT EXISTS destination_warehouse_id TEXT;</p
         // ============================================
         // INICIALIZAÇÃO
         // ============================================
-        document.addEventListener('DOMContentLoaded', () => {
-            // Tenta carregar sessão salva
-            const savedUser = loadSession();
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Mostra loading enquanto verifica sessão
+            state.isLoading = true;
+            state.loadingMessage = 'Verificando sessão...';
+            render();
 
-            if (savedUser) {
-                state.user = savedUser;
-                state.loadingMessage = 'Carregando...';
-                state.isLoading = true;
-                render();
+            try {
+                // Supabase recupera e renova automaticamente o token do localStorage
+                const { data: { session } } = await sbClient.auth.getSession();
 
-                Promise.all([loadItems(), loadWarehouses()]).then(() => {
-                    navigateTo('dashboard');
-                    state.isLoading = false;
-                    state.loadingMessage = '';
+                if (session?.user) {
+                    // Busca nome do perfil
+                    const { data: profile } = await sbClient
+                        .from('profiles')
+                        .select('nome')
+                        .eq('id', session.user.id)
+                        .single();
+
+                    state.user = {
+                        id: session.user.id,
+                        nome: profile?.nome || session.user.email,
+                        email: session.user.email
+                    };
+
+                    state.loadingMessage = 'Carregando dados...';
                     render();
-                });
-            } else {
-                render();
+
+                    await Promise.all([loadItems(), loadWarehouses()]);
+                    navigateTo('dashboard');
+                }
+            } catch (err) {
+                console.error('Erro ao restaurar sessão:', err);
+            }
+
+            state.isLoading = false;
+            state.loadingMessage = '';
+            render();
+        });
+
+        // Redireciona para login se a sessão Supabase expirar enquanto o app está aberto
+        sbClient.auth.onAuthStateChange((event) => {
+            if (event === 'SIGNED_OUT' && state.user) {
+                state.user = null;
+                state.items = [];
+                state.movements = [];
+                cache.items = null;
+                cache.movements = null;
+                navigationHistory = [];
+                navigateTo('login');
+                showToast('Sessão expirada. Faça login novamente.', 'info');
             }
         });
     </script>

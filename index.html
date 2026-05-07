@@ -865,11 +865,17 @@
                         ? Object.values(novosTamanhos).reduce((a, b) => a + b, 0)
                         : item.quantidade - entry.quantidade;
 
-                    const { error: updErr } = await sbClient
-                        .from('items')
-                        .update({ quantidade: novaQtd, tamanhos: novosTamanhos })
-                        .eq('id', item.id);
-                    if (updErr) throw updErr;
+                    // Item no emergencial zerado → remove do banco para não poluir visualmente
+                    if (novaQtd <= 0 && (item.warehouse_id || 'alm-1') === 'alm-emergencial') {
+                        const { error: delErr } = await sbClient.from('items').delete().eq('id', item.id);
+                        if (delErr) throw delErr;
+                    } else {
+                        const { error: updErr } = await sbClient
+                            .from('items')
+                            .update({ quantidade: novaQtd, tamanhos: novosTamanhos })
+                            .eq('id', item.id);
+                        if (updErr) throw updErr;
+                    }
 
                     // Registra movimento com tamanho
                     await sbClient.from('movements').insert({
@@ -2573,7 +2579,7 @@
 
                 ${(() => {
                     // Estoque atual no almoxarifado Emergencial
-                    const emgItems = state.items.filter(i => (i.warehouse_id||'alm-1') === 'alm-emergencial');
+                    const emgItems = state.items.filter(i => (i.warehouse_id||'alm-1') === 'alm-emergencial' && i.quantidade > 0);
                     if (emgItems.length === 0) return '';
                     return `<div class="card">
                         <div class="section-title" style="margin-bottom:12px;">

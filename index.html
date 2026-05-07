@@ -923,7 +923,7 @@
                 const dateStr = getCurrentDate();
 
                 // Colunas fixas base
-                const BASE_COLS = ['#', 'Nome do Item', 'Categoria', 'Unidade', 'Qtd Total', 'CA', 'Validade', 'Localização', 'Observações'];
+                const BASE_COLS = ['#', 'Nome do Item', 'Categoria', 'Unidade', 'Qtd Total', 'Observações'];
 
                 // Descobre todos os tamanhos usados em qualquer item
                 const allSizes = [...new Set(
@@ -970,9 +970,6 @@
                             item.categoria || '',
                             item.unidade || '',
                             item.quantidade || 0,
-                            item.ca || '',
-                            item.validade ? formatDate(item.validade) : '',
-                            item.localizacao || '',
                             item.observacoes || '',
                             ...allSizes.map(s => item.tamanhos ? (item.tamanhos[s] ?? '') : '')
                         ];
@@ -993,9 +990,6 @@
                         { wch: 20 }, // Categoria
                         { wch: 8 },  // Unidade
                         { wch: 10 }, // Qtd
-                        { wch: 10 }, // CA
-                        { wch: 12 }, // Validade
-                        { wch: 20 }, // Localização
                         { wch: 30 }, // Observações
                         ...allSizes.map(() => ({ wch: 10 }))
                     ];
@@ -2126,17 +2120,13 @@
 
                 <div class="card">
                     <div class="section-title" style="margin-bottom:14px;"><i class="ph ph-funnel" style="margin-right:6px;"></i>Filtros</div>
-                    <div class="grid-3" style="margin-bottom:12px;">
+                    <div class="grid-2" style="margin-bottom:12px;">
                         <div class="field-group">
                             <label class="field-label">Categoria</label>
                             <select class="field-input field-select" onchange="state.filters.category=this.value;render()">
                                 <option value="TODAS">Todas</option>
                                 ${categories.map(c => `<option value="${c}" ${state.filters.category===c?'selected':''}>${c}</option>`).join('')}
                             </select>
-                        </div>
-                        <div class="field-group">
-                            <label class="field-label">Localização</label>
-                            <input class="field-input" type="text" value="${state.filters.location}" oninput="state.filters.location=this.value;render()" placeholder="Ex: Prateleira A1">
                         </div>
                         <div class="field-group" style="justify-content:flex-end;">
                             <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding-top:20px;">
@@ -2147,7 +2137,7 @@
                     </div>
                     <div class="field-group">
                         <label class="field-label">Pesquisar</label>
-                        <input class="field-input" type="text" value="${state.filters.searchTerm}" oninput="handleSearchInput(this.value)" placeholder="Buscar por nome, categoria, CA...">
+                        <input class="field-input" type="text" value="${state.filters.searchTerm}" oninput="handleSearchInput(this.value)" placeholder="Buscar por nome ou categoria...">
                     </div>
                 </div>
 
@@ -2156,9 +2146,9 @@
                         <div class="empty-state">
                             <i class="ph ph-package"></i>
                             <p>Nenhum item encontrado em ${activeWh?.nome || 'este almoxarifado'}</p>
-                            ${state.filters.searchTerm || state.filters.category !== 'TODAS' || state.filters.location || state.filters.lowStockOnly ? `
+                            ${state.filters.searchTerm || state.filters.category !== 'TODAS' || state.filters.lowStockOnly ? `
                                 <div style="margin-top:16px;">
-                                    <button onclick="state.filters={startDate:getFirstDayOfMonth(),endDate:getCurrentDate(),type:'TODOS',searchTerm:'',category:'TODAS',minQuantity:'',maxQuantity:'',location:'',lowStockOnly:false};render()" class="btn-secondary">Limpar Filtros</button>
+                                    <button onclick="state.filters={startDate:getFirstDayOfMonth(),endDate:getCurrentDate(),type:'TODOS',searchTerm:'',category:'TODAS',minQuantity:'',maxQuantity:'',lowStockOnly:false};render()" class="btn-secondary">Limpar Filtros</button>
                                 </div>
                             ` : `
                                 <div style="margin-top:16px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
@@ -2177,7 +2167,6 @@
                                 <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">
                                     <span class="badge badge-blue">${item.categoria}</span>
                                     <span class="badge badge-gray">${item.unidade}</span>
-                                    ${item.ca ? `<span class="badge badge-purple">CA ${item.ca}</span>` : ''}
                                 </div>
                                 <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:8px;">
                                     <span style="font-size:11px;text-transform:uppercase;color:var(--text-3);">Quantidade</span>
@@ -2194,8 +2183,6 @@
                                     <div style="font-size:11px;color:var(--text-2);margin-top:6px;"><i class="ph ph-package"></i> ${item.unidades_por_caixa} un/caixa</div>
                                 ` : ''}
                                 ${item.quantidade < 10 ? `<div class="low-stock-alert"><i class="ph-fill ph-warning"></i> ESTOQUE BAIXO</div>` : ''}
-                                ${item.localizacao ? `<div style="font-size:12px;color:var(--text-2);margin-top:8px;"><i class="ph ph-map-pin"></i> ${item.localizacao}</div>` : ''}
-                                ${item.validade ? `<div style="font-size:12px;color:var(--text-2);margin-top:4px;"><i class="ph ph-calendar"></i> Val: ${formatDate(item.validade)}</div>` : ''}
                                 <div class="item-actions">
                                     <button onclick='openEditItem(${JSON.stringify(item).replace(/'/g,"&#39;")})' class="btn-secondary" style="flex:1;font-size:12px;padding:8px;"><i class="ph ph-pencil-simple"></i> Editar</button>
                                     <button onclick="state.transferOperation.selectedItem='${item.id}';startTransfer('${item.warehouse_id||'alm-1'}')" class="btn-cyan" style="padding:8px 10px;" title="Transferir"><i class="ph ph-arrows-left-right"></i></button>
@@ -2533,18 +2520,6 @@ ALTER TABLE movements ADD COLUMN IF NOT EXISTS destination_warehouse_id TEXT;</p
                             <div class="field-group">
                                 <label class="field-label">Quantidade Inicial</label>
                                 <input class="field-input" type="number" id="itemQuantity" value="${item.quantidade||0}" min="0">
-                            </div>
-                            <div class="field-group">
-                                <label class="field-label">CA (Certificado de Aprovação)</label>
-                                <input class="field-input" type="text" id="itemCA" value="${item.ca||''}" placeholder="Ex: 12345">
-                            </div>
-                            <div class="field-group">
-                                <label class="field-label">Localização</label>
-                                <input class="field-input" type="text" id="itemLocation" value="${item.localizacao||''}" placeholder="Ex: Prateleira A1">
-                            </div>
-                            <div class="field-group">
-                                <label class="field-label">Validade</label>
-                                <input class="field-input" type="date" id="itemValidity" value="${item.validade||''}">
                             </div>
                             <div class="field-group">
                                 <label class="field-label">Unidades por Caixa</label>

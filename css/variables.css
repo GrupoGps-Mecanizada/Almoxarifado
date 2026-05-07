@@ -1,0 +1,27 @@
+/* Almoxarifado/css/variables.css */
+:root {
+  --bg-0: #f5f7fa;
+  --bg-1: #ffffff;
+  --bg-2: #f0f2f5;
+  --bg-3: #e8ebf0;
+  --bg-4: #dde1e8;
+  --border: #d8dce5;
+  --border-bright: #c5cbda;
+  --accent: #4a7fd7;
+  --accent-dim: #3a6abf;
+  --accent-glow: #4a7fd715;
+  --text-1: #2d3748;
+  --text-2: #5a6676;
+  --text-3: #8a95a5;
+  --green: #2e9e5a;
+  --orange: #e0872a;
+  --purple: #8b5ec9;
+  --yellow: #c99a1a;
+  --red: #d64545;
+  --cyan: #1a9eb8;
+  --font-display: 'Inter', sans-serif;
+  --radius: 12px;
+  --radius-sm: 8px;
+  --shadow: 0 2px 12px #0000000a;
+  --shadow-lg: 0 6px 28px #00000010;
+}

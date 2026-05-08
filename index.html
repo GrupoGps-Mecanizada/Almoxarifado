@@ -1759,19 +1759,25 @@
             render();
         }
 
-        async function deleteContagemDate(date, num) {
+        async function deleteContagemDate(date, num, turno) {
             const tipo = num === 2 ? 'Contagem de Saída' : 'Contagem de Entrega';
-            if (!confirm(`Excluir ${tipo} de ${formatDate(date)}? Esta ação não pode ser desfeita.`)) return;
+            const turnoLabel = turno ? ` (Turno ${turno})` : '';
+            if (!confirm(`Excluir ${tipo} de ${formatDate(date)}${turnoLabel}? Esta ação não pode ser desfeita.`)) return;
             try {
-                const { error } = await sbClient
-                    .from('daily_counts')
-                    .delete()
+                let q = sbClient.from('daily_counts').delete()
                     .eq('date', date)
                     .eq('contagem_num', num);
+                if (turno) q = q.eq('turno', turno);
+                const { error } = await q;
                 if (error) throw error;
                 state.contagem.history = state.contagem.history.filter(
-                    r => !(r.date === date && r.contagem_num === num)
+                    r => !(r.date === date && r.contagem_num === num && (r.turno || null) === (turno || null))
                 );
+                if (num === 1) {
+                    state.contagem.openTickets = state.contagem.openTickets.filter(
+                        t => !(t.date === date && t.turno === (turno || null))
+                    );
+                }
                 showToast(`${tipo} excluída!`, 'success');
                 render();
             } catch (e) {
@@ -1780,14 +1786,17 @@
             }
         }
 
-        function editContagemDate(date, num) {
+        function editContagemDate(date, num, turno, horario) {
             state.contagem.date = date;
+            state.contagem.turno = turno || null;
+            state.contagem.horario = horario || '';
             state.contagem.entries1 = {};
             state.contagem.entries2 = {};
             state.contagem.savedResult = null;
             state.contagem.baixaAplicada = false;
             state.contagem.todayCounts = {};
-            state.contagem.tab = num === 1 ? 'count1' : 'count2';
+            state.contagem.newStep = 3;
+            state.contagem.tab = 'newContagem';
             state.contagem.loading = true;
             render();
             loadContagem();

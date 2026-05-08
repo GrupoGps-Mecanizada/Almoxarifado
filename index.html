@@ -1782,18 +1782,53 @@
                         .order('contagem_num', { ascending: true })
                         .limit(600),
                     sbClient.from('movements')
-                        .select('date')
+                        .select('date, observations')
                         .ilike('observations', 'Baixa Contagem Diária%')
                         .limit(200)
                 ]);
-                if (!countsRes.error && countsRes.data) state.contagem.history = countsRes.data;
-                if (!baixaRes.error && baixaRes.data) {
-                    const baixaDates = {};
-                    baixaRes.data.forEach(m => { baixaDates[m.date] = true; });
-                    state.contagem.baixaDates = baixaDates;
-                    // Sincroniza flag da sessão atual com o BD
-                    if (baixaDates[state.contagem.date]) state.contagem.baixaAplicada = true;
+
+                if (!countsRes.error && countsRes.data) {
+                    state.contagem.history = countsRes.data;
                 }
+
+                // Popula baixaDates com chave 'YYYY-MM-DD' (legado) ou 'YYYY-MM-DD_A' (novo)
+                const baixaDates = {};
+                if (!baixaRes.error && baixaRes.data) {
+                    baixaRes.data.forEach(m => {
+                        const turnoMatch = m.observations?.match(/— Turno ([ABCD])$/);
+                        const t = turnoMatch ? turnoMatch[1] : null;
+                        const key = t ? `${m.date}_${t}` : m.date;
+                        baixaDates[key] = true;
+                    });
+                }
+                state.contagem.baixaDates = baixaDates;
+
+                // Sincroniza flag da sessão atual
+                if (state.contagem.turno) {
+                    const key = `${state.contagem.date}_${state.contagem.turno}`;
+                    if (baixaDates[key]) state.contagem.baixaAplicada = true;
+                } else if (baixaDates[state.contagem.date]) {
+                    state.contagem.baixaAplicada = true;
+                }
+
+                // Computa openTickets: grupos (date, turno) com C1 mas sem baixa
+                const groups = {};
+                (countsRes.data || []).forEach(row => {
+                    const key = `${row.date}_${row.turno || 'null'}`;
+                    if (!groups[key]) {
+                        groups[key] = { date: row.date, turno: row.turno || null, horario: row.horario || '', hasC1: false, hasC2: false };
+                    }
+                    if (row.contagem_num === 1) groups[key].hasC1 = true;
+                    if (row.contagem_num === 2) groups[key].hasC2 = true;
+                });
+                state.contagem.openTickets = Object.values(groups)
+                    .filter(g => {
+                        if (!g.hasC1) return false;
+                        const baixaKey = g.turno ? `${g.date}_${g.turno}` : g.date;
+                        return !baixaDates[baixaKey];
+                    })
+                    .sort((a, b) => b.date.localeCompare(a.date));
+
             } catch (e) {
                 console.error('Erro ao carregar histórico de contagens:', e);
             }

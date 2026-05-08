@@ -3446,7 +3446,7 @@
 
             // ---- Relatório (após salvar C2) ----
             let resultContent = '';
-            if (state.contagem.savedResult && (state.contagem.tab === 'count2' || state.contagem.tab === 'newContagem')) {
+            if (state.contagem.savedResult && state.contagem.tab === 'newContagem') {
                 const itensSaida = state.contagem.savedResult.filter(r => r.saida > 0);
                 const resumoBadge = itensSaida.length > 0
                     ? `<span class="badge badge-red">${itensSaida.length} item(s) consumido(s)</span>`

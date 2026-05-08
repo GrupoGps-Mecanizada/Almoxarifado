@@ -199,14 +199,15 @@
         }
 
         function turnoColor(t) {
-            return { A: 'var(--accent)', B: 'var(--green)', C: 'var(--orange)', D: 'var(--purple)' }[t] || 'var(--text-3)';
+            return { A: 'var(--accent)', B: 'var(--green)', C: 'var(--orange)', D: 'var(--purple)', ADM: '#0891b2' }[t] || 'var(--text-3)';
         }
         function turnoBg(t) {
             return {
                 A: 'var(--accent-glow)',
                 B: 'color-mix(in srgb,var(--green) 10%,transparent)',
                 C: 'color-mix(in srgb,var(--orange) 10%,transparent)',
-                D: 'color-mix(in srgb,var(--purple) 10%,transparent)'
+                D: 'color-mix(in srgb,var(--purple) 10%,transparent)',
+                ADM: 'color-mix(in srgb,#0891b2 10%,transparent)'
             }[t] || 'var(--bg-2)';
         }
         function turnoBadge(t) {
@@ -3395,6 +3396,22 @@
                                     <span style="font-size:11px;font-weight:600;color:${turnoColor(t)};text-transform:uppercase;letter-spacing:0.08em;">Turno ${t}</span>
                                 </button>
                             `).join('')}
+                            <button onclick="state.contagem.turno='ADM';state.contagem.horario='07:00–17:00';state.contagem.newStep=2;render()"
+                                style="padding:20px 16px;border-radius:12px;border:2px solid ${turnoColor('ADM')};
+                                       background:${turnoBg('ADM')};cursor:pointer;display:flex;flex-direction:column;
+                                       align-items:center;gap:4px;transition:all .15s;"
+                                onmouseover="this.style.transform='scale(1.03)'" onmouseout="this.style.transform=''">
+                                <span style="font-size:24px;font-weight:800;color:${turnoColor('ADM')};">ADM</span>
+                                <span style="font-size:11px;font-weight:600;color:${turnoColor('ADM')};text-transform:uppercase;letter-spacing:0.08em;">07:00–17:00</span>
+                            </button>
+                            <button onclick="state.contagem.turno=null;state.contagem.horario='';state.contagem.newStep=2;render()"
+                                style="padding:20px 16px;border-radius:12px;border:2px solid var(--border);
+                                       background:var(--bg-2);cursor:pointer;display:flex;flex-direction:column;
+                                       align-items:center;gap:4px;transition:all .15s;"
+                                onmouseover="this.style.transform='scale(1.03)'" onmouseout="this.style.transform=''">
+                                <span style="font-size:24px;font-weight:800;color:var(--text-2);">—</span>
+                                <span style="font-size:11px;font-weight:600;color:var(--text-2);text-transform:uppercase;letter-spacing:0.08em;">Geral</span>
+                            </button>
                         </div>
                     </div>`;
                 }

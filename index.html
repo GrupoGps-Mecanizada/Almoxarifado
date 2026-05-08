@@ -1583,11 +1583,15 @@
                 state.contagem.lastC1 = lastC1;
 
                 // Contagens já salvas para a data selecionada (prefill)
-                const { data: todayData } = await sbClient
+                let todayQuery = sbClient
                     .from('daily_counts')
                     .select('*')
                     .in('item_id', itemIds)
-                    .eq('date', state.contagem.date)
+                    .eq('date', state.contagem.date);
+                if (state.contagem.turno) {
+                    todayQuery = todayQuery.eq('turno', state.contagem.turno);
+                }
+                const { data: todayData } = await todayQuery
                     .order('created_at', { ascending: true });
                 const todayCounts = {};
                 if (todayData) {

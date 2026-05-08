@@ -3347,7 +3347,15 @@
                     </div>`;
                 }).join('');
 
+                const turnoInfo = state.contagem.turno
+                    ? `<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;padding:8px 12px;background:${turnoBg(state.contagem.turno)};border-radius:8px;border:1px solid ${turnoColor(state.contagem.turno)}33;">
+                           ${turnoBadge(state.contagem.turno)}
+                           ${state.contagem.horario ? `<span style="font-size:12px;color:var(--text-2);">${state.contagem.horario}</span>` : ''}
+                           <span style="font-size:12px;color:var(--text-2);">${formatDate(state.contagem.date)}</span>
+                       </div>` : '';
+
                 return `<div class="card">
+                    ${turnoInfo}
                     <div style="margin-bottom:16px;">
                         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px;">
                             <span style="font-weight:700;font-size:15px;color:var(--text-1);">${title}</span>
@@ -3364,6 +3372,76 @@
                         </button>
                     </div>
                 </div>`;
+            }
+
+            // ---- Helper: fluxo de nova contagem (3 etapas) ----
+            function buildNewContagemFlow() {
+                const step = state.contagem.newStep;
+
+                if (step === 1) {
+                    return `<div class="card-lg">
+                        <div style="margin-bottom:20px;">
+                            <div style="font-weight:700;font-size:15px;color:var(--text-1);margin-bottom:4px;">Selecionar Turno</div>
+                            <p style="font-size:12px;color:var(--text-3);">Qual turno realizará esta contagem?</p>
+                        </div>
+                        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;max-width:320px;">
+                            ${['A','B','C','D'].map(t => `
+                                <button onclick="state.contagem.turno='${t}';state.contagem.newStep=2;render()"
+                                    style="padding:24px 16px;border-radius:12px;border:2px solid ${turnoColor(t)};
+                                           background:${turnoBg(t)};cursor:pointer;display:flex;flex-direction:column;
+                                           align-items:center;gap:4px;transition:all .15s;"
+                                    onmouseover="this.style.transform='scale(1.03)'" onmouseout="this.style.transform=''">
+                                    <span style="font-size:32px;font-weight:800;color:${turnoColor(t)};">${t}</span>
+                                    <span style="font-size:11px;font-weight:600;color:${turnoColor(t)};text-transform:uppercase;letter-spacing:0.08em;">Turno ${t}</span>
+                                </button>
+                            `).join('')}
+                        </div>
+                    </div>`;
+                }
+
+                if (step === 2) {
+                    return `<div class="card-lg">
+                        <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">
+                            ${turnoBadge(state.contagem.turno)}
+                            <div>
+                                <div style="font-weight:700;font-size:15px;color:var(--text-1);">Data e Horário</div>
+                                <p style="font-size:12px;color:var(--text-3);">Quando este turno trabalha?</p>
+                            </div>
+                        </div>
+                        <div class="stack-sm">
+                            <div class="field-group">
+                                <label class="field-label">Data *</label>
+                                <input class="field-input" type="date" value="${state.contagem.date}"
+                                    onchange="state.contagem.date=this.value;state.contagem.entries1={};state.contagem.entries2={};state.contagem.todayCounts={};">
+                            </div>
+                            <div class="field-group">
+                                <label class="field-label">Horário do Turno *</label>
+                                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+                                    <button onclick="state.contagem.horario='07:00–19:00';render()"
+                                        class="${state.contagem.horario==='07:00–19:00'?'btn-primary':'btn-secondary'}"
+                                        style="font-size:13px;padding:8px 14px;">07:00–19:00</button>
+                                    <button onclick="state.contagem.horario='19:00–07:00';render()"
+                                        class="${state.contagem.horario==='19:00–07:00'?'btn-primary':'btn-secondary'}"
+                                        style="font-size:13px;padding:8px 14px;">19:00–07:00</button>
+                                </div>
+                                <input class="field-input" type="text" placeholder="Ou digite outro horário..."
+                                    value="${state.contagem.horario}"
+                                    oninput="state.contagem.horario=this.value">
+                            </div>
+                            <div style="display:flex;gap:10px;margin-top:8px;">
+                                <button onclick="state.contagem.newStep=1;render()" class="btn-secondary">
+                                    <i class="ph ph-arrow-left"></i> Voltar
+                                </button>
+                                <button onclick="if(!state.contagem.horario){alert('Selecione ou digite o horário');return;}state.contagem.newStep=3;state.contagem.loading=true;render();loadContagem();"
+                                    class="btn-primary" style="flex:1;">
+                                    <i class="ph-fill ph-clipboard-text"></i> Iniciar Contagem
+                                </button>
+                            </div>
+                        </div>
+                    </div>`;
+                }
+
+                return ''; // step 3 handled by buildCountForm
             }
 
             // ---- Relatório (após salvar C2) ----

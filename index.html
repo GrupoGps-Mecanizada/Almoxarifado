@@ -1642,6 +1642,8 @@
                     .eq('date', state.contagem.date);
                 if (state.contagem.turno) {
                     todayQuery = todayQuery.eq('turno', state.contagem.turno);
+                } else {
+                    todayQuery = todayQuery.is('turno', null);
                 }
                 const { data: todayData } = await todayQuery
                     .order('created_at', { ascending: true });

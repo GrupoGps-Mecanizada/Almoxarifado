@@ -1,6 +1,14 @@
 /* Almoxarifado/css/topbar.css */
-#global-sync-bar { height: 0; background: linear-gradient(90deg, var(--accent), #2563eb); transition: height .25s; flex-shrink: 0; }
+#global-sync-bar { height: 0; overflow: hidden; flex-shrink: 0; transition: height .2s; }
 #global-sync-bar.active { height: 3px; }
+#global-sync-bar.active::after {
+    content: '';
+    display: block;
+    height: 100%;
+    background: linear-gradient(90deg, #0f3868, #2563eb);
+    border-radius: 0;
+    animation: barSlide 1.8s ease-in-out infinite;
+}
 
 #topbar {
   display: flex; align-items: center; justify-content: space-between;

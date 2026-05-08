@@ -282,6 +282,15 @@ textarea.field-input { resize: vertical; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .spin { animation: spin .8s linear infinite; }
 
+/* ---- Animated loading bar (session check / boot) ---- */
+.loading-bar-container { width: 100%; background: rgba(15,56,104,0.08); border-radius: 6px; overflow: hidden; height: 3px; position: relative; }
+.loading-bar { height: 100%; background: linear-gradient(90deg, #0f3868, #2563eb); border-radius: 6px; animation: barSlide 1.8s ease-in-out infinite; }
+@keyframes barSlide {
+    0%   { width: 8%;  margin-left: 0; }
+    50%  { width: 55%; margin-left: 25%; }
+    100% { width: 8%;  margin-left: 92%; }
+}
+
 /* ---- SQL block ---- */
 .sql-block { background: #1e293b; color: #7dd3a8; padding: 16px; border-radius: var(--radius-sm); font-size: 11px; overflow-x: auto; font-family: monospace; line-height: 1.6; }
 

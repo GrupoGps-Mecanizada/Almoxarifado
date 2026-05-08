@@ -70,7 +70,7 @@
         // ESTADO DA APLICAÇÃO
         // ============================================
         let state = {
-            view: 'login',
+            view: 'checking',
             previousView: null,
             user: null,
             items: [],
@@ -1474,17 +1474,12 @@
             goBack();
         }
 
-        async function handleSaveWarehouse(e) {
+        async function handleSaveWarehouse(e, id) {
             e.preventDefault();
-            const id = document.getElementById('warehouseId').value;
-            const nome = document.getElementById('warehouseName').value;
-            const descricao = document.getElementById('warehouseDesc').value;
-            // Otimista
+            const nome = document.getElementById(`wh-nome-${id}`).value.trim();
+            const descricao = document.getElementById(`wh-desc-${id}`).value.trim();
             const wh = state.warehouses.find(w => w.id === id);
-            if (wh) {
-                wh.nome = nome;
-                wh.descricao = descricao;
-            }
+            if (wh) { wh.nome = nome; wh.descricao = descricao; }
             render();
             await saveWarehouse({ id, nome, descricao });
         }
@@ -2085,6 +2080,7 @@
             const wasSearchFocused = document.activeElement?.id === 'global-search';
 
             switch (state.view) {
+                case 'checking':   app.innerHTML = renderLoading();          break;
                 case 'login':      app.innerHTML = renderLogin();            break;
                 case 'dashboard':  app.innerHTML = renderDashboard();        break;
                 case 'analytics':  app.innerHTML = renderAnalytics();        break;
@@ -2104,6 +2100,21 @@
                 if (s) { s.focus(); s.setSelectionRange(s.value.length, s.value.length); }
             }
         }
+
+        function renderLoading() {
+    return `
+        <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg-0);">
+            <div style="width:260px;text-align:center;">
+                <div style="font-weight:800;font-size:16px;color:#0f3868;margin-bottom:3px;">Grupo GPS</div>
+                <div style="font-size:10px;color:var(--text-3);letter-spacing:0.1em;text-transform:uppercase;font-weight:600;margin-bottom:28px;">Almoxarifado EPI</div>
+                <div class="loading-bar-container">
+                    <div class="loading-bar"></div>
+                </div>
+                <div style="color:var(--text-3);font-size:12px;font-weight:500;margin-top:14px;letter-spacing:0.02em;">${state.loadingMessage || 'Verificando sessão...'}</div>
+            </div>
+        </div>
+    `;
+}
 
         function renderLogin() {
     return `
@@ -2694,70 +2705,34 @@
                     </div>
                 </div>` : '';
 
-            return `
-                ${addFormHtml}
-
-                ${(() => {
-                    // Estoque atual no almoxarifado Emergencial
-                    const emgItems = state.items.filter(i => (i.warehouse_id||'alm-1') === 'alm-emergencial' && i.quantidade > 0);
-                    if (emgItems.length === 0) return '';
-                    return `<div class="card">
-                        <div class="section-title" style="margin-bottom:12px;">
-                            <i class="ph ph-package"></i> Itens no Emergencial
-                            <span class="badge badge-gray" style="margin-left:8px;">${emgItems.length} itens</span>
-                        </div>
-                        <div class="grid-cards" style="--min-card:180px;">
-                            ${emgItems.map(item => `
-                                <div class="item-card" style="border-left:3px solid var(--red);">
-                                    <div class="item-card-name">${item.nome}</div>
-                                    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
-                                        <span class="badge badge-blue">${item.categoria}</span>
-                                        <span class="badge badge-gray">${item.unidade}</span>
-                                    </div>
-                                    <div style="display:flex;justify-content:space-between;align-items:flex-end;">
-                                        <span style="font-size:11px;text-transform:uppercase;color:var(--text-3);">Qtd</span>
-                                        <span class="item-card-qty ${item.quantidade < 5 ? 'low' : 'ok'}">${item.quantidade}</span>
-                                    </div>
-                                    ${item.tamanhos && Object.keys(item.tamanhos).length > 0 ? `
-                                        <div class="sizes-grid" style="margin-top:8px;">
-                                            ${Object.entries(item.tamanhos).map(([s,q]) => `
-                                                <div class="size-chip"><strong>${s}:</strong> <span class="qty ${q>0?'ok':'low'}">${q}</span></div>
-                                            `).join('')}
-                                        </div>` : ''}
-                                </div>`).join('')}
-                        </div>
-                    </div>`;
-                })()}
-
-                <div class="card">
-                    <div class="row-between" style="margin-bottom:16px;">
-                        <div>
-                            <div class="section-title" style="color:var(--red);margin-bottom:2px;">
-                                <i class="ph-fill ph-warning-circle"></i> Saída Emergencial
-                            </div>
-                            <p style="font-size:12px;color:var(--text-3);">Retira itens de qualquer almoxarifado</p>
-                        </div>
-                        <button onclick="state.emergency.showForm=true;state.emergency.formItemId='';state.emergency.formSize='';state.emergency.formQty=1;render()"
-                            class="btn-primary" style="background:var(--red);border-color:var(--red);" ${em.showForm?'disabled':''}>
-                            <i class="ph-fill ph-plus-circle"></i> Adicionar
-                        </button>
+            const emgItems = state.items.filter(i => (i.warehouse_id||'alm-1') === 'alm-emergencial' && i.quantidade > 0);
+            return emgItems.length === 0
+                ? `<div class="card"><div class="empty-state"><i class="ph ph-warning-circle"></i><p>Nenhum item no Emergencial</p><div style="margin-top:16px;"><button onclick="startTransfer('alm-1')" class="btn-secondary"><i class="ph ph-arrows-left-right"></i> Transferir do Central</button></div></div></div>`
+                : `<div class="card">
+                    <div class="section-title" style="margin-bottom:12px;">
+                        <i class="ph ph-package"></i> Itens no Emergencial
+                        <span class="badge badge-gray" style="margin-left:8px;">${emgItems.length} itens</span>
                     </div>
-                    <div style="border-top:1px solid var(--border);padding-top:12px;">
-                        ${cartHtml}
+                    <div class="grid-cards" style="--min-card:180px;">
+                        ${emgItems.map(item => `
+                            <div class="item-card" style="border-left:3px solid var(--red);">
+                                <div class="item-card-name">${item.nome}</div>
+                                <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+                                    <span class="badge badge-blue">${item.categoria}</span>
+                                    <span class="badge badge-gray">${item.unidade}</span>
+                                </div>
+                                <div style="display:flex;justify-content:space-between;align-items:flex-end;">
+                                    <span style="font-size:11px;text-transform:uppercase;color:var(--text-3);">Qtd</span>
+                                    <span class="item-card-qty ${item.quantidade < 5 ? 'low' : 'ok'}">${item.quantidade}</span>
+                                </div>
+                                ${item.tamanhos && Object.keys(item.tamanhos).length > 0 ? `
+                                    <div class="sizes-grid" style="margin-top:8px;">
+                                        ${Object.entries(item.tamanhos).map(([s,q]) => `
+                                            <div class="size-chip"><strong>${s}:</strong> <span class="qty ${q>0?'ok':'low'}">${q}</span></div>
+                                        `).join('')}
+                                    </div>` : ''}
+                            </div>`).join('')}
                     </div>
-                    ${em.cart.length > 0 ? `
-                    <div style="margin-top:20px;display:flex;justify-content:flex-end;gap:10px;">
-                        <button onclick="state.emergency.cart=[];render()" class="btn-secondary">
-                            <i class="ph ph-trash"></i> Limpar
-                        </button>
-                        <button onclick="confirmEmergencySaida()" class="btn-primary"
-                            style="background:var(--red);border-color:var(--red);"
-                            ${em.saving?'disabled':''}>
-                            ${em.saving
-                                ? `<span class="loading-spinner" style="width:16px;height:16px;border-width:2px;"></span> Registrando...`
-                                : `<i class="ph-fill ph-check-circle"></i> Confirmar Saída (${em.cart.reduce((s,c)=>s+c.quantidade,0)} itens)`}
-                        </button>
-                    </div>` : ''}
                 </div>`;
         }
 
@@ -2783,15 +2758,14 @@
                                 </div>
                                 <span class="badge badge-gray">${state.items.filter(i=>(i.warehouse_id||'alm-1')===wh.id).length} itens</span>
                             </div>
-                            <form onsubmit="handleSaveWarehouse(event)" class="stack-sm">
-                                <input type="hidden" id="warehouseId" value="${wh.id}">
+                            <form onsubmit="handleSaveWarehouse(event,'${wh.id}')" class="stack-sm">
                                 <div class="field-group">
                                     <label class="field-label">Nome *</label>
-                                    <input class="field-input" type="text" id="warehouseName" value="${wh.nome}" placeholder="Nome do almoxarifado" required>
+                                    <input class="field-input" type="text" id="wh-nome-${wh.id}" value="${wh.nome}" placeholder="Nome do almoxarifado" required>
                                 </div>
                                 <div class="field-group">
                                     <label class="field-label">Descrição</label>
-                                    <input class="field-input" type="text" id="warehouseDesc" value="${wh.descricao||''}" placeholder="Descrição opcional">
+                                    <input class="field-input" type="text" id="wh-desc-${wh.id}" value="${wh.descricao||''}" placeholder="Descrição opcional">
                                 </div>
                                 <div>
                                     <button type="submit" class="btn-primary"><i class="ph ph-floppy-disk"></i> Salvar Alterações</button>
@@ -2799,25 +2773,6 @@
                             </form>
                         </div>
                     `).join('')}
-                </div>
-
-                <div class="card accent-blue">
-                    <div style="font-weight:700;color:var(--accent);margin-bottom:8px;display:flex;align-items:center;gap:6px;">
-                        <i class="ph-fill ph-info"></i> SQL para criar as tabelas no Supabase
-                    </div>
-                    <p style="font-size:12px;color:var(--text-2);margin-bottom:10px;">Execute no SQL Editor do Supabase:</p>
-                    <pre class="sql-block">CREATE TABLE IF NOT EXISTS warehouses (
-  id TEXT PRIMARY KEY,
-  nome TEXT NOT NULL,
-  descricao TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-INSERT INTO warehouses (id, nome, descricao) VALUES
-  ('alm-1', 'Almoxarifado Central', 'Estoque principal'),
-  ('alm-2', 'Almoxarifado Distribuição', 'Itens para distribuição')
-ON CONFLICT (id) DO NOTHING;
-ALTER TABLE items ADD COLUMN IF NOT EXISTS warehouse_id TEXT DEFAULT 'alm-1';
-ALTER TABLE movements ADD COLUMN IF NOT EXISTS destination_warehouse_id TEXT;</pre>
                 </div>
             </div>
         </div>
@@ -3014,7 +2969,7 @@ ALTER TABLE movements ADD COLUMN IF NOT EXISTS destination_warehouse_id TEXT;</p
                                                     <span class="badge badge-gray">${typeInfo.label}</span>
                                                 </div>
                                                 <div class="movement-meta">
-                                                    <div>${formatDate(movement.date)} · ${movement.user_name || movement.user || '—'}</div>
+                                                    <div>${formatDate(movement.date)}${movement.user_name || movement.user ? ` · <span style="color:var(--accent);font-weight:600;">${movement.user_name || movement.user}</span>` : ''}</div>
                                                     ${movement.employee ? `<div>Colaborador: ${movement.employee}</div>` : ''}
                                                     ${movement.supplier ? `<div>Fornecedor: ${movement.supplier}</div>` : ''}
                                                     ${movement.observations ? `<div style="color:var(--text-2);">${movement.observations}</div>` : ''}
@@ -3582,20 +3537,17 @@ ALTER TABLE movements ADD COLUMN IF NOT EXISTS destination_warehouse_id TEXT;</p
         // INICIALIZAÇÃO
         // ============================================
         document.addEventListener('DOMContentLoaded', async () => {
-            // Mostra loading enquanto verifica sessão
-            state.isLoading = true;
+            // Mostra loading screen enquanto verifica sessão (view já é 'checking')
             state.loadingMessage = 'Verificando sessão...';
             render();
 
             try {
-                // Supabase recupera e renova automaticamente o token do localStorage
                 const { data: { session }, error: sessionError } = await sbClient.auth.getSession();
 
                 if (sessionError) {
-                    // Token inválido/expirado — limpa a sessão corrompida do localStorage
                     await sbClient.auth.signOut();
+                    navigateTo('login');
                 } else if (session?.user) {
-                    // Busca nome do perfil
                     const { data: profile } = await sbClient
                         .from('profiles')
                         .select('nome')
@@ -3613,16 +3565,14 @@ ALTER TABLE movements ADD COLUMN IF NOT EXISTS destination_warehouse_id TEXT;</p
 
                     await Promise.all([loadItems(), loadWarehouses()]);
                     navigateTo('stock');
+                } else {
+                    navigateTo('login');
                 }
             } catch (err) {
-                // Token corrompido que lançou exceção — força limpeza
                 console.warn('Sessão inválida, redirecionando para login:', err.message);
                 try { await sbClient.auth.signOut(); } catch (_) {}
+                navigateTo('login');
             }
-
-            state.isLoading = false;
-            state.loadingMessage = '';
-            render();
         });
 
         // Redireciona para login se a sessão Supabase expirar enquanto o app está aberto

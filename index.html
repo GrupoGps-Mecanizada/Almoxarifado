@@ -1547,19 +1547,17 @@
             setTimeout(() => renderCharts(), 100);
         }
 
-        async function navigateToContagem() {
+        function navigateToContagem() {
             state.contagem.entries1 = {};
             state.contagem.entries2 = {};
             state.contagem.savedResult = null;
             state.contagem.baixaAplicada = false;
-            state.contagem.tab = 'count1';
-            state.contagem.date = getCurrentDate();
             state.contagem.todayCounts = {};
-            state.contagem.history = [];
-            state.contagem.loading = true;
+            state.contagem.turno = null;
+            state.contagem.horario = '';
+            state.contagem.newStep = 1;
+            state.contagem.tab = 'home';
             navigateTo('contagem');
-            render();
-            await loadContagem();
         }
 
         async function loadContagem() {

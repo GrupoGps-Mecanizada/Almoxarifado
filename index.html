@@ -3404,7 +3404,7 @@
                                 <span style="font-size:24px;font-weight:800;color:${turnoColor('ADM')};">ADM</span>
                                 <span style="font-size:11px;font-weight:600;color:${turnoColor('ADM')};text-transform:uppercase;letter-spacing:0.08em;">07:00–17:00</span>
                             </button>
-                            <button onclick="state.contagem.turno=null;state.contagem.horario='';state.contagem.newStep=2;render()"
+                            <button onclick="state.contagem.turno=null;state.contagem.horario='';state.contagem.newStep=3;state.contagem.loading=true;render();loadContagem()"
                                 style="padding:20px 16px;border-radius:12px;border:2px solid var(--border);
                                        background:var(--bg-2);cursor:pointer;display:flex;flex-direction:column;
                                        align-items:center;gap:4px;transition:all .15s;"
@@ -3434,12 +3434,18 @@
                             <div class="field-group">
                                 <label class="field-label">Horário do Turno *</label>
                                 <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+                                    ${state.contagem.turno === 'ADM' ? `
+                                    <button onclick="state.contagem.horario='07:00–17:00';render()"
+                                        class="${state.contagem.horario==='07:00–17:00'?'btn-primary':'btn-secondary'}"
+                                        style="font-size:13px;padding:8px 14px;">07:00–17:00</button>
+                                    ` : `
                                     <button onclick="state.contagem.horario='07:00–19:00';render()"
                                         class="${state.contagem.horario==='07:00–19:00'?'btn-primary':'btn-secondary'}"
                                         style="font-size:13px;padding:8px 14px;">07:00–19:00</button>
                                     <button onclick="state.contagem.horario='19:00–07:00';render()"
                                         class="${state.contagem.horario==='19:00–07:00'?'btn-primary':'btn-secondary'}"
                                         style="font-size:13px;padding:8px 14px;">19:00–07:00</button>
+                                    `}
                                 </div>
                                 <input class="field-input" type="text" placeholder="Ou digite outro horário..."
                                     value="${state.contagem.horario}"

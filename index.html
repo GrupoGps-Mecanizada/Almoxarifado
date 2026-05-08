@@ -1725,6 +1725,7 @@
                         .eq('id', r.item_id);
                     if (updErr) throw updErr;
 
+                    const turnoLabel = state.contagem.turno ? ` — Turno ${state.contagem.turno}` : '';
                     await sbClient.from('movements').insert({
                         date: state.contagem.date,
                         type: 'SAIDA',
@@ -1733,13 +1734,20 @@
                         quantity: r.saida,
                         warehouse_id: item.warehouse_id || 'alm-2',
                         user_name: state.user.nome,
-                        observations: `Baixa Contagem Diária ${formatDate(state.contagem.date)}`
+                        observations: `Baixa Contagem Diária ${formatDate(state.contagem.date)}${turnoLabel}`
                     });
 
                     item.quantidade = novaQtd;
                 }
                 state.contagem.baixaAplicada = true;
-                state.contagem.baixaDates[state.contagem.date] = true;
+                const baixaKey = state.contagem.turno
+                    ? `${state.contagem.date}_${state.contagem.turno}`
+                    : state.contagem.date;
+                state.contagem.baixaDates[baixaKey] = true;
+                // Remove o ticket fechado de openTickets
+                state.contagem.openTickets = state.contagem.openTickets.filter(
+                    t => !(t.date === state.contagem.date && t.turno === state.contagem.turno)
+                );
                 cache.items = null;
                 cache.movements = null;
                 showToast(`Baixa aplicada para ${itensBaixa.length} item(ns)!`, 'success');

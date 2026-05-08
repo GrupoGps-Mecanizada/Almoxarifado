@@ -169,9 +169,14 @@
                 savedResult: null,   // resultado após salvar C2
                 baixaAplicada: false, // true após dar baixa no estoque via contagem (sessão atual)
                 baixaDates: {},      // { 'YYYY-MM-DD': true } — datas com baixa já aplicada (persistido)
-                tab: 'count1',       // 'count1' | 'count2' | 'history'
+                tab: 'home',          // 'home' | 'newContagem' | 'history'
                 history: [],
-                historyLoading: false
+                historyLoading: false,
+                turno: null,          // 'A' | 'B' | 'C' | 'D'
+                horario: '',          // ex: '07:00–19:00'
+                newStep: 1,           // 1=selecionar turno | 2=data+horário | 3=form C1
+                openTickets: [],      // [{ date, turno, horario, hasC1, hasC2, baixaFeita }]
+                historyTurnoFilter: 'TODOS',  // filtro da aba histórico
             }
         };
 
@@ -191,6 +196,22 @@
         // ============================================
         function getCurrentDate() {
             return new Date().toISOString().split('T')[0];
+        }
+
+        function turnoColor(t) {
+            return { A: 'var(--accent)', B: 'var(--green)', C: 'var(--orange)', D: 'var(--purple)' }[t] || 'var(--text-3)';
+        }
+        function turnoBg(t) {
+            return {
+                A: 'var(--accent-glow)',
+                B: 'color-mix(in srgb,var(--green) 10%,transparent)',
+                C: 'color-mix(in srgb,var(--orange) 10%,transparent)',
+                D: 'color-mix(in srgb,var(--purple) 10%,transparent)'
+            }[t] || 'var(--bg-2)';
+        }
+        function turnoBadge(t) {
+            if (!t) return `<span class="badge badge-gray">—</span>`;
+            return `<span class="badge" style="background:${turnoBg(t)};color:${turnoColor(t)};font-weight:700;border:1px solid ${turnoColor(t)}33;">Turno ${t}</span>`;
         }
 
         function getFirstDayOfMonth() {

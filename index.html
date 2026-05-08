@@ -1633,16 +1633,22 @@
                 item_name: state.items.find(i => i.id === item_id)?.nome || item_id,
                 quantidade: Math.max(0, parseInt(qty) || 0),
                 user_name: state.user.nome,
-                contagem_num: num
+                contagem_num: num,
+                turno: state.contagem.turno || null,
+                horario: state.contagem.horario || null
             }));
             try {
                 // Remove registros anteriores do mesmo dia e mesmo num para esses itens
                 const itemIds = rows.map(r => r.item_id);
-                await sbClient.from('daily_counts')
+                let delQuery = sbClient.from('daily_counts')
                     .delete()
                     .eq('date', state.contagem.date)
                     .eq('contagem_num', num)
                     .in('item_id', itemIds);
+                if (state.contagem.turno) {
+                    delQuery = delQuery.eq('turno', state.contagem.turno);
+                }
+                await delQuery;
 
                 const { error } = await sbClient.from('daily_counts').insert(rows);
                 if (error) throw error;
@@ -1677,7 +1683,11 @@
                         state.contagem.lastC1[row.item_id] = { item_id: row.item_id, date: row.date, quantidade: row.quantidade };
                     });
                     showToast('Contagem de Entrega salva!', 'success');
-                    state.contagem.tab = 'count2'; // avança para Contagem de Saída
+                    state.contagem.tab = 'home';
+                    state.contagem.turno = null;
+                    state.contagem.horario = '';
+                    state.contagem.newStep = 1;
+                    loadContagemHistory();
                 }
             } catch (e) {
                 showToast('Erro ao salvar contagem', 'error');

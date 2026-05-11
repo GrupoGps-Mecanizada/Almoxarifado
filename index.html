@@ -169,7 +169,7 @@
                 savedResult: null,   // resultado após salvar C2
                 baixaAplicada: false, // true após dar baixa no estoque via contagem (sessão atual)
                 baixaDates: {},      // { 'YYYY-MM-DD': true } — datas com baixa já aplicada (persistido)
-                tab: 'home',          // 'home' | 'newContagem' | 'history'
+                tab: 'chamados',      // 'chamados' | 'home' | 'newContagem' | 'history'
                 history: [],
                 historyLoading: false,
                 turno: null,          // 'A' | 'B' | 'C' | 'D'
@@ -1557,8 +1557,9 @@
             state.contagem.turno = null;
             state.contagem.horario = '';
             state.contagem.newStep = 1;
-            state.contagem.tab = 'home';
+            state.contagem.tab = 'chamados';
             navigateTo('contagem');
+            loadContagemHistory();
         }
 
         function openTicketForC2(date, turno, horario) {
@@ -1737,7 +1738,7 @@
                         state.contagem.lastC1[row.item_id] = { item_id: row.item_id, date: row.date, quantidade: row.quantidade };
                     });
                     showToast('Contagem de Entrega salva!', 'success');
-                    state.contagem.tab = 'home';
+                    state.contagem.tab = 'chamados';
                     state.contagem.turno = null;
                     state.contagem.horario = '';
                     state.contagem.newStep = 1;
@@ -1923,7 +1924,9 @@
 
         function switchContagemTab(tab) {
             state.contagem.tab = tab;
-            if (tab === 'history' && state.contagem.history.length === 0) {
+            const needsLoad = (tab === 'history' && state.contagem.history.length === 0)
+                           || (tab === 'chamados' && state.contagem.openTickets.length === 0 && !state.contagem.historyLoading);
+            if (needsLoad) {
                 loadContagemHistory();
             } else {
                 render();
@@ -3715,9 +3718,69 @@
                     </div>
                 </div>`;
 
+            // ---- Chamados tab: lista dedicada de chamados em aberto ----
+            const chamadosContent = state.contagem.historyLoading
+                ? `<div class="card" style="text-align:center;padding:40px;">
+                       <div class="loading-spinner" style="margin:0 auto 12px;"></div>
+                       <p style="color:var(--text-2);font-size:13px;">Carregando chamados...</p>
+                   </div>`
+                : openTickets.length === 0
+                    ? `<div class="card">
+                           <div class="empty-state" style="padding:40px 20px;">
+                               <i class="ph ph-check-circle" style="color:var(--green);font-size:40px;"></i>
+                               <p style="font-weight:600;color:var(--green);margin-bottom:4px;">Nenhum chamado em aberto</p>
+                               <p style="color:var(--text-3);font-size:12px;">Todos os turnos estão em dia!</p>
+                               <div style="margin-top:20px;">
+                                   <button onclick="state.contagem.tab='home';state.contagem.newStep=1;render()" class="btn-primary">
+                                       <i class="ph-fill ph-plus-circle"></i> Nova Contagem
+                                   </button>
+                               </div>
+                           </div>
+                       </div>`
+                    : `<div style="display:flex;flex-direction:column;gap:10px;">
+                           ${openTickets.map(t => {
+                               const cor = turnoColor(t.turno);
+                               const bg  = turnoBg(t.turno);
+                               const statusLabel = t.hasC2
+                                   ? `<span style="font-size:11px;color:var(--green);font-weight:600;"><i class="ph-fill ph-check-circle"></i> C2 feita — aguardando baixa</span>`
+                                   : `<span style="font-size:11px;color:var(--orange);font-weight:600;"><i class="ph ph-clock"></i> Aguardando C2</span>`;
+                               const actionBtn = t.hasC2
+                                   ? `<button onclick="openTicketForBaixa('${t.date}','${t.turno || ''}','${t.horario || ''}')"
+                                         class="btn-primary" style="flex:1;font-size:12px;padding:8px 12px;background:var(--green);border-color:var(--green);">
+                                         <i class="ph-fill ph-arrow-fat-lines-down"></i> Dar Baixa
+                                      </button>`
+                                   : `<button onclick="openTicketForC2('${t.date}','${t.turno || ''}','${t.horario || ''}')"
+                                         class="btn-primary" style="flex:1;font-size:12px;padding:8px 12px;">
+                                         <i class="ph-fill ph-clipboard-check"></i> Fechar (C2)
+                                      </button>`;
+                               return `<div style="border:2px solid ${cor};border-radius:12px;padding:14px 16px;background:${bg};display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+                                   <div style="display:flex;align-items:center;gap:10px;min-width:100px;">
+                                       <span style="font-weight:800;font-size:26px;color:${cor};font-family:var(--font-display);line-height:1;">
+                                           ${t.turno || '—'}
+                                       </span>
+                                       <div>
+                                           <div style="font-size:12px;font-weight:700;text-transform:uppercase;color:${cor};">Turno</div>
+                                           <div style="font-size:12px;font-weight:600;color:var(--text-1);">${formatDate(t.date)}</div>
+                                           ${t.horario ? `<div style="font-size:11px;color:var(--text-3);">${t.horario}</div>` : ''}
+                                       </div>
+                                   </div>
+                                   <div style="flex:1;min-width:120px;">${statusLabel}</div>
+                                   <div style="display:flex;gap:6px;align-items:center;flex-shrink:0;">
+                                       ${actionBtn}
+                                       <button onclick="deleteContagemDate('${t.date}',1,'${t.turno || ''}')"
+                                           style="font-size:11px;color:var(--text-3);background:none;border:none;cursor:pointer;padding:8px 6px;" title="Excluir">
+                                           <i class="ph ph-trash"></i>
+                                       </button>
+                                   </div>
+                               </div>`;
+                           }).join('')}
+                       </div>`;
+
             const tab = state.contagem.tab;
             let mainContent = '';
-            if (tab === 'newContagem') {
+            if (tab === 'chamados') {
+                mainContent = chamadosContent;
+            } else if (tab === 'newContagem') {
                 if (state.contagem.savedResult) {
                     mainContent = resultContent;
                 } else if (state.contagem.newStep === 3) {
@@ -3745,11 +3808,16 @@
                         <button onclick="state.contagem.tab='newContagem';state.contagem.newStep=1;state.contagem.turno=null;state.contagem.horario='';render()" class="btn-primary">
                             <i class="ph-fill ph-plus-circle"></i> Nova Contagem
                         </button>` : `
-                        <button onclick="state.contagem.tab='home';state.contagem.turno=null;state.contagem.horario='';state.contagem.newStep=1;state.contagem.savedResult=null;render()" class="btn-secondary">
+                        <button onclick="state.contagem.tab='chamados';state.contagem.turno=null;state.contagem.horario='';state.contagem.newStep=1;state.contagem.savedResult=null;render()" class="btn-secondary">
                             <i class="ph ph-x"></i> Cancelar
                         </button>`}
                     </div>
                     <div class="tab-bar" style="margin-bottom:12px;">
+                        <button class="tab-btn ${tab === 'chamados' ? 'active' : ''}"
+                            onclick="switchContagemTab('chamados')" style="position:relative;">
+                            <i class="ph ph-bell-ringing"></i> Chamados
+                            ${openTickets.length > 0 ? `<span style="background:var(--orange);color:#fff;border-radius:99px;font-size:10px;font-weight:700;padding:1px 7px;margin-left:5px;vertical-align:middle;">${openTickets.length}</span>` : ''}
+                        </button>
                         <button class="tab-btn ${tab === 'home' || tab === 'newContagem' ? 'active' : ''}"
                             onclick="state.contagem.tab='home';render()">
                             <i class="ph ph-clipboard-text"></i> Contagens

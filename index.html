@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="pt-BR">
 
 <head>
@@ -3660,56 +3660,14 @@
                 }
             }
 
-            // ---- Home: chamados em aberto ----
+            // ---- Chamados em aberto (usado pela aba Chamados e pelo badge) ----
             const openTickets = state.contagem.openTickets;
 
-            const openTicketsHtml = openTickets.length === 0 ? '' : `
-                <div style="margin-bottom:4px;">
-                    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-3);margin-bottom:10px;">
-                        <i class="ph ph-circle-notch" style="color:var(--orange);"></i> Chamados em Aberto
-                    </div>
-                    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;">
-                        ${openTickets.map(t => {
-                            const cor = turnoColor(t.turno);
-                            const bg  = turnoBg(t.turno);
-                            const statusLabel = t.hasC2
-                                ? `<span style="font-size:11px;color:var(--green);font-weight:600;"><i class="ph-fill ph-check-circle"></i> C2 feita — dar baixa</span>`
-                                : `<span style="font-size:11px;color:var(--orange);"><i class="ph ph-clock"></i> Aguardando C2</span>`;
-                            const actionBtn = t.hasC2
-                                ? `<button onclick="openTicketForBaixa('${t.date}','${t.turno || ''}','${t.horario || ''}')"
-                                      class="btn-primary" style="width:100%;font-size:12px;padding:8px;background:var(--green);border-color:var(--green);">
-                                      <i class="ph-fill ph-arrow-fat-lines-down"></i> Dar Baixa
-                                   </button>`
-                                : `<button onclick="openTicketForC2('${t.date}','${t.turno || ''}','${t.horario || ''}')"
-                                      class="btn-primary" style="width:100%;font-size:12px;padding:8px;">
-                                      <i class="ph-fill ph-clipboard-check"></i> Fechar (C2)
-                                   </button>`;
-                            return `<div style="border:2px solid ${cor};border-radius:12px;padding:14px;background:${bg};">
-                                <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
-                                    <span style="font-weight:800;font-size:18px;color:${cor};">
-                                        ${t.turno ? `<span style="font-family:var(--font-display);">${t.turno}</span>` : '—'}
-                                    </span>
-                                    <span style="font-size:11px;font-weight:700;text-transform:uppercase;color:${cor};">Turno</span>
-                                </div>
-                                <div style="font-size:12px;font-weight:600;color:var(--text-1);margin-bottom:2px;">${formatDate(t.date)}</div>
-                                ${t.horario ? `<div style="font-size:11px;color:var(--text-3);margin-bottom:8px;">${t.horario}</div>` : '<div style="margin-bottom:8px;"></div>'}
-                                <div style="margin-bottom:10px;">${statusLabel}</div>
-                                ${actionBtn}
-                                <button onclick="deleteContagemDate('${t.date}',1,'${t.turno || ''}')"
-                                    style="width:100%;margin-top:6px;font-size:11px;color:var(--text-3);background:none;border:none;cursor:pointer;padding:4px;">
-                                    <i class="ph ph-trash"></i> Excluir
-                                </button>
-                            </div>`;
-                        }).join('')}
-                    </div>
-                </div>`;
-
             const homeContent = `
-                ${openTicketsHtml}
                 <div class="card">
                     <div class="empty-state" style="padding:32px 20px;">
                         <i class="ph ph-clipboard-text" style="color:var(--text-3);"></i>
-                        <p>${openTickets.length > 0 ? 'Ou inicie uma nova contagem' : 'Nenhum chamado em aberto'}</p>
+                        <p>Inicie uma nova contagem</p>
                         <div style="margin-top:16px;">
                             <button onclick="state.contagem.tab='newContagem';state.contagem.newStep=1;render()" class="btn-primary">
                                 <i class="ph-fill ph-plus-circle"></i> Nova Contagem
@@ -3884,13 +3842,20 @@
                             </div>
                         </div>
                         <div class="nav-menu-body">
-                            ${views.map(v => `
+                            ${views.map(v => {
+                                const openCount = v.id === 'contagem' ? state.contagem.openTickets.length : 0;
+                                const badge = openCount > 0
+                                    ? `<span style="margin-left:auto;background:var(--orange);color:#fff;border-radius:99px;font-size:10px;font-weight:700;padding:2px 8px;min-width:20px;text-align:center;">${openCount}</span>`
+                                    : '';
+                                return `
                                 <button class="nav-menu-item ${state.view === v.id ? 'active' : ''}"
-                                    onclick="closeSidebar(); ${v.id === 'contagem' ? 'navigateToContagem()' : `navigateTo('${v.id}')`}">
+                                    onclick="closeSidebar(); ${v.id === 'contagem' ? 'navigateToContagem()' : `navigateTo('${v.id}')`}"
+                                    style="display:flex;align-items:center;gap:8px;">
                                     <i class="${v.icon}"></i>
-                                    ${v.label}
-                                </button>
-                            `).join('')}
+                                    <span style="flex:1;">${v.label}</span>
+                                    ${badge}
+                                </button>`;
+                            }).join('')}
                         </div>
                         <div class="nav-menu-footer">
                             <div class="nav-menu-user-info">

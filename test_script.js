@@ -1,29 +1,4 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
 
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover">
-    <title>Almoxarifado EPI - GPS Mecanizada</title>
-    <meta name="theme-color" content="#f5f7fa">
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <script src="https://unpkg.com/@phosphor-icons/web"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
-    <link rel="stylesheet" href="css/variables.css">
-    <link rel="stylesheet" href="css/base.css">
-    <link rel="stylesheet" href="css/auth.css">
-    <link rel="stylesheet" href="css/topbar.css">
-</head>
-
-<body>
-    <div id="app"></div>
-    <div id="toast-container"></div>
-
-    <script>
         // ============================================
         // CONFIGURAÇÃO SUPABASE
         // ============================================
@@ -4648,7 +4623,4 @@
             }
             // Token renovado com sucesso — não precisa de ação adicional
         });
-    </script>
-</body>
-
-</html>
+    

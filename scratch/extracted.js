@@ -1,29 +1,5 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
+// Script block 0
 
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover">
-    <title>Almoxarifado EPI - GPS Mecanizada</title>
-    <meta name="theme-color" content="#f5f7fa">
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <script src="https://unpkg.com/@phosphor-icons/web"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
-    <link rel="stylesheet" href="css/variables.css">
-    <link rel="stylesheet" href="css/base.css">
-    <link rel="stylesheet" href="css/auth.css">
-    <link rel="stylesheet" href="css/topbar.css">
-</head>
-
-<body>
-    <div id="app"></div>
-    <div id="toast-container"></div>
-
-    <script>
         // ============================================
         // CONFIGURAÇÃO SUPABASE
         // ============================================
@@ -2605,18 +2581,6 @@
         }
 
         // ============================================
-        // HELPERS GLOBAIS — acessíveis por onclick HTML
-        // ============================================
-        function setTurnoNoite(t) {
-            state.contagem.currentSession = Object.assign({}, state.contagem.currentSession || {}, { turno_noite: t });
-            render();
-        }
-        function setTurnoDia(t) {
-            state.contagem.currentSession = Object.assign({}, state.contagem.currentSession || {}, { turno_dia: t });
-            render();
-        }
-
-        // ============================================
         // RENDERIZAÇÃO
         // ============================================
         function render() {
@@ -3960,17 +3924,17 @@
                     // Gera ID sugerido se ainda não tiver
                     const suggestedId = sess.id || generateSessionId(state.contagem.date);
 
-                    function turnoOpts(selected, onChangeFn) {
+                    function turnoOpts(selected, onChange) {
                         return ['A','B','C','D'].map(t => {
                             const sel = selected === t;
-                            return '<button type="button"'
-                                + ' onclick="' + onChangeFn + '(\'' + t + '\');render()"'
-                                + ' style="padding:10px 18px;border-radius:8px;border:2px solid ' + (sel ? turnoColor(t) : 'var(--border)') + ';'
-                                + 'background:' + (sel ? turnoBg(t) : 'var(--bg-1)') + ';'
-                                + 'color:' + (sel ? turnoColor(t) : 'var(--text-2)') + ';'
-                                + 'font-weight:' + (sel ? '800' : '600') + ';font-size:14px;cursor:pointer;transition:all .12s;">'
-                                + ' Turno ' + t
-                                + '</button>';
+                            return `<button type="button"
+                                onclick="${onChange}('${t}');render()"
+                                style="padding:10px 18px;border-radius:8px;border:2px solid ${sel ? turnoColor(t) : 'var(--border)'};
+                                       background:${sel ? turnoBg(t) : 'var(--bg-1)'};
+                                       color:${sel ? turnoColor(t) : 'var(--text-2)'};
+                                       font-weight:${sel ? '800' : '600'};font-size:14px;cursor:pointer;transition:all .12s;">
+                                Turno ${t}
+                            </button>`;
                         }).join('');
                     }
 
@@ -4004,7 +3968,7 @@
                                 <div style="font-weight:700;font-size:13px;color:var(--text-1);margin-bottom:4px;">C1 — Abastecimento (Turno Noite)</div>
                                 <p style="font-size:11px;color:var(--text-3);margin-bottom:10px;">Qual turno vai pegar de 19h às 07h?</p>
                                 <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
-                                    ${turnoOpts(noite, 'setTurnoNoite')}
+                                    ${turnoOpts(noite, `t=>state.contagem.currentSession={...(state.contagem.currentSession||{}),turno_noite:t}`)}
                                 </div>
                                 <div class="field-group" style="margin:0;">
                                     <label class="field-label">Horário de C1</label>
@@ -4029,7 +3993,7 @@
                                 <div style="font-weight:700;font-size:13px;color:var(--text-1);margin-bottom:4px;">C3 — Pós-distribuição ADM</div>
                                 <p style="font-size:11px;color:var(--text-3);margin-bottom:10px;">Qual turno divide com o ADM de 07h às 19h?</p>
                                 <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
-                                    ${turnoOpts(dia, 'setTurnoDia')}
+                                    ${turnoOpts(dia, `t=>state.contagem.currentSession={...(state.contagem.currentSession||{}),turno_dia:t}`)}
                                 </div>
                                 <div class="field-group" style="margin:0;">
                                     <label class="field-label">Horário de C3</label>
@@ -4648,7 +4612,5 @@
             }
             // Token renovado com sucesso — não precisa de ação adicional
         });
-    </script>
-</body>
+    
 
-</html>

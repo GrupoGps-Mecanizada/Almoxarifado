@@ -157,26 +157,39 @@
             // Edição de almoxarifado
             editingWarehouse: null,
 
+            // Modal de Dar Baixa Direta
+            baixaModal: {
+                open: false,
+                item: null,       // item completo
+                size: '',         // tamanho selecionado
+                quantidade: 1,    // qtd a dar baixa
+                motivo: '',       // observações opcionais
+                saving: false
+            },
+
             // Contagem Diária
             contagem: {
                 loading: false,
                 date: getCurrentDate(),
-                entries1: {},        // inputs da Contagem 1 (fim de turno)
-                entries2: {},        // inputs da Contagem 2 (início do próximo turno)
-                todayCounts: {},     // { item_id: { c1: row, c2: row } } para a data selecionada
-                lastC1: {},          // { item_id: row } — C1 mais recente de qualquer data
+                entries1: {},        // C1 — Estoque antes do turno (à tarde)
+                entries2: {},        // C2 — Conferência ao chegar (antes de distribuir ao ADM)
+                entries3: {},        // C3 — Verificação após distribuir ao ADM
+                todayCounts: {},     // { item_id: { c1, c2, c3 } } para a data selecionada
+                lastC1: {},          // { item_id: row } — C1 mais recente
+                lastC2: {},          // { item_id: row } — C2 mais recente
                 saving: false,
-                savedResult: null,   // resultado após salvar C2
-                baixaAplicada: false, // true após dar baixa no estoque via contagem (sessão atual)
-                baixaDates: {},      // { 'YYYY-MM-DD': true } — datas com baixa já aplicada (persistido)
-                tab: 'chamados',      // 'chamados' | 'home' | 'newContagem' | 'history'
+                savedResult: null,   // resultado após salvar C3
+                baixaAplicada: false,
+                baixaDates: {},
+                tab: 'chamados',
                 history: [],
                 historyLoading: false,
-                turno: null,          // 'A' | 'B' | 'C' | 'D'
-                horario: '',          // ex: '07:00–19:00'
-                newStep: 1,           // 1=selecionar turno | 2=data+horário | 3=form C1
-                openTickets: [],      // [{ date, turno, horario, hasC1, hasC2, baixaFeita }]
-                historyTurnoFilter: 'TODOS',  // filtro da aba histórico
+                turno: null,
+                horario: '',
+                newStep: 1,           // 1=selecionar turno | 2=data+horário | 3=form de contagem
+                contagemStep: 1,      // 1=C1 | 2=C2 | 3=C3  (etapa de contagem dentro do step 3)
+                openTickets: [],
+                historyTurnoFilter: 'TODOS',
             }
         };
 
@@ -374,8 +387,8 @@
         // PERSISTÊNCIA DE LOGIN (7 DIAS)
         // ============================================
         // Sessão gerenciada pelo próprio Supabase (persistSession: true por padrão)
-        function saveSession() {} // mantido para compatibilidade — Supabase salva automaticamente
-        function loadSession()  { return null; } // não usado — ver DOMContentLoaded
+        function saveSession() { } // mantido para compatibilidade — Supabase salva automaticamente
+        function loadSession() { return null; } // não usado — ver DOMContentLoaded
         function clearSession() { localStorage.removeItem('epi_session'); }
 
         // ============================================
@@ -551,9 +564,9 @@
                     // 2. Atualizar o estoque do item
                     const { error: itemError } = await sbClient
                         .from('items')
-                        .update({ 
+                        .update({
                             quantidade: item.quantidade,
-                            tamanhos: item.tamanhos 
+                            tamanhos: item.tamanhos
                         })
                         .eq('id', item.id);
 
@@ -565,7 +578,7 @@
                     cache.itemsTimestamp = null;
                     cache.statistics = null;
                     cache.statisticsTimestamp = null;
-                    
+
                     loadItems(true);
                     return { success: true };
                 } catch (error) {
@@ -782,11 +795,11 @@
                     // ou que exista uma constraint no banco rejeitando o type 'TRANSFERENCIA'.
                     console.warn('Retentando sem destination_warehouse_id ou ajustando type:', movResult.error.message);
                     const { destination_warehouse_id, ...movFallback } = movementPayload;
-                    
+
                     // Fallback para tipo existente caso a constraint do banco rejeite TRANSFERENCIA
                     movFallback.type = 'SAIDA';
                     movFallback.observations = '[TRANSFERÊNCIA] ' + (movFallback.observations || '');
-                    
+
                     movResult = await sbClient.from('movements').insert([movFallback]);
                     if (movResult.error) throw movResult.error;
                 }
@@ -1496,6 +1509,166 @@
             goBack();
         }
 
+        async function transferItems() {
+            const op = state.transferOperation;
+            if (!op.active || !op.selectedItem || op.quantity < 1) return;
+            // Se o destino for "Dar Baixa", redireciona para a funcao correta
+            if (op.toWarehouse === 'DAR_BAIXA') {
+                await transferDarBaixa();
+                return;
+            }
+            if (op.fromWarehouse === op.toWarehouse) {
+                showToast('Origem e destino não podem ser iguais', 'warning');
+                return;
+            }
+
+            const fromItem = state.items.find(i => i.id === op.selectedItem);
+            const toItem = state.items.find(i => i.nome === fromItem.nome && i.warehouse_id === op.toWarehouse);
+
+            let fromTamanhos = { ...(fromItem.tamanhos || {}) };
+            let toTamanhos = toItem ? { ...(toItem.tamanhos || {}) } : {};
+            let fromQtd = fromItem.quantidade;
+            let toQtd = toItem ? toItem.quantidade : 0;
+
+            if (op.size) {
+                if (!fromTamanhos[op.size] || fromTamanhos[op.size] < op.quantity) {
+                    showToast('Quantidade indisponível neste tamanho', 'error');
+                    return;
+                }
+                fromTamanhos[op.size] -= op.quantity;
+                toTamanhos[op.size] = (toTamanhos[op.size] || 0) + op.quantity;
+            } else {
+                if (fromQtd < op.quantity) {
+                    showToast('Quantidade indisponível', 'error');
+                    return;
+                }
+            }
+
+            fromQtd -= op.quantity;
+            toQtd += op.quantity;
+
+            state.loadingMessage = 'Transferindo...';
+            render();
+
+            try {
+                const { error: err1 } = await sbClient
+                    .from('items')
+                    .update({ quantidade: fromQtd, tamanhos: fromTamanhos })
+                    .eq('id', fromItem.id);
+                if (err1) throw err1;
+
+                if (toItem) {
+                    const { error: err2 } = await sbClient
+                        .from('items')
+                        .update({ quantidade: toQtd, tamanhos: toTamanhos })
+                        .eq('id', toItem.id);
+                    if (err2) throw err2;
+                } else {
+                    const newItem = {
+                        nome: fromItem.nome,
+                        codigo_totvs: fromItem.codigo_totvs,
+                        unidade_medida: fromItem.unidade_medida,
+                        estoque_minimo: fromItem.estoque_minimo,
+                        categoria: fromItem.categoria,
+                        tamanhos: toTamanhos,
+                        quantidade: toQtd,
+                        warehouse_id: op.toWarehouse
+                    };
+                    const { error: err3 } = await sbClient
+                        .from('items')
+                        .insert([newItem]);
+                    if (err3) throw err3;
+                }
+
+                const { error: err4 } = await sbClient.from('movements').insert({
+                    date: getCurrentDate(),
+                    type: 'TRANSFERENCIA',
+                    item_id: fromItem.id,
+                    item_name: fromItem.nome,
+                    quantity: op.quantity,
+                    warehouse_id: op.fromWarehouse,
+                    destination_warehouse_id: op.toWarehouse,
+                    user_name: state.user.nome,
+                    observations: op.observations || `Transferência de ${op.quantity} unid${op.size ? ' tam ' + op.size : ''} para ${state.warehouses.find(w => w.id === op.toWarehouse)?.nome}`,
+                    size: op.size || null
+                });
+                if (err4) throw err4;
+
+                showToast('Transferência realizada com sucesso!', 'success');
+                cache.items = null;
+                cache.movements = null;
+                await loadItems();
+                cancelTransfer();
+
+            } catch (err) {
+                console.error(err);
+                showToast('Erro ao transferir item', 'error');
+                state.loadingMessage = null;
+                render();
+            }
+        }
+
+        async function transferDarBaixa() {
+            const op = state.transferOperation;
+            if (!op.active || !op.selectedItem || op.quantity < 1) return;
+
+            const fromItem = state.items.find(i => i.id === op.selectedItem);
+
+            let fromTamanhos = { ...(fromItem.tamanhos || {}) };
+            let fromQtd = fromItem.quantidade;
+
+            if (op.size) {
+                if (!fromTamanhos[op.size] || fromTamanhos[op.size] < op.quantity) {
+                    showToast('Quantidade indisponível neste tamanho', 'error');
+                    return;
+                }
+                fromTamanhos[op.size] -= op.quantity;
+            } else {
+                if (fromQtd < op.quantity) {
+                    showToast('Quantidade indisponível', 'error');
+                    return;
+                }
+            }
+
+            fromQtd -= op.quantity;
+
+            state.loadingMessage = 'Dando baixa...';
+            render();
+
+            try {
+                const { error: err1 } = await sbClient
+                    .from('items')
+                    .update({ quantidade: fromQtd, tamanhos: fromTamanhos })
+                    .eq('id', fromItem.id);
+                if (err1) throw err1;
+
+                const { error: err4 } = await sbClient.from('movements').insert({
+                    date: getCurrentDate(),
+                    type: 'SAIDA',
+                    item_id: fromItem.id,
+                    item_name: fromItem.nome,
+                    quantity: op.quantity,
+                    warehouse_id: op.fromWarehouse,
+                    user_name: state.user.nome,
+                    observations: op.observations || `Baixa de ${op.quantity} unid${op.size ? ' tam ' + op.size : ''} via menu Transferência`,
+                    size: op.size || null
+                });
+                if (err4) throw err4;
+
+                showToast('Baixa realizada com sucesso!', 'success');
+                cache.items = null;
+                cache.movements = null;
+                await loadItems();
+                cancelTransfer();
+
+            } catch (err) {
+                console.error(err);
+                showToast('Erro ao dar baixa', 'error');
+                state.loadingMessage = null;
+                render();
+            }
+        }
+
         async function handleSaveWarehouse(e, id) {
             e.preventDefault();
             const nome = document.getElementById(`wh-nome-${id}`).value.trim();
@@ -1551,12 +1724,14 @@
         function navigateToContagem() {
             state.contagem.entries1 = {};
             state.contagem.entries2 = {};
+            state.contagem.entries3 = {};
             state.contagem.savedResult = null;
             state.contagem.baixaAplicada = false;
             state.contagem.todayCounts = {};
             state.contagem.turno = null;
             state.contagem.horario = '';
             state.contagem.newStep = 1;
+            state.contagem.contagemStep = 1;
             state.contagem.tab = 'chamados';
             navigateTo('contagem');
             loadContagemHistory();
@@ -1567,9 +1742,11 @@
             state.contagem.turno = turno || null;
             state.contagem.horario = horario || '';
             state.contagem.entries2 = {};
+            state.contagem.entries3 = {};
             state.contagem.savedResult = null;
             state.contagem.baixaAplicada = false;
             state.contagem.newStep = 3;
+            state.contagem.contagemStep = 2;
             state.contagem.tab = 'newContagem';
             state.contagem.loading = true;
             render();
@@ -1594,21 +1771,43 @@
             if (itemIds.length === 0) { state.contagem.loading = false; render(); return; }
             try {
                 let q = sbClient.from('daily_counts').select('*').in('item_id', itemIds).eq('date', date);
-                if (turno) q = q.eq('turno', turno);
+                if (turno) {
+                    q = q.eq('turno', turno);
+                } else {
+                    q = q.is('turno', null);
+                }
                 const { data } = await q;
-                const c1Map = {}, c2Map = {};
+                const c1Map = {}, c2Map = {}, c3Map = {};
                 (data || []).forEach(r => {
                     if (r.contagem_num === 1) c1Map[r.item_id] = r;
                     if (r.contagem_num === 2) c2Map[r.item_id] = r;
+                    if (r.contagem_num === 3) c3Map[r.item_id] = r;
                 });
-                const result = Object.values(c2Map).map(row => {
-                    const c1 = c1Map[row.item_id];
-                    const saida = c1 != null ? c1.quantidade - row.quantidade : null;
-                    return { item_id: row.item_id, item_name: row.item_name, saida, c1_qtd: c1?.quantidade ?? null, c1_date: c1?.date ?? null, c2_qtd: row.quantidade };
+                
+                const allItemIdsWithCounts = new Set([...Object.keys(c1Map), ...Object.keys(c2Map), ...Object.keys(c3Map)]);
+                const result = Array.from(allItemIdsWithCounts).map(itemId => {
+                    const c1 = c1Map[itemId];
+                    const c2 = c2Map[itemId];
+                    const c3 = c3Map[itemId];
+                    
+                    const saida = (c1 != null && c2 != null) ? c1.quantidade - c2.quantidade : null;
+                    const saida_adm = (c2 != null && c3 != null) ? c2.quantidade - c3.quantidade : null;
+                    
+                    return { 
+                        item_id: itemId, 
+                        item_name: (c1 || c2 || c3).item_name, 
+                        saida, 
+                        saida_adm,
+                        c1_qtd: c1?.quantidade ?? null, 
+                        c1_date: c1?.date ?? null, 
+                        c2_qtd: c2?.quantidade ?? null,
+                        c3_qtd: c3?.quantidade ?? null
+                    };
                 });
                 state.contagem.savedResult = result.length > 0 ? result : null;
                 state.contagem.lastC1 = c1Map;
-            } catch (e) { console.error(e); }
+                state.contagem.lastC2 = c2Map;
+            } catch (e) { console.error('Erro loadContagemAndBuildResult:', e); }
             state.contagem.loading = false;
             render();
         }
@@ -1623,7 +1822,7 @@
             try {
                 const itemIds = alm2Items.map(i => i.id);
 
-                // C1 mais recente por item em qualquer data (referência para Contagem de Saída)
+                // C1 mais recente por item (qualquer data) — referência para cálculo de saída
                 const { data: allC1 } = await sbClient
                     .from('daily_counts')
                     .select('*')
@@ -1635,7 +1834,19 @@
                 if (allC1) allC1.forEach(row => { if (!lastC1[row.item_id]) lastC1[row.item_id] = row; });
                 state.contagem.lastC1 = lastC1;
 
-                // Contagens já salvas para a data selecionada (prefill)
+                // C2 mais recente por item (qualquer data) — referência para cálculo ADM
+                const { data: allC2 } = await sbClient
+                    .from('daily_counts')
+                    .select('*')
+                    .in('item_id', itemIds)
+                    .eq('contagem_num', 2)
+                    .order('date', { ascending: false })
+                    .order('created_at', { ascending: false });
+                const lastC2 = {};
+                if (allC2) allC2.forEach(row => { if (!lastC2[row.item_id]) lastC2[row.item_id] = row; });
+                state.contagem.lastC2 = lastC2;
+
+                // Contagens já salvas para a data/turno selecionados (prefill)
                 let todayQuery = sbClient
                     .from('daily_counts')
                     .select('*')
@@ -1652,18 +1863,22 @@
                 if (todayData) {
                     todayData.forEach(row => {
                         if (!todayCounts[row.item_id]) todayCounts[row.item_id] = {};
-                        todayCounts[row.item_id][row.contagem_num === 2 ? 'c2' : 'c1'] = row;
+                        if (row.contagem_num === 1) todayCounts[row.item_id].c1 = row;
+                        if (row.contagem_num === 2) todayCounts[row.item_id].c2 = row;
+                        if (row.contagem_num === 3) todayCounts[row.item_id].c3 = row;
                     });
                 }
                 state.contagem.todayCounts = todayCounts;
 
-                const entries1 = {}, entries2 = {};
+                const entries1 = {}, entries2 = {}, entries3 = {};
                 Object.entries(todayCounts).forEach(([id, counts]) => {
                     if (counts.c1) entries1[id] = String(counts.c1.quantidade);
                     if (counts.c2) entries2[id] = String(counts.c2.quantidade);
+                    if (counts.c3) entries3[id] = String(counts.c3.quantidade);
                 });
                 state.contagem.entries1 = entries1;
                 state.contagem.entries2 = entries2;
+                state.contagem.entries3 = entries3;
 
             } catch (e) {
                 console.error('Erro ao carregar contagens:', e);
@@ -1673,7 +1888,9 @@
         }
 
         async function saveContagem(num) {
-            const entries = num === 1 ? state.contagem.entries1 : state.contagem.entries2;
+            const entries = num === 1 ? state.contagem.entries1
+                         : num === 2 ? state.contagem.entries2
+                         : state.contagem.entries3;
             const validEntries = Object.entries(entries)
                 .filter(([, qty]) => qty !== '' && qty !== null && qty !== undefined);
             if (validEntries.length === 0) {
@@ -1711,38 +1928,48 @@
                 // Atualiza estado local
                 rows.forEach(row => {
                     if (!state.contagem.todayCounts[row.item_id]) state.contagem.todayCounts[row.item_id] = {};
-                    state.contagem.todayCounts[row.item_id][num === 1 ? 'c1' : 'c2'] = row;
+                    const key = num === 1 ? 'c1' : num === 2 ? 'c2' : 'c3';
+                    state.contagem.todayCounts[row.item_id][key] = row;
                 });
 
-                if (num === 2) {
-                    // Saída = C1 mais recente (qualquer data) - C2 atual
+                if (num === 3) {
+                    // Saída ADM = C2 (início do turno) - C3 (pós-distribuição)
                     const result = rows.map(row => {
+                        const c2 = state.contagem.todayCounts[row.item_id]?.c2
+                               ?? state.contagem.lastC2[row.item_id];
                         const c1 = state.contagem.lastC1[row.item_id];
-                        const saida = c1 != null ? c1.quantidade - row.quantidade : null;
+                        const saidaADM = c2 != null ? c2.quantidade - row.quantidade : null;
+                        const saidaTurno = c1 != null && c2 != null ? c1.quantidade - c2.quantidade : null;
                         return {
                             item_id: row.item_id,
                             item_name: row.item_name,
-                            saida,
                             c1_qtd: c1?.quantidade ?? null,
                             c1_date: c1?.date ?? null,
-                            c2_qtd: row.quantidade
+                            c2_qtd: c2?.quantidade ?? null,
+                            c3_qtd: row.quantidade,
+                            saida: saidaTurno,      // usado pela aplicarBaixaContagem (consumo do turno)
+                            saida_adm: saidaADM,    // distribuição ao ADM
                         };
                     });
                     state.contagem.savedResult = result;
                     state.contagem.baixaAplicada = false;
-                    state.contagem.history = []; // força recarregar histórico
-                    showToast('Contagem de Saída salva!', 'success');
+                    state.contagem.editingNum = null;
+                    state.contagem.history = [];
+                    showToast('Contagem pós-ADM salva!', 'success');
+                } else if (num === 2) {
+                    // C2 salvo — avança para etapa C3
+                    rows.forEach(row => {
+                        state.contagem.lastC2[row.item_id] = { item_id: row.item_id, date: row.date, quantidade: row.quantidade };
+                    });
+                    state.contagem.contagemStep = 3;
+                    showToast('Conferência de chegada salva! Agora faça a contagem pós-ADM.', 'success');
                 } else {
-                    // Atualiza lastC1 com os novos valores salvos hoje
+                    // C1 salvo — atualiza lastC1 e avança para C2
                     rows.forEach(row => {
                         state.contagem.lastC1[row.item_id] = { item_id: row.item_id, date: row.date, quantidade: row.quantidade };
                     });
-                    showToast('Contagem de Entrega salva!', 'success');
-                    state.contagem.tab = 'chamados';
-                    state.contagem.turno = null;
-                    state.contagem.horario = '';
-                    state.contagem.newStep = 1;
-                    loadContagemHistory();
+                    state.contagem.contagemStep = 2;
+                    showToast('Contagem de Entrega salva! Prossiga com a Conferência de Chegada.', 'success');
                 }
             } catch (e) {
                 showToast('Erro ao salvar contagem', 'error');
@@ -1814,6 +2041,97 @@
             render();
         }
 
+        function openBaixaModal(itemId) {
+            const item = state.items.find(i => i.id === itemId);
+            if (!item) return;
+            state.baixaModal = {
+                open: true,
+                item: item,
+                size: '',
+                quantidade: 1,
+                motivo: '',
+                saving: false
+            };
+            render();
+        }
+
+        async function confirmDarBaixa() {
+            const m = state.baixaModal;
+            const item = m.item;
+            if (!item) return;
+
+            const hasSizes = item.tamanhos && Object.keys(item.tamanhos).length > 0;
+            if (hasSizes && !m.size) {
+                showToast('Selecione o tamanho primeiro', 'error');
+                return;
+            }
+
+            const qty = Math.max(1, parseInt(m.quantidade) || 1);
+            const maxQty = hasSizes ? (item.tamanhos[m.size] || 0) : item.quantidade;
+            if (qty > maxQty) {
+                showToast(`Quantidade maior que o estoque disponível (${maxQty})`, 'error');
+                return;
+            }
+
+            state.baixaModal.saving = true;
+            render();
+
+            try {
+                let updPayload = {};
+                if (hasSizes) {
+                    // Atualiza apenas o tamanho selecionado dentro do jsonb
+                    const novosTamanhos = { ...item.tamanhos };
+                    novosTamanhos[m.size] = Math.max(0, (novosTamanhos[m.size] || 0) - qty);
+                    // Recalcula quantidade total somando todos os tamanhos
+                    const novaQtdTotal = Object.values(novosTamanhos).reduce((a, b) => a + b, 0);
+                    updPayload = { quantidade: novaQtdTotal, tamanhos: novosTamanhos };
+                } else {
+                    updPayload = { quantidade: Math.max(0, item.quantidade - qty) };
+                }
+
+                const { error: updErr } = await sbClient
+                    .from('items')
+                    .update(updPayload)
+                    .eq('id', item.id);
+                if (updErr) throw updErr;
+
+                const warehouseNome = state.warehouses.find(w => w.id === (item.warehouse_id || 'alm-1'))?.nome || (item.warehouse_id || 'alm-1');
+                const tamLabel = hasSizes ? ` [${m.size}]` : '';
+                const obs = m.motivo
+                    ? `Baixa Direta${tamLabel} — ${m.motivo}`
+                    : `Baixa Direta${tamLabel} — via painel de estoque (${warehouseNome})`;
+
+                await sbClient.from('movements').insert({
+                    date: new Date().toISOString().slice(0, 10),
+                    type: 'SAIDA',
+                    item_id: item.id,
+                    item_name: item.nome,
+                    quantity: qty,
+                    warehouse_id: item.warehouse_id || 'alm-1',
+                    user_name: state.user.nome,
+                    observations: obs
+                });
+
+                // Atualiza estado local
+                if (hasSizes) {
+                    item.tamanhos[m.size] = Math.max(0, (item.tamanhos[m.size] || 0) - qty);
+                    item.quantidade = Object.values(item.tamanhos).reduce((a, b) => a + b, 0);
+                } else {
+                    item.quantidade = Math.max(0, item.quantidade - qty);
+                }
+                cache.items = null;
+                cache.movements = null;
+
+                showToast(`Baixa de ${qty} ${item.unidade} de "${item.nome}" registrada!`, 'success');
+                state.baixaModal.open = false;
+            } catch (e) {
+                showToast('Erro ao dar baixa: ' + (e.message || e), 'error');
+                console.error(e);
+            }
+            state.baixaModal.saving = false;
+            render();
+        }
+
         async function deleteContagemDate(date, num, turno) {
             const tipo = num === 2 ? 'Contagem de Saída' : 'Contagem de Entrega';
             const turnoLabel = turno ? ` (Turno ${turno})` : '';
@@ -1842,14 +2160,19 @@
         }
 
         function editContagemDate(date, num, turno, horario) {
+            // 'num' = 1, 2 ou 3 — abre a etapa correspondente para correção
+            state.contagem.editingNum = num;
             state.contagem.date = date;
             state.contagem.turno = turno || null;
             state.contagem.horario = horario || '';
             state.contagem.entries1 = {};
             state.contagem.entries2 = {};
+            state.contagem.entries3 = {};
+            state.contagem.lastC2 = {};
             state.contagem.savedResult = null;
             state.contagem.baixaAplicada = false;
             state.contagem.todayCounts = {};
+            state.contagem.contagemStep = num;   // abre diretamente na etapa correta
             state.contagem.newStep = 3;
             state.contagem.tab = 'newContagem';
             state.contagem.loading = true;
@@ -1897,15 +2220,16 @@
                     state.contagem.baixaAplicada = true;
                 }
 
-                // Computa openTickets: grupos (date, turno) com C1 mas sem baixa
+                // Computa openTickets: grupos (date, turno) com pelo menos C1 mas sem baixa
                 const groups = {};
                 (countsRes.data || []).forEach(row => {
                     const key = `${row.date}_${row.turno || 'null'}`;
                     if (!groups[key]) {
-                        groups[key] = { date: row.date, turno: row.turno || null, horario: row.horario || '', hasC1: false, hasC2: false };
+                        groups[key] = { date: row.date, turno: row.turno || null, horario: row.horario || '', hasC1: false, hasC2: false, hasC3: false };
                     }
                     if (row.contagem_num === 1) groups[key].hasC1 = true;
                     if (row.contagem_num === 2) groups[key].hasC2 = true;
+                    if (row.contagem_num === 3) groups[key].hasC3 = true;
                 });
                 state.contagem.openTickets = Object.values(groups)
                     .filter(g => {
@@ -1925,7 +2249,7 @@
         function switchContagemTab(tab) {
             state.contagem.tab = tab;
             const needsLoad = (tab === 'history' && state.contagem.history.length === 0)
-                           || (tab === 'chamados' && state.contagem.openTickets.length === 0 && !state.contagem.historyLoading);
+                || (tab === 'chamados' && state.contagem.openTickets.length === 0 && !state.contagem.historyLoading);
             if (needsLoad) {
                 loadContagemHistory();
             } else {
@@ -2222,18 +2546,18 @@
             const wasSearchFocused = document.activeElement?.id === 'global-search';
 
             switch (state.view) {
-                case 'checking':   app.innerHTML = renderLoading();          break;
-                case 'login':      app.innerHTML = renderLogin();            break;
-                case 'dashboard':  app.innerHTML = renderDashboard();        break;
-                case 'analytics':  app.innerHTML = renderAnalytics();        break;
-                case 'stock':      app.innerHTML = renderStock();            break;
+                case 'checking': app.innerHTML = renderLoading(); break;
+                case 'login': app.innerHTML = renderLogin(); break;
+                case 'dashboard': app.innerHTML = renderDashboard(); break;
+                case 'analytics': app.innerHTML = renderAnalytics(); break;
+                case 'stock': app.innerHTML = renderStock(); break;
                 case 'movementSelector': app.innerHTML = renderMovementSelector(); break;
-                case 'movement':   app.innerHTML = renderMovement();         break;
-                case 'history':    app.innerHTML = renderHistory();          break;
-                case 'editItem':   app.innerHTML = renderEditItem();         break;
-                case 'warehouses': app.innerHTML = renderWarehouses();       break;
-                case 'contagem':   app.innerHTML = renderContagem();         break;
-                case 'transfer':   app.innerHTML = renderTransfer();         break;
+                case 'movement': app.innerHTML = renderMovement(); break;
+                case 'history': app.innerHTML = renderHistory(); break;
+                case 'editItem': app.innerHTML = renderEditItem(); break;
+                case 'warehouses': app.innerHTML = renderWarehouses(); break;
+                case 'contagem': app.innerHTML = renderContagem(); break;
+                case 'transfer': app.innerHTML = renderTransfer(); break;
             }
 
             // Restaura foco no campo de busca da topbar após re-render
@@ -2244,7 +2568,7 @@
         }
 
         function renderLoading() {
-    return `
+            return `
         <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg-0);">
             <div style="width:260px;text-align:center;">
                 <div style="font-weight:800;font-size:16px;color:#0f3868;margin-bottom:3px;">Grupo GPS</div>
@@ -2256,10 +2580,10 @@
             </div>
         </div>
     `;
-}
+        }
 
         function renderLogin() {
-    return `
+            return `
         <div id="login-screen">
             <div class="login-box">
                 <div class="login-header">
@@ -2290,8 +2614,8 @@
                             </div>
                             <button type="submit" class="login-btn" style="margin-top:18px;" ${state.isLoading ? 'disabled' : ''}>
                                 ${state.isLoading
-                                    ? `<i class="ph ph-spinner spin" style="margin-right:6px;"></i>${state.loadingMessage ? state.loadingMessage.toUpperCase() : 'CARREGANDO...'}`
-                                    : '<i class="ph ph-sign-in" style="margin-right:6px;"></i>ENTRAR'}
+                    ? `<i class="ph ph-spinner spin" style="margin-right:6px;"></i>${state.loadingMessage ? state.loadingMessage.toUpperCase() : 'CARREGANDO...'}`
+                    : '<i class="ph ph-sign-in" style="margin-right:6px;"></i>ENTRAR'}
                             </button>
                             <div class="login-error">${state.loginError || ''}</div>
                         </form>
@@ -2301,14 +2625,14 @@
             <div class="login-footer">Desenvolvido por Grupo GPS — Almoxarifado EPI v3.0</div>
         </div>
     `;
-}
+        }
 
         function renderDashboard() {
-    const totalItems = state.items.length;
-    const totalQty = state.items.reduce((s, i) => s + i.quantidade, 0);
-    const lowStock = state.items.filter(i => i.quantidade < 10).length;
+            const totalItems = state.items.length;
+            const totalQty = state.items.reduce((s, i) => s + i.quantidade, 0);
+            const lowStock = state.items.filter(i => i.quantidade < 10).length;
 
-    return `
+            return `
         <div class="page-wrap">
             ${renderHeader()}
             <div class="page-content">
@@ -2400,10 +2724,10 @@
             </div>
         </div>
     `;
-}
+        }
 
         function renderAnalytics() {
-    return `
+            return `
         <div class="page-wrap">
             ${renderHeader()}
             <div class="page-content">
@@ -2445,10 +2769,10 @@
             </div>
         </div>
     `;
-}
+        }
 
         function renderMovementSelector() {
-    return `
+            return `
         <div class="page-wrap">
             ${renderHeader()}
             <div class="page-content-sm">
@@ -2468,17 +2792,17 @@
             </div>
         </div>
     `;
-}
+        }
 
         function renderMovement() {
-    const op = state.movementOperation;
-    const typeInfo = MOVEMENT_TYPES[op.type];
-    const itemsInWarehouse = state.items.filter(item => (item.warehouse_id || 'alm-1') === op.targetWarehouse);
-    const selectedItem = itemsInWarehouse.find(item => item.id === op.selectedItem);
-    const colorMap = { emerald:'green', blue:'blue', purple:'purple', amber:'amber', red:'red', cyan:'cyan' };
-    const colorKey = colorMap[typeInfo.color] || 'gray';
+            const op = state.movementOperation;
+            const typeInfo = MOVEMENT_TYPES[op.type];
+            const itemsInWarehouse = state.items.filter(item => (item.warehouse_id || 'alm-1') === op.targetWarehouse);
+            const selectedItem = itemsInWarehouse.find(item => item.id === op.selectedItem);
+            const colorMap = { emerald: 'green', blue: 'blue', purple: 'purple', amber: 'amber', red: 'red', cyan: 'cyan' };
+            const colorKey = colorMap[typeInfo.color] || 'gray';
 
-    return `
+            return `
         <div class="page-wrap">
             ${renderHeader()}
             <div class="page-content-sm">
@@ -2498,7 +2822,7 @@
                             <div class="grid-2">
                                 ${state.warehouses.map(wh => `
                                     <label class="radio-card ${op.targetWarehouse === wh.id ? 'selected' : ''}">
-                                        <input type="radio" name="targetWarehouse" value="${wh.id}" ${op.targetWarehouse===wh.id?'checked':''}
+                                        <input type="radio" name="targetWarehouse" value="${wh.id}" ${op.targetWarehouse === wh.id ? 'checked' : ''}
                                             onchange="state.movementOperation.targetWarehouse=this.value;state.movementOperation.selectedItem=null;render()" style="width:16px;height:16px;">
                                         <div>
                                             <div class="radio-card-title">${wh.nome}</div>
@@ -2513,12 +2837,12 @@
                             <label class="field-label">Tipo de Entrada *</label>
                             <div class="grid-2">
                                 <label class="radio-card ${!op.createNewItem ? 'selected' : ''}">
-                                    <input type="radio" name="entryType" ${!op.createNewItem?'checked':''}
+                                    <input type="radio" name="entryType" ${!op.createNewItem ? 'checked' : ''}
                                         onchange="state.movementOperation.createNewItem=false;state.movementOperation.selectedItem=null;render()" style="width:16px;height:16px;">
                                     <div><div class="radio-card-title">Item Existente</div><div class="radio-card-sub">Adicionar ao estoque</div></div>
                                 </label>
                                 <label class="radio-card ${op.createNewItem ? 'selected' : ''}">
-                                    <input type="radio" name="entryType" ${op.createNewItem?'checked':''}
+                                    <input type="radio" name="entryType" ${op.createNewItem ? 'checked' : ''}
                                         onchange="state.movementOperation.createNewItem=true;state.movementOperation.selectedItem=null;render()" style="width:16px;height:16px;">
                                     <div><div class="radio-card-title">Novo Item</div><div class="radio-card-sub">Cadastrar e dar entrada</div></div>
                                 </label>
@@ -2533,7 +2857,7 @@
                                 ` : `
                                     <select class="field-input field-select" onchange="state.movementOperation.selectedItem=this.value;state.movementOperation.size=null;render()" required>
                                         <option value="">-- Escolha um item --</option>
-                                        ${itemsInWarehouse.map(item => `<option value="${item.id}" ${op.selectedItem===item.id?'selected':''}>${item.nome} (Estoque: ${item.quantidade})</option>`).join('')}
+                                        ${itemsInWarehouse.map(item => `<option value="${item.id}" ${op.selectedItem === item.id ? 'selected' : ''}>${item.nome} (Estoque: ${item.quantidade})</option>`).join('')}
                                     </select>
                                 `}
                             </div>
@@ -2553,7 +2877,7 @@
                                         <label class="field-label">Tamanho / Numeração *</label>
                                         <select class="field-input field-select" onchange="state.movementOperation.size=this.value;render()" required>
                                             <option value="">-- Selecione --</option>
-                                            ${Object.entries(selectedItem.tamanhos).map(([s,q]) => `<option value="${s}" ${op.size===s?'selected':''}>${s} (Estoque: ${q})</option>`).join('')}
+                                            ${Object.entries(selectedItem.tamanhos).map(([s, q]) => `<option value="${s}" ${op.size === s ? 'selected' : ''}>${s} (Estoque: ${q})</option>`).join('')}
                                         </select>
                                     </div>
                                 ` : `
@@ -2578,20 +2902,20 @@
                                             <label class="field-label">Categoria *</label>
                                             <select class="field-input field-select" onchange="state.movementOperation.newItemCategory=this.value" required>
                                                 <option value="">Selecione...</option>
-                                                <option value="Proteção Individual" ${op.newItemCategory==='Proteção Individual'?'selected':''}>Proteção Individual</option>
-                                                <option value="Ferramentas" ${op.newItemCategory==='Ferramentas'?'selected':''}>Ferramentas</option>
-                                                <option value="Uniformes" ${op.newItemCategory==='Uniformes'?'selected':''}>Uniformes</option>
-                                                <option value="Outros" ${op.newItemCategory==='Outros'?'selected':''}>Outros</option>
+                                                <option value="Proteção Individual" ${op.newItemCategory === 'Proteção Individual' ? 'selected' : ''}>Proteção Individual</option>
+                                                <option value="Ferramentas" ${op.newItemCategory === 'Ferramentas' ? 'selected' : ''}>Ferramentas</option>
+                                                <option value="Uniformes" ${op.newItemCategory === 'Uniformes' ? 'selected' : ''}>Uniformes</option>
+                                                <option value="Outros" ${op.newItemCategory === 'Outros' ? 'selected' : ''}>Outros</option>
                                             </select>
                                         </div>
                                         <div class="field-group">
                                             <label class="field-label">Unidade *</label>
                                             <select class="field-input field-select" onchange="state.movementOperation.newItemUnit=this.value">
-                                                <option value="UN" ${op.newItemUnit==='UN'?'selected':''}>Unidade (UN)</option>
-                                                <option value="PAR" ${op.newItemUnit==='PAR'?'selected':''}>Par (PAR)</option>
-                                                <option value="CX" ${op.newItemUnit==='CX'?'selected':''}>Caixa (CX)</option>
-                                                <option value="KG" ${op.newItemUnit==='KG'?'selected':''}>Kg (KG)</option>
-                                                <option value="LT" ${op.newItemUnit==='LT'?'selected':''}>Litro (LT)</option>
+                                                <option value="UN" ${op.newItemUnit === 'UN' ? 'selected' : ''}>Unidade (UN)</option>
+                                                <option value="PAR" ${op.newItemUnit === 'PAR' ? 'selected' : ''}>Par (PAR)</option>
+                                                <option value="CX" ${op.newItemUnit === 'CX' ? 'selected' : ''}>Caixa (CX)</option>
+                                                <option value="KG" ${op.newItemUnit === 'KG' ? 'selected' : ''}>Kg (KG)</option>
+                                                <option value="LT" ${op.newItemUnit === 'LT' ? 'selected' : ''}>Litro (LT)</option>
                                             </select>
                                         </div>
                                     </div>
@@ -2623,15 +2947,15 @@
             </div>
         </div>
     `;
-}
+        }
 
         function renderStock() {
-    const filteredItems = getFilteredItems();
-    const categories = [...new Set(state.items.map(i => i.categoria))];
-    const activeWh = state.warehouses.find(w => w.id === state.activeWarehouse);
-    const otherWh  = state.warehouses.find(w => w.id !== state.activeWarehouse);
+            const filteredItems = getFilteredItems();
+            const categories = [...new Set(state.items.map(i => i.categoria))];
+            const activeWh = state.warehouses.find(w => w.id === state.activeWarehouse);
+            const otherWh = state.warehouses.find(w => w.id !== state.activeWarehouse);
 
-    return `
+            return `
         <div class="page-wrap">
             ${renderHeader()}
             <div class="page-content">
@@ -2646,21 +2970,21 @@
                 <div class="card" style="padding:0;overflow:hidden;">
                     <div class="tab-bar">
                         ${state.warehouses.map(wh => {
-                            const icon = wh.id === 'alm-1' ? 'warehouse' : wh.id === 'alm-2' ? 'truck' : 'warning-circle';
-                            const isEmg = wh.id === 'alm-emergencial';
-                            const count = wh.id === 'alm-emergencial'
-                                ? (state.emergency.cart.length > 0
-                                    ? `<span class="tab-count" style="background:var(--red);color:#fff;">${state.emergency.cart.length}</span>`
-                                    : `<span class="tab-count">${state.items.filter(i=>(i.warehouse_id||'alm-1')===wh.id).length}</span>`)
-                                : `<span class="tab-count">${state.items.filter(i=>(i.warehouse_id||'alm-1')===wh.id).length}</span>`;
-                            return `<button class="tab-btn ${state.activeWarehouse === wh.id ? 'active' : ''}"
+                const icon = wh.id === 'alm-1' ? 'warehouse' : wh.id === 'alm-2' ? 'truck' : 'warning-circle';
+                const isEmg = wh.id === 'alm-emergencial';
+                const count = wh.id === 'alm-emergencial'
+                    ? (state.emergency.cart.length > 0
+                        ? `<span class="tab-count" style="background:var(--red);color:#fff;">${state.emergency.cart.length}</span>`
+                        : `<span class="tab-count">${state.items.filter(i => (i.warehouse_id || 'alm-1') === wh.id).length}</span>`)
+                    : `<span class="tab-count">${state.items.filter(i => (i.warehouse_id || 'alm-1') === wh.id).length}</span>`;
+                return `<button class="tab-btn ${state.activeWarehouse === wh.id ? 'active' : ''}"
                                 onclick="state.activeWarehouse='${wh.id}';state.filters.category='TODAS';state.filters.searchTerm='';render()"
                                 style="${isEmg && state.activeWarehouse !== wh.id ? 'color:var(--red);' : ''}">
                                 <i class="ph-fill ph-${icon}"></i>
                                 ${wh.nome}
                                 ${count}
                             </button>`;
-                        }).join('')}
+            }).join('')}
                     </div>
                     <div class="info-bar">
                         <div>
@@ -2685,10 +3009,10 @@
                         style="width:auto;padding:7px 12px;font-size:13px;border-radius:20px;background:var(--bg-2);border-color:transparent;"
                         onchange="state.filters.category=this.value;render()">
                         <option value="TODAS">Todas as categorias</option>
-                        ${categories.map(c => `<option value="${c}" ${state.filters.category===c?'selected':''}>${c}</option>`).join('')}
+                        ${categories.map(c => `<option value="${c}" ${state.filters.category === c ? 'selected' : ''}>${c}</option>`).join('')}
                     </select>
                     <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text-2);white-space:nowrap;">
-                        <input type="checkbox" ${state.filters.lowStockOnly?'checked':''} onchange="state.filters.lowStockOnly=this.checked;render()" style="width:15px;height:15px;accent-color:var(--orange);">
+                        <input type="checkbox" ${state.filters.lowStockOnly ? 'checked' : ''} onchange="state.filters.lowStockOnly=this.checked;render()" style="width:15px;height:15px;accent-color:var(--orange);">
                         Estoque baixo
                     </label>
                     ${state.filters.searchTerm || state.filters.category !== 'TODAS' || state.filters.lowStockOnly ? `
@@ -2718,7 +3042,7 @@
                         </div>
                     </div>
                 ` : `
-                    <div class="count-label">Mostrando <strong>${filteredItems.length}</strong> de <strong>${state.items.filter(i=>(i.warehouse_id||'alm-1')===state.activeWarehouse).length}</strong> itens em <strong>${activeWh?.nome}</strong></div>
+                    <div class="count-label">Mostrando <strong>${filteredItems.length}</strong> de <strong>${state.items.filter(i => (i.warehouse_id || 'alm-1') === state.activeWarehouse).length}</strong> itens em <strong>${activeWh?.nome}</strong></div>
                     <div class="grid-cards">
                         ${filteredItems.map(item => `
                             <div class="item-card">
@@ -2733,8 +3057,8 @@
                                 </div>
                                 ${item.tamanhos && Object.keys(item.tamanhos).length > 0 ? `
                                     <div class="sizes-grid">
-                                        ${Object.entries(item.tamanhos).map(([s,q]) => `
-                                            <div class="size-chip"><strong>${s}:</strong> <span class="qty ${q>0?'ok':'low'}">${q}</span></div>
+                                        ${Object.entries(item.tamanhos).map(([s, q]) => `
+                                            <div class="size-chip"><strong>${s}:</strong> <span class="qty ${q > 0 ? 'ok' : 'low'}">${q}</span></div>
                                         `).join('')}
                                     </div>
                                 ` : ''}
@@ -2742,8 +3066,8 @@
                                     <div style="font-size:11px;color:var(--text-2);margin-top:6px;"><i class="ph ph-package"></i> ${item.unidades_por_caixa} un/caixa</div>
                                 ` : ''}
                                 <div class="item-actions">
-                                    <button onclick='openEditItem(${JSON.stringify(item).replace(/'/g,"&#39;")})' class="btn-secondary" style="flex:1;font-size:12px;padding:8px;"><i class="ph ph-pencil-simple"></i> Editar</button>
-                                    <button onclick="state.transferOperation.selectedItem='${item.id}';startTransfer('${item.warehouse_id||'alm-1'}')" class="btn-secondary" style="padding:8px 10px;" title="Transferir"><i class="ph ph-arrows-left-right"></i></button>
+                                    <button onclick='openEditItem(${JSON.stringify(item).replace(/'/g, "&#39;")})' class="btn-secondary" style="flex:1;font-size:12px;padding:8px;"><i class="ph ph-pencil-simple"></i> Editar</button>
+                                    <button onclick="state.transferOperation.selectedItem='${item.id}';startTransfer('${item.warehouse_id || 'alm-1'}')" class="btn-cyan" style="padding:8px 12px;font-size:12px;" title="Transferir / Dar Baixa"><i class="ph ph-arrows-left-right"></i> Transferir</button>
                                     <button onclick="handleDeleteItem('${item.id}')" class="btn-danger" style="padding:8px 10px;"><i class="ph ph-trash"></i></button>
                                 </div>
                             </div>
@@ -2751,10 +3075,80 @@
                     </div>
                 `}
                 `}
+
+                ${state.baixaModal.open ? renderBaixaModal() : ''}
             </div>
         </div>
     `;
-}
+        }
+
+        function renderBaixaModal() {
+            const m = state.baixaModal;
+            const item = m.item;
+            if (!item) return '';
+            const hasSizes = item.tamanhos && Object.keys(item.tamanhos).length > 0;
+            const sizeKeys = hasSizes ? Object.entries(item.tamanhos).filter(([, q]) => q > 0).map(([s]) => s) : [];
+            const maxQty = hasSizes && m.size
+                ? (item.tamanhos[m.size] || 0)
+                : item.quantidade;
+            return `
+            <div style="position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;"
+                 onclick="if(event.target===this){state.baixaModal.open=false;render()}">
+                <div style="position:absolute;inset:0;background:rgba(0,0,0,0.55);backdrop-filter:blur(4px);"></div>
+                <div style="position:relative;background:var(--bg-1);border-radius:var(--radius-lg);padding:28px;width:100%;max-width:420px;box-shadow:0 20px 60px rgba(0,0,0,0.4);border:1px solid var(--border);">
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+                        <div>
+                            <div style="font-weight:800;font-size:16px;color:var(--red);display:flex;align-items:center;gap:8px;">
+                                <i class="ph-fill ph-arrow-fat-lines-down"></i> Dar Baixa
+                            </div>
+                            <div style="font-size:13px;color:var(--text-2);margin-top:3px;font-weight:500;">${item.nome}</div>
+                        </div>
+                        <button onclick="state.baixaModal.open=false;render()" class="btn-icon"><i class="ph ph-x"></i></button>
+                    </div>
+
+                    <div style="display:flex;flex-direction:column;gap:14px;">
+                        ${hasSizes ? `
+                        <div class="field-group">
+                            <label class="field-label">Tamanho / Numeração *</label>
+                            <select class="field-input field-select"
+                                onchange="state.baixaModal.size=this.value;state.baixaModal.quantidade=1;render()">
+                                <option value="">— Selecione o tamanho —</option>
+                                ${sizeKeys.map(s => `<option value="${s}" ${m.size === s ? 'selected' : ''}>${s} — disponível: ${item.tamanhos[s]}</option>`).join('')}
+                            </select>
+                        </div>` : ''}
+
+                        <div class="field-group">
+                            <label class="field-label">Quantidade a dar baixa *</label>
+                            <input class="field-input" type="number" min="1" max="${maxQty}"
+                                value="${m.quantidade}"
+                                ${hasSizes && !m.size ? 'disabled placeholder="Selecione o tamanho primeiro"' : ''}
+                                oninput="state.baixaModal.quantidade=Math.min(${maxQty},Math.max(1,parseInt(this.value)||1))">
+                            <div style="font-size:11px;color:var(--text-3);margin-top:4px;">Disponível em estoque: <strong>${maxQty}</strong> ${item.unidade}</div>
+                        </div>
+
+                        <div class="field-group">
+                            <label class="field-label">Motivo / Observação <span style="color:var(--text-3);font-weight:400;">(opcional)</span></label>
+                            <input class="field-input" type="text" placeholder="Ex: entrega ao colaborador, descarte..."
+                                value="${m.motivo}"
+                                oninput="state.baixaModal.motivo=this.value">
+                        </div>
+
+                        <div style="display:flex;gap:10px;padding-top:4px;">
+                            <button onclick="state.baixaModal.open=false;render()" class="btn-secondary" style="flex:1;">Cancelar</button>
+                            <button onclick="confirmDarBaixa()"
+                                class="btn-primary"
+                                style="flex:2;background:var(--red);border-color:var(--red);"
+                                ${m.saving ? 'disabled' : ''}
+                                ${hasSizes && !m.size ? 'disabled' : ''}>
+                                ${m.saving
+                    ? '<span class="loading-spinner" style="width:14px;height:14px;border-width:2px;"></span> Processando...'
+                    : '<i class="ph-fill ph-arrow-fat-lines-down"></i> Confirmar Baixa'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+        }
 
         function renderEmergencial() {
             const em = state.emergency;
@@ -2801,13 +3195,13 @@
                                 onchange="state.emergency.formItemId=this.value;state.emergency.formSize='';state.emergency.formQty=1;render()">
                                 <option value="">— Selecione —</option>
                                 ${allItems.map(i => {
-                                    const wh = whName(i.warehouse_id || 'alm-1');
-                                    const hasSz = i.tamanhos && Object.keys(i.tamanhos).length > 0;
-                                    const label = hasSz
-                                        ? `[${wh}] ${i.nome} — ${Object.entries(i.tamanhos).filter(([,q])=>q>0).map(([s,q])=>`Tam ${s}:${q}`).join(', ')}`
-                                        : `[${wh}] ${i.nome} — disp: ${i.quantidade} ${i.unidade}`;
-                                    return `<option value="${i.id}" ${em.formItemId===i.id?'selected':''}>${label}</option>`;
-                                }).join('')}
+                const wh = whName(i.warehouse_id || 'alm-1');
+                const hasSz = i.tamanhos && Object.keys(i.tamanhos).length > 0;
+                const label = hasSz
+                    ? `[${wh}] ${i.nome} — ${Object.entries(i.tamanhos).filter(([, q]) => q > 0).map(([s, q]) => `Tam ${s}:${q}`).join(', ')}`
+                    : `[${wh}] ${i.nome} — disp: ${i.quantidade} ${i.unidade}`;
+                return `<option value="${i.id}" ${em.formItemId === i.id ? 'selected' : ''}>${label}</option>`;
+            }).join('')}
                             </select>
                         </div>
                         ${emgSelectedItem ? (emgHasSizes ? `
@@ -2816,9 +3210,9 @@
                             <select class="field-input field-select"
                                 onchange="state.emergency.formSize=this.value;state.emergency.formQty=1;render()">
                                 <option value="">— Selecione o tamanho —</option>
-                                ${Object.entries(emgSelectedItem.tamanhos).filter(([,q])=>q>0).map(([s,q]) =>
-                                    `<option value="${s}" ${em.formSize===s?'selected':''}>${s} — ${q} disponível${q!==1?'is':''}</option>`
-                                ).join('')}
+                                ${Object.entries(emgSelectedItem.tamanhos).filter(([, q]) => q > 0).map(([s, q]) =>
+                `<option value="${s}" ${em.formSize === s ? 'selected' : ''}>${s} — ${q} disponível${q !== 1 ? 'is' : ''}</option>`
+            ).join('')}
                             </select>
                         </div>` : `
                         <div class="field-group">
@@ -2829,7 +3223,7 @@
                         </div>`) : ''}
                         <div class="field-group">
                             <label class="field-label">Quantidade *</label>
-                            <input class="field-input" type="number" min="1" max="${emgMaxQty||9999}" id="emgQty"
+                            <input class="field-input" type="number" min="1" max="${emgMaxQty || 9999}" id="emgQty"
                                 value="${em.formQty}"
                                 ${emgHasSizes && !em.formSize ? 'disabled' : ''}
                                 oninput="state.emergency.formQty=this.value">
@@ -2847,7 +3241,7 @@
                     </div>
                 </div>` : '';
 
-            const emgItems = state.items.filter(i => (i.warehouse_id||'alm-1') === 'alm-emergencial' && i.quantidade > 0);
+            const emgItems = state.items.filter(i => (i.warehouse_id || 'alm-1') === 'alm-emergencial' && i.quantidade > 0);
             return emgItems.length === 0
                 ? `<div class="card"><div class="empty-state"><i class="ph ph-warning-circle"></i><p>Nenhum item no Emergencial</p><div style="margin-top:16px;"><button onclick="startTransfer('alm-1')" class="btn-secondary"><i class="ph ph-arrows-left-right"></i> Transferir do Central</button></div></div></div>`
                 : `<div class="card">
@@ -2869,8 +3263,8 @@
                                 </div>
                                 ${item.tamanhos && Object.keys(item.tamanhos).length > 0 ? `
                                     <div class="sizes-grid" style="margin-top:8px;">
-                                        ${Object.entries(item.tamanhos).map(([s,q]) => `
-                                            <div class="size-chip"><strong>${s}:</strong> <span class="qty ${q>0?'ok':'low'}">${q}</span></div>
+                                        ${Object.entries(item.tamanhos).map(([s, q]) => `
+                                            <div class="size-chip"><strong>${s}:</strong> <span class="qty ${q > 0 ? 'ok' : 'low'}">${q}</span></div>
                                         `).join('')}
                                     </div>` : ''}
                             </div>`).join('')}
@@ -2881,7 +3275,7 @@
 
 
         function renderWarehouses() {
-    return `
+            return `
         <div class="page-wrap">
             ${renderHeader()}
             <div class="page-content-sm">
@@ -2898,7 +3292,7 @@
                                     <div style="font-weight:700;font-size:15px;color:var(--text-1);">${wh.nome}</div>
                                     <div style="font-size:12px;color:var(--text-3);margin-top:2px;">${wh.descricao || ''}</div>
                                 </div>
-                                <span class="badge badge-gray">${state.items.filter(i=>(i.warehouse_id||'alm-1')===wh.id).length} itens</span>
+                                <span class="badge badge-gray">${state.items.filter(i => (i.warehouse_id || 'alm-1') === wh.id).length} itens</span>
                             </div>
                             <form onsubmit="handleSaveWarehouse(event,'${wh.id}')" class="stack-sm">
                                 <div class="field-group">
@@ -2907,7 +3301,7 @@
                                 </div>
                                 <div class="field-group">
                                     <label class="field-label">Descrição</label>
-                                    <input class="field-input" type="text" id="wh-desc-${wh.id}" value="${wh.descricao||''}" placeholder="Descrição opcional">
+                                    <input class="field-input" type="text" id="wh-desc-${wh.id}" value="${wh.descricao || ''}" placeholder="Descrição opcional">
                                 </div>
                                 <div>
                                     <button type="submit" class="btn-primary"><i class="ph ph-floppy-disk"></i> Salvar Alterações</button>
@@ -2919,20 +3313,20 @@
             </div>
         </div>
     `;
-}
+        }
 
         function renderTransfer() {
-    const op = state.transferOperation;
-    const fromWh = state.warehouses.find(w => w.id === op.fromWarehouse);
-    const toWh   = state.warehouses.find(w => w.id === op.toWarehouse);
-    const sourceItems = state.items.filter(i => (i.warehouse_id||'alm-1') === op.fromWarehouse && i.quantidade > 0);
-    const selectedItem = sourceItems.find(i => i.id === op.selectedItem);
-    const hasSizes = selectedItem?.tamanhos && Object.keys(selectedItem.tamanhos).length > 0;
-    const availableQty = hasSizes && op.size
-        ? (selectedItem.tamanhos[op.size] || 0)
-        : (selectedItem?.quantidade || 0);
+            const op = state.transferOperation;
+            const fromWh = state.warehouses.find(w => w.id === op.fromWarehouse);
+            const toWh = state.warehouses.find(w => w.id === op.toWarehouse);
+            const sourceItems = state.items.filter(i => (i.warehouse_id || 'alm-1') === op.fromWarehouse && i.quantidade > 0);
+            const selectedItem = sourceItems.find(i => i.id === op.selectedItem);
+            const hasSizes = selectedItem?.tamanhos && Object.keys(selectedItem.tamanhos).length > 0;
+            const availableQty = hasSizes && op.size
+                ? (selectedItem.tamanhos[op.size] || 0)
+                : (selectedItem?.quantidade || 0);
 
-    return `
+            return `
         <div class="page-wrap">
             ${renderHeader()}
             <div class="page-content-sm">
@@ -2947,8 +3341,8 @@
                             <label class="field-label">De (Origem)</label>
                             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;">
                                 ${state.warehouses.map(wh => `
-                                    <label class="radio-card ${op.fromWarehouse===wh.id?'selected':''}">
-                                        <input type="radio" name="fromWarehouse" value="${wh.id}" ${op.fromWarehouse===wh.id?'checked':''}
+                                    <label class="radio-card ${op.fromWarehouse === wh.id ? 'selected' : ''}">
+                                        <input type="radio" name="fromWarehouse" value="${wh.id}" ${op.fromWarehouse === wh.id ? 'checked' : ''}
                                             onchange="state.transferOperation.fromWarehouse=this.value;state.transferOperation.selectedItem=null;render()" style="width:16px;height:16px;">
                                         <div><div class="radio-card-title">${wh.nome}</div><div class="radio-card-sub">${wh.descricao}</div></div>
                                     </label>
@@ -2960,13 +3354,22 @@
                             <label class="field-label">Para (Destino)</label>
                             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;">
                                 ${state.warehouses.map(wh => `
-                                    <label class="radio-card ${op.toWarehouse===wh.id?'selected':''}">
-                                        <input type="radio" name="toWarehouse" value="${wh.id}" ${op.toWarehouse===wh.id?'checked':''}
+                                    <label class="radio-card ${op.toWarehouse === wh.id ? 'selected' : ''}">
+                                        <input type="radio" name="toWarehouse" value="${wh.id}" ${op.toWarehouse === wh.id ? 'checked' : ''}
                                             onchange="state.transferOperation.toWarehouse=this.value;render()" style="width:16px;height:16px;">
                                         <div><div class="radio-card-title">${wh.nome}</div><div class="radio-card-sub">${wh.descricao}</div></div>
                                     </label>
                                 `).join('')}
+                                <label class="radio-card ${op.toWarehouse === 'DAR_BAIXA' ? 'selected' : ''}" style="${op.toWarehouse === 'DAR_BAIXA' ? 'border-color:var(--red);background:rgba(var(--red-rgb,220,38,38),0.08);' : ''}">
+                                    <input type="radio" name="toWarehouse" value="DAR_BAIXA" ${op.toWarehouse === 'DAR_BAIXA' ? 'checked' : ''}
+                                        onchange="state.transferOperation.toWarehouse=this.value;render()" style="width:16px;height:16px;">
+                                    <div>
+                                        <div class="radio-card-title" style="${op.toWarehouse === 'DAR_BAIXA' ? 'color:var(--red);' : ''}"><i class="ph-fill ph-arrow-fat-lines-down"></i> Dar Baixa</div>
+                                        <div class="radio-card-sub">Saída direta — entrega ao colaborador</div>
+                                    </div>
+                                </label>
                             </div>
+                            ${op.toWarehouse === 'DAR_BAIXA' ? `<div style="margin-top:10px;padding:10px 14px;background:rgba(220,38,38,0.08);border:1px solid var(--red);border-radius:var(--radius);font-size:12px;color:var(--red);display:flex;align-items:center;gap:8px;"><i class="ph ph-info"></i> O item será removido do estoque imediatamente, sem movimentação entre almoxarifados.</div>` : ''}
                         </div>
 
                         <div class="field-group">
@@ -2977,11 +3380,11 @@
                                 <select class="field-input field-select" onchange="state.transferOperation.selectedItem=this.value;state.transferOperation.size=null;render()" required>
                                     <option value="">-- Escolha um item --</option>
                                     ${sourceItems.map(i => {
-                                        const label = i.tamanhos && Object.keys(i.tamanhos).length > 0
-                                            ? `${i.nome} — ${Object.entries(i.tamanhos).filter(([,q])=>q>0).map(([s,q])=>`Tam ${s}: ${q}`).join(', ')}`
-                                            : `${i.nome} (Disponível: ${i.quantidade})`;
-                                        return `<option value="${i.id}" ${op.selectedItem===i.id?'selected':''}>${label}</option>`;
-                                    }).join('')}
+                const label = i.tamanhos && Object.keys(i.tamanhos).length > 0
+                    ? `${i.nome} — ${Object.entries(i.tamanhos).filter(([, q]) => q > 0).map(([s, q]) => `Tam ${s}: ${q}`).join(', ')}`
+                    : `${i.nome} (Disponível: ${i.quantidade})`;
+                return `<option value="${i.id}" ${op.selectedItem === i.id ? 'selected' : ''}>${label}</option>`;
+            }).join('')}
                                 </select>
                             `}
                         </div>
@@ -3003,7 +3406,7 @@
                                     <label class="field-label">Tamanho / Numeração *</label>
                                     <select class="field-input field-select" onchange="state.transferOperation.size=this.value;state.transferOperation.quantity=1;render()" required>
                                         <option value="">-- Selecione --</option>
-                                        ${Object.entries(selectedItem.tamanhos).filter(([,q])=>q>0).map(([s,q]) => `<option value="${s}" ${op.size===s?'selected':''}>${s} — ${q} disponível${q!==1?'is':''}</option>`).join('')}
+                                        ${Object.entries(selectedItem.tamanhos).filter(([, q]) => q > 0).map(([s, q]) => `<option value="${s}" ${op.size === s ? 'selected' : ''}>${s} — ${q} disponível${q !== 1 ? 'is' : ''}</option>`).join('')}
                                     </select>
                                 </div>
                             ` : `
@@ -3018,7 +3421,7 @@
 
                         <div class="field-group">
                             <label class="field-label">Quantidade *</label>
-                            <input class="field-input" type="number" value="${op.quantity}" oninput="state.transferOperation.quantity=parseInt(this.value)||1" min="1" max="${availableQty||9999}" ${hasSizes && !op.size ? 'disabled' : ''} required>
+                            <input class="field-input" type="number" value="${op.quantity}" oninput="state.transferOperation.quantity=parseInt(this.value)||1" min="1" max="${availableQty || 9999}" ${hasSizes && !op.size ? 'disabled' : ''} required>
                             ${availableQty > 0 ? `<div style="font-size:11px;color:var(--text-3);margin-top:4px;">Máximo disponível: ${availableQty}</div>` : ''}
                         </div>
                         <div class="field-group">
@@ -3026,27 +3429,32 @@
                             <textarea class="field-input" rows="2" oninput="state.transferOperation.observations=this.value" placeholder="Motivo da transferência">${op.observations}</textarea>
                         </div>
 
-                        <div class="row-end" style="padding-top:8px;">
+                        <div class="row-end" style="padding-top:8px; gap: 8px;">
                             <button type="button" onclick="goBack()" class="btn-ghost">CANCELAR</button>
-                            <button type="submit" class="btn-cyan" style="min-width:160px;">
-                                <i class="ph ph-arrows-left-right"></i> CONFIRMAR TRANSFERÊNCIA
-                            </button>
+                            ${op.toWarehouse === 'DAR_BAIXA'
+                                ? `<button type="button" onclick="transferDarBaixa()" class="btn-primary" style="min-width:160px;background:var(--red);border-color:var(--red);">
+                                        <i class="ph-fill ph-arrow-fat-lines-down"></i> CONFIRMAR BAIXA
+                                   </button>`
+                                : `<button type="submit" class="btn-cyan" style="min-width:160px;">
+                                        <i class="ph ph-arrows-left-right"></i> CONFIRMAR TRANSFERÊNCIA
+                                   </button>`
+                            }
                         </div>
                     </form>
                 </div>
             </div>
         </div>
     `;
-}
+        }
 
         function renderHistory() {
-    const filteredMovements = getFilteredMovements();
-    const paginatedMovements = getPaginatedMovements();
-    const totalPages = Math.ceil(filteredMovements.length / state.itemsPerPage);
+            const filteredMovements = getFilteredMovements();
+            const paginatedMovements = getPaginatedMovements();
+            const totalPages = Math.ceil(filteredMovements.length / state.itemsPerPage);
 
-    const typeColorMap = { emerald:'green', blue:'blue', purple:'purple', amber:'amber', red:'red', cyan:'cyan', slate:'gray' };
+            const typeColorMap = { emerald: 'green', blue: 'blue', purple: 'purple', amber: 'amber', red: 'red', cyan: 'cyan', slate: 'gray' };
 
-    return `
+            return `
         <div class="page-wrap">
             ${renderHeader()}
             <div class="page-content">
@@ -3069,8 +3477,8 @@
                         <div class="field-group">
                             <label class="field-label">Tipo</label>
                             <select class="field-input field-select" onchange="state.filters.type=this.value">
-                                <option value="TODOS" ${state.filters.type==='TODOS'?'selected':''}>Todos</option>
-                                ${Object.entries(MOVEMENT_TYPES).map(([code,info]) => `<option value="${code}" ${state.filters.type===code?'selected':''}>${info.label}</option>`).join('')}
+                                <option value="TODOS" ${state.filters.type === 'TODOS' ? 'selected' : ''}>Todos</option>
+                                ${Object.entries(MOVEMENT_TYPES).map(([code, info]) => `<option value="${code}" ${state.filters.type === code ? 'selected' : ''}>${info.label}</option>`).join('')}
                             </select>
                         </div>
                     </div>
@@ -3078,7 +3486,7 @@
                         <label class="field-label">Pesquisar</label>
                         <input class="field-input" type="text" value="${state.filters.searchTerm}" oninput="handleSearchInput(this.value)" placeholder="Buscar por item, colaborador, fornecedor...">
                     </div>
-                    <button onclick="applyFilters()" class="btn-secondary" ${state.isLoading?'disabled':''}>
+                    <button onclick="applyFilters()" class="btn-secondary" ${state.isLoading ? 'disabled' : ''}>
                         <i class="ph ph-magnifying-glass"></i> Buscar
                     </button>
                 </div>
@@ -3100,9 +3508,9 @@
                     ` : `
                         <div class="stack-sm">
                             ${paginatedMovements.map(movement => {
-                                const typeInfo = MOVEMENT_TYPES[movement.type] || MOVEMENT_TYPES['AJUSTE'];
-                                const isPositive = typeInfo.sign === '+';
-                                return `
+                const typeInfo = MOVEMENT_TYPES[movement.type] || MOVEMENT_TYPES['AJUSTE'];
+                const isPositive = typeInfo.sign === '+';
+                return `
                                     <div class="movement-row">
                                         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;">
                                             <div style="flex:1;min-width:0;">
@@ -3123,23 +3531,23 @@
                                         </div>
                                     </div>
                                 `;
-                            }).join('')}
+            }).join('')}
                         </div>
 
                         ${totalPages > 1 ? `
                             <div class="pagination">
-                                <button class="page-btn" onclick="changePage(-1)" ${state.currentPage===1?'disabled':''}>
+                                <button class="page-btn" onclick="changePage(-1)" ${state.currentPage === 1 ? 'disabled' : ''}>
                                     <i class="ph ph-caret-left"></i>
                                 </button>
-                                ${Array.from({length: Math.min(totalPages, 5)}, (_,i) => {
-                                    let p;
-                                    if (totalPages <= 5) p = i+1;
-                                    else if (state.currentPage <= 3) p = i+1;
-                                    else if (state.currentPage >= totalPages-2) p = totalPages-4+i;
-                                    else p = state.currentPage-2+i;
-                                    return `<button class="page-btn ${state.currentPage===p?'active':''}" onclick="state.currentPage=${p};render()">${p}</button>`;
-                                }).join('')}
-                                <button class="page-btn" onclick="changePage(1)" ${state.currentPage===totalPages?'disabled':''}>
+                                ${Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                let p;
+                if (totalPages <= 5) p = i + 1;
+                else if (state.currentPage <= 3) p = i + 1;
+                else if (state.currentPage >= totalPages - 2) p = totalPages - 4 + i;
+                else p = state.currentPage - 2 + i;
+                return `<button class="page-btn ${state.currentPage === p ? 'active' : ''}" onclick="state.currentPage=${p};render()">${p}</button>`;
+            }).join('')}
+                                <button class="page-btn" onclick="changePage(1)" ${state.currentPage === totalPages ? 'disabled' : ''}>
                                     <i class="ph ph-caret-right"></i>
                                 </button>
                             </div>
@@ -3149,11 +3557,11 @@
             </div>
         </div>
     `;
-}
+        }
 
         function renderEditItem() {
-    const item = state.editingItem || {};
-    return `
+            const item = state.editingItem || {};
+            return `
         <div class="page-wrap">
             ${renderHeader()}
             <div class="page-content-sm">
@@ -3166,35 +3574,35 @@
                         <div class="grid-2">
                             <div class="field-group" style="grid-column:1/-1;">
                                 <label class="field-label">Nome do Item *</label>
-                                <input class="field-input" type="text" id="itemName" value="${item.nome||''}" placeholder="Ex: Capacete de Segurança" required>
+                                <input class="field-input" type="text" id="itemName" value="${item.nome || ''}" placeholder="Ex: Capacete de Segurança" required>
                             </div>
                             <div class="field-group">
                                 <label class="field-label">Categoria *</label>
                                 <select class="field-input field-select" id="itemCategory" required>
                                     <option value="">Selecione...</option>
-                                    <option value="Proteção Individual" ${item.categoria==='Proteção Individual'?'selected':''}>Proteção Individual</option>
-                                    <option value="Ferramentas" ${item.categoria==='Ferramentas'?'selected':''}>Ferramentas</option>
-                                    <option value="Uniformes" ${item.categoria==='Uniformes'?'selected':''}>Uniformes</option>
-                                    <option value="Outros" ${item.categoria==='Outros'?'selected':''}>Outros</option>
+                                    <option value="Proteção Individual" ${item.categoria === 'Proteção Individual' ? 'selected' : ''}>Proteção Individual</option>
+                                    <option value="Ferramentas" ${item.categoria === 'Ferramentas' ? 'selected' : ''}>Ferramentas</option>
+                                    <option value="Uniformes" ${item.categoria === 'Uniformes' ? 'selected' : ''}>Uniformes</option>
+                                    <option value="Outros" ${item.categoria === 'Outros' ? 'selected' : ''}>Outros</option>
                                 </select>
                             </div>
                             <div class="field-group">
                                 <label class="field-label">Unidade *</label>
                                 <select class="field-input field-select" id="itemUnit">
-                                    <option value="UN" ${item.unidade==='UN'?'selected':''}>Unidade (UN)</option>
-                                    <option value="PAR" ${item.unidade==='PAR'?'selected':''}>Par (PAR)</option>
-                                    <option value="CX" ${item.unidade==='CX'?'selected':''}>Caixa (CX)</option>
-                                    <option value="KG" ${item.unidade==='KG'?'selected':''}>Kg (KG)</option>
-                                    <option value="LT" ${item.unidade==='LT'?'selected':''}>Litro (LT)</option>
+                                    <option value="UN" ${item.unidade === 'UN' ? 'selected' : ''}>Unidade (UN)</option>
+                                    <option value="PAR" ${item.unidade === 'PAR' ? 'selected' : ''}>Par (PAR)</option>
+                                    <option value="CX" ${item.unidade === 'CX' ? 'selected' : ''}>Caixa (CX)</option>
+                                    <option value="KG" ${item.unidade === 'KG' ? 'selected' : ''}>Kg (KG)</option>
+                                    <option value="LT" ${item.unidade === 'LT' ? 'selected' : ''}>Litro (LT)</option>
                                 </select>
                             </div>
                                 <div class="field-group">
                                 <label class="field-label">Unidades por Caixa</label>
-                                <input class="field-input" type="number" id="itemUnitsPerBox" value="${item.unidades_por_caixa||1}" min="1">
+                                <input class="field-input" type="number" id="itemUnitsPerBox" value="${item.unidades_por_caixa || 1}" min="1">
                             </div>
                             <div class="field-group" style="grid-column:1/-1;">
                                 <label class="field-label">Observações</label>
-                                <textarea class="field-input" id="itemObs" rows="2" placeholder="Informações adicionais...">${item.observacoes||''}</textarea>
+                                <textarea class="field-input" id="itemObs" rows="2" placeholder="Informações adicionais...">${item.observacoes || ''}</textarea>
                             </div>
                         </div>
 
@@ -3211,7 +3619,7 @@
                         <div id="singleQuantityArea" class="${item.tamanhos && Object.keys(item.tamanhos).length > 0 ? 'hidden' : 'block'}" style="grid-column:1/-1;">
                             <div class="field-group">
                                 <label class="field-label">Quantidade</label>
-                                <input class="field-input" type="number" id="itemQuantity" value="${item.quantidade||0}" min="0">
+                                <input class="field-input" type="number" id="itemQuantity" value="${item.quantidade || 0}" min="0">
                             </div>
                         </div>
 
@@ -3220,13 +3628,13 @@
                                 <label class="field-label">Tamanhos e Quantidades</label>
                                 <div id="sizesList" class="stack-sm">
                                     ${item.tamanhos && Object.keys(item.tamanhos).length > 0
-                                        ? Object.entries(item.tamanhos).map(([s, q]) => `
+                    ? Object.entries(item.tamanhos).map(([s, q]) => `
                                             <div class="flex gap-3 items-center size-row mb-2" style="display:flex;gap:10px;align-items:center;">
                                                 <input type="text" class="size-name field-input" style="width:120px;" placeholder="Ex: 40 ou M" value="${s}" required>
                                                 <input type="number" class="size-qty field-input" style="width:100px;" placeholder="Qtd" value="${q}" min="0" required>
                                                 <button type="button" onclick="this.parentElement.remove()" class="btn-icon" style="color:var(--red)"><i class="ph-bold ph-trash"></i></button>
                                             </div>`).join('')
-                                        : ''}
+                    : ''}
                                 </div>
                                 <button type="button" onclick="addSizeRow()" class="btn-secondary" style="margin-top:10px;">
                                     <i class="ph ph-plus"></i> Adicionar Tamanho
@@ -3245,7 +3653,7 @@
             </div>
         </div>
     `;
-}
+        }
 
         function renderContagem() {
             const alm2Items = state.items
@@ -3267,37 +3675,53 @@
 
             // ---- Helper: tabela de resultado (usada no result e no histórico) ----
             function buildRelatorioTable(itens) {
-                // itens = [{ item_name, c1_qtd, c1_date, c2_qtd, saida }]
-                const hasConsumo = itens.some(r => r.saida > 0);
+                // itens = [{ item_name, c1_qtd, c2_qtd, c3_qtd, saida (turno), saida_adm }]
+                const hasC3 = itens.some(r => r.c3_qtd != null);
                 return `<div style="overflow-x:auto;">
                     <table style="width:100%;border-collapse:collapse;font-size:13px;">
                         <thead>
                             <tr style="border-bottom:2px solid var(--border);">
                                 <th style="text-align:left;padding:8px 4px 8px 0;color:var(--text-3);font-weight:600;font-size:11px;text-transform:uppercase;">Item</th>
-                                <th style="text-align:right;padding:8px 4px;color:var(--text-3);font-weight:600;font-size:11px;text-transform:uppercase;white-space:nowrap;">C1</th>
-                                <th style="text-align:right;padding:8px 4px;color:var(--text-3);font-weight:600;font-size:11px;text-transform:uppercase;white-space:nowrap;">C2</th>
-                                <th style="text-align:right;padding:8px 0 8px 4px;color:var(--text-3);font-weight:600;font-size:11px;text-transform:uppercase;white-space:nowrap;">Consumido</th>
+                                <th style="text-align:right;padding:8px 4px;color:var(--text-3);font-weight:600;font-size:11px;text-transform:uppercase;white-space:nowrap;" title="Estoque fim do turno anterior">C1</th>
+                                <th style="text-align:right;padding:8px 4px;color:var(--text-3);font-weight:600;font-size:11px;text-transform:uppercase;white-space:nowrap;" title="Conferência ao chegar">C2</th>
+                                ${hasC3 ? `<th style="text-align:right;padding:8px 4px;color:var(--text-3);font-weight:600;font-size:11px;text-transform:uppercase;white-space:nowrap;" title="Pós distribuição ADM">C3</th>` : ''}
+                                <th style="text-align:right;padding:8px 4px;color:var(--text-3);font-weight:600;font-size:11px;text-transform:uppercase;white-space:nowrap;">Consumo Turno</th>
+                                ${hasC3 ? `<th style="text-align:right;padding:8px 0 8px 4px;color:var(--text-3);font-weight:600;font-size:11px;text-transform:uppercase;white-space:nowrap;">Dist. ADM</th>` : ''}
                             </tr>
                         </thead>
                         <tbody>
                             ${itens.map(r => {
-                                let consumidoCell;
-                                if (r.saida === null) {
-                                    consumidoCell = `<span style="color:var(--text-3);font-size:11px;">sem C1</span>`;
-                                } else if (r.saida > 0) {
-                                    consumidoCell = `<strong style="color:var(--red);">${r.saida} ${r.unidade || 'unid.'}</strong>`;
-                                } else if (r.saida < 0) {
-                                    consumidoCell = `<span style="color:var(--green);font-size:12px;">+${Math.abs(r.saida)} reposto</span>`;
-                                } else {
-                                    consumidoCell = `<span style="color:var(--text-3);">—</span>`;
-                                }
-                                return `<tr style="border-bottom:1px solid var(--border);">
+                    const saidaTurno = r.saida;
+                    const saidaADM = r.saida_adm ?? null;
+                    let consumidoCell;
+                    if (saidaTurno === null || saidaTurno === undefined) {
+                        consumidoCell = `<span style="color:var(--text-3);font-size:11px;">sem C1</span>`;
+                    } else if (saidaTurno > 0) {
+                        consumidoCell = `<strong style="color:var(--red);">${saidaTurno}</strong>`;
+                    } else if (saidaTurno < 0) {
+                        consumidoCell = `<span style="color:var(--green);font-size:12px;">+${Math.abs(saidaTurno)} rep.</span>`;
+                    } else {
+                        consumidoCell = `<span style="color:var(--text-3);">—</span>`;
+                    }
+                    let admCell = '';
+                    if (hasC3) {
+                        if (saidaADM === null || saidaADM === undefined) {
+                            admCell = `<td style="padding:10px 0 10px 4px;text-align:right;"><span style="color:var(--text-3);font-size:11px;">—</span></td>`;
+                        } else if (saidaADM > 0) {
+                            admCell = `<td style="padding:10px 0 10px 4px;text-align:right;"><strong style="color:#e67e00;">${saidaADM}</strong></td>`;
+                        } else {
+                            admCell = `<td style="padding:10px 0 10px 4px;text-align:right;"><span style="color:var(--text-3);">—</span></td>`;
+                        }
+                    }
+                    return `<tr style="border-bottom:1px solid var(--border);">
                                     <td style="padding:10px 4px 10px 0;font-weight:500;">${r.item_name}</td>
                                     <td style="padding:10px 4px;text-align:right;color:var(--text-2);">${r.c1_qtd ?? '—'}</td>
                                     <td style="padding:10px 4px;text-align:right;color:var(--text-2);">${r.c2_qtd ?? '—'}</td>
-                                    <td style="padding:10px 0 10px 4px;text-align:right;">${consumidoCell}</td>
-                                </tr>`;
-                            }).join('')}
+                                    ${hasC3 ? `<td style="padding:10px 4px;text-align:right;color:var(--text-2);">${r.c3_qtd ?? '—'}</td>` : ''}
+                                     <td style="padding:10px 4px;text-align:right;">${consumidoCell}</td>
+                                     ${admCell}
+                                 </tr>`;
+                }).join('')}
                         </tbody>
                     </table>
                 </div>`;
@@ -3305,13 +3729,7 @@
 
             // ---- Helper: formulário de contagem ----
             function buildCountForm(num) {
-                const entries = num === 1 ? state.contagem.entries1 : state.contagem.entries2;
-                const stateKey = num === 1 ? 'entries1' : 'entries2';
-
-                const savedForNum = Object.values(state.contagem.todayCounts).some(c => num === 1 ? c.c1 : c.c2);
-                const savedBadge = savedForNum
-                    ? `<span class="badge badge-green" style="margin-left:8px;">✓ Salvo</span>`
-                    : '';
+                // Tabela Excel — todas as contagens visíveis ao mesmo tempo
 
                 if (alm2Items.length === 0) {
                     return `<div class="card"><div class="empty-state">
@@ -3321,66 +3739,119 @@
                     </div></div>`;
                 }
 
-                const isC1 = num === 1;
-                const title = isC1 ? 'Contagem 1 — Fim de Turno' : 'Contagem 2 — Início do Próximo Turno';
-                const desc  = isC1
-                    ? 'Realize ao <strong>final do expediente</strong>. Registre a quantidade física de cada EPI disponível.'
-                    : 'Realize no <strong>início do expediente</strong>. O relatório será calculado automaticamente: <strong>C1 − C2 = consumido no turno</strong>.';
-                const btnLabel = isC1
-                    ? `<i class="ph-fill ph-clipboard-text"></i> Salvar C1 e ir para C2`
-                    : `<i class="ph-fill ph-check-circle"></i> Salvar C2 e gerar relatório`;
-
-                const rows = alm2Items.map(item => {
-                    let refHtml = '';
-                    if (num === 2) {
-                        const c1ref = state.contagem.lastC1[item.id];
-                        if (c1ref) {
-                            const dateLabel = c1ref.date === state.contagem.date ? 'hoje' : formatDate(c1ref.date);
-                            refHtml = `<span style="color:var(--text-3);font-size:11px;">C1 (${dateLabel}): <strong style="color:var(--text-2);">${c1ref.quantidade}</strong></span>`;
-                        } else {
-                            refHtml = `<span style="color:var(--text-3);font-size:11px;">sem C1 anterior</span>`;
-                        }
-                    }
-                    const val = entries[item.id] ?? '';
-                    return `<div class="contagem-row ${val !== '' ? 'filled' : ''}">
-                        <div class="contagem-nome">
-                            <span style="font-weight:500;">${item.nome}</span>
-                            <span class="badge badge-gray" style="font-size:10px;margin-left:4px;">${item.unidade}</span>
-                        </div>
-                        ${num === 2 ? `<div class="contagem-ref">${refHtml}</div>` : ''}
-                        <input class="contagem-input" type="number" min="0" placeholder="0" value="${val}"
-                            oninput="state.contagem.${stateKey}['${item.id}']=this.value;this.closest('.contagem-row').classList.toggle('filled',this.value!=='')">
-                    </div>`;
-                }).join('');
+                const hasC1done = Object.values(state.contagem.todayCounts).some(c => c.c1);
+                const hasC2done = Object.values(state.contagem.todayCounts).some(c => c.c2);
+                const hasC3done = Object.values(state.contagem.todayCounts).some(c => c.c3);
 
                 const turnoInfo = state.contagem.turno
-                    ? `<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;padding:8px 12px;background:${turnoBg(state.contagem.turno)};border-radius:8px;border:1px solid ${turnoColor(state.contagem.turno)}33;">
+                    ? `<div style="display:flex;align-items:center;gap:8px;padding:10px 16px;background:${turnoBg(state.contagem.turno)};border-bottom:1px solid ${turnoColor(state.contagem.turno)}33;">
                            ${turnoBadge(state.contagem.turno)}
                            ${state.contagem.horario ? `<span style="font-size:12px;color:var(--text-2);">${state.contagem.horario}</span>` : ''}
                            <span style="font-size:12px;color:var(--text-2);">${formatDate(state.contagem.date)}</span>
                        </div>` : '';
 
-                return `<div class="card">
-                    ${turnoInfo}
-                    <div style="margin-bottom:16px;">
-                        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px;">
-                            <span style="font-weight:700;font-size:15px;color:var(--text-1);">${title}</span>
-                            ${savedBadge}
+                function colHeader(n, label, sublabel, done) {
+                    const clr = done ? 'var(--green)' : n === num ? 'var(--accent)' : 'var(--text-2)';
+                    const bg  = done ? '#e8f5ee'      : n === num ? '#eef2ff'       : 'var(--bg-2)';
+                    const bdr = done ? 'var(--green)'  : n === num ? 'var(--accent)'  : 'var(--border)';
+                    return `<th style="padding:10px 6px;text-align:center;background:${bg};border-left:1px solid var(--border);border-bottom:2px solid ${bdr};min-width:90px;cursor:pointer;"
+                                onclick="state.contagem.contagemStep=${n};render()">
+                        <div style="display:flex;flex-direction:column;align-items:center;gap:2px;">
+                            <span style="font-weight:800;font-size:14px;color:${clr};">${label}</span>
+                            <span style="font-size:10px;color:${clr};opacity:0.8;white-space:nowrap;">${sublabel}</span>
+                            ${done ? `<span style="font-size:9px;font-weight:700;color:var(--green);">✓ SALVO</span>` : ''}
                         </div>
-                        <p style="font-size:12px;color:var(--text-3);">${desc}</p>
-                    </div>
-                    ${rows}
-                    <div style="margin-top:20px;display:flex;justify-content:flex-end;">
-                        <button onclick="saveContagem(${num})" class="btn-primary" ${state.contagem.saving ? 'disabled' : ''}>
-                            ${state.contagem.saving
-                                ? `<span class="loading-spinner" style="width:16px;height:16px;border-width:2px;"></span> Salvando...`
-                                : btnLabel}
+                    </th>`;
+                }
+
+                const tableRows = alm2Items.map((item, idx) => {
+                    const saved1 = state.contagem.todayCounts[item.id]?.c1;
+                    const saved2 = state.contagem.todayCounts[item.id]?.c2;
+                    const saved3 = state.contagem.todayCounts[item.id]?.c3;
+                    const val1 = state.contagem.entries1[item.id] ?? '';
+                    const val2 = state.contagem.entries2[item.id] ?? '';
+                    const val3 = state.contagem.entries3[item.id] ?? '';
+                    const rowBg = idx % 2 === 0 ? 'var(--bg-1)' : 'var(--bg-2)';
+                    const cell1Bg = saved1 ? '#e8f5ee' : val1 !== '' ? '#f0f4ff' : rowBg;
+                    const cell2Bg = saved2 ? '#e8f5ee' : val2 !== '' ? '#f0f4ff' : rowBg;
+                    const cell3Bg = saved3 ? '#e8f5ee' : val3 !== '' ? '#f0f4ff' : rowBg;
+                    function cellInput(stKey, val, cellBg) {
+                        return `<td style="padding:3px 4px;background:${cellBg};border-left:1px solid var(--border);text-align:center;">
+                            <input type="number" min="0" placeholder="—" value="${val}"
+                                style="width:72px;height:32px;border:1px solid var(--border);border-radius:6px;text-align:center;
+                                       font-size:13px;font-weight:600;background:transparent;color:var(--text-1);
+                                       outline:none;padding:0 4px;"
+                                onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 2px var(--accent-glow)'"
+                                onblur="this.style.borderColor='var(--border)';this.style.boxShadow=''"
+                                oninput="state.contagem.${stKey}['${item.id}']=this.value">
+                        </td>`;
+                    }
+                    return `<tr style="border-bottom:1px solid var(--border);">
+                        <td style="padding:9px 12px;font-weight:500;font-size:13px;background:${rowBg};white-space:nowrap;">
+                            ${item.nome}
+                            <span style="font-size:10px;color:var(--text-3);font-weight:400;margin-left:4px;">${item.unidade}</span>
+                        </td>
+                        ${cellInput('entries1',val1,cell1Bg)}
+                        ${cellInput('entries2',val2,cell2Bg)}
+                        ${cellInput('entries3',val3,cell3Bg)}
+                    </tr>`;
+                }).join('');
+
+                function saveBtn(n, done) {
+                    const saving = state.contagem.saving;
+                    const clr = done ? 'var(--green)' : 'var(--accent)';
+                    const lbl = saving
+                        ? `<span class="loading-spinner" style="width:12px;height:12px;border-width:2px;"></span>`
+                        : done ? `<i class="ph-fill ph-check-circle"></i> C${n} OK` : `Salvar C${n}`;
+                    return `<td style="padding:8px 6px;text-align:center;border-left:1px solid var(--border);">
+                        <button onclick="saveContagem(${n})" ${saving ? 'disabled' : ''}
+                            style="font-size:11px;padding:6px 14px;border-radius:6px;border:1.5px solid ${clr};
+                                   background:${done ? '#e8f5ee' : 'var(--accent)'};color:${done ? 'var(--green)' : '#fff'};
+                                   font-weight:700;cursor:pointer;white-space:nowrap;"
+                            onmouseover="this.style.opacity='.8'" onmouseout="this.style.opacity='1'">
+                            ${lbl}
                         </button>
+                    </td>`;
+                }
+
+                return `<div class="card" style="padding:0;overflow:hidden;">
+                    ${turnoInfo}
+                    <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
+                        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                            <thead>
+                                <tr style="border-bottom:2px solid var(--border);">
+                                    <th style="padding:10px 12px;text-align:left;background:var(--bg-2);font-size:12px;font-weight:700;color:var(--text-2);white-space:nowrap;">
+                                        EPI's
+                                        <span style="font-size:10px;font-weight:400;color:var(--text-3);margin-left:4px;">(${alm2Items.length} itens)</span>
+                                    </th>
+                                    ${colHeader(1,'C1','Fim de Turno',hasC1done)}
+                                    ${colHeader(2,'C2','Chegada',hasC2done)}
+                                    ${colHeader(3,'C3','Pós-ADM',hasC3done)}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${tableRows}
+                            </tbody>
+                            <tfoot>
+                                <tr style="border-top:2px solid var(--border);background:var(--bg-2);">
+                                    <td style="padding:10px 12px;font-size:11px;color:var(--text-3);">
+                                        ${hasC1done && hasC2done && hasC3done
+                                            ? `<span style="color:var(--green);font-weight:700;">✓ Todas as contagens salvas</span>`
+                                            : 'Preencha e salve cada coluna'}
+                                    </td>
+                                    ${saveBtn(1,hasC1done)}
+                                    ${saveBtn(2,hasC2done)}
+                                    ${saveBtn(3,hasC3done)}
+                                </tr>
+                            </tfoot>
+                        </table>
                     </div>
                 </div>`;
             }
 
             // ---- Helper: fluxo de nova contagem (3 etapas) ----
+
+
             function buildNewContagemFlow() {
                 const step = state.contagem.newStep;
 
@@ -3391,7 +3862,7 @@
                             <p style="font-size:12px;color:var(--text-3);">Qual turno realizará esta contagem?</p>
                         </div>
                         <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;max-width:320px;">
-                            ${['A','B','C','D'].map(t => `
+                            ${['A', 'B', 'C', 'D'].map(t => `
                                 <button onclick="state.contagem.turno='${t}';state.contagem.newStep=2;render()"
                                     style="padding:24px 16px;border-radius:12px;border:2px solid ${turnoColor(t)};
                                            background:${turnoBg(t)};cursor:pointer;display:flex;flex-direction:column;
@@ -3434,21 +3905,21 @@
                             <div class="field-group">
                                 <label class="field-label">Data *</label>
                                 <input class="field-input" type="date" value="${state.contagem.date}"
-                                    onchange="state.contagem.date=this.value;state.contagem.entries1={};state.contagem.entries2={};state.contagem.todayCounts={};">
+                                    onchange="state.contagem.date=this.value;state.contagem.entries1={};state.contagem.entries2={};state.contagem.entries3={};state.contagem.todayCounts={};render();">
                             </div>
                             <div class="field-group">
                                 <label class="field-label">Horário do Turno *</label>
                                 <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
                                     ${state.contagem.turno === 'ADM' ? `
                                     <button onclick="state.contagem.horario='07:00–17:00';render()"
-                                        class="${state.contagem.horario==='07:00–17:00'?'btn-primary':'btn-secondary'}"
+                                        class="${state.contagem.horario === '07:00–17:00' ? 'btn-primary' : 'btn-secondary'}"
                                         style="font-size:13px;padding:8px 14px;">07:00–17:00</button>
                                     ` : `
                                     <button onclick="state.contagem.horario='07:00–19:00';render()"
-                                        class="${state.contagem.horario==='07:00–19:00'?'btn-primary':'btn-secondary'}"
+                                        class="${state.contagem.horario === '07:00–19:00' ? 'btn-primary' : 'btn-secondary'}"
                                         style="font-size:13px;padding:8px 14px;">07:00–19:00</button>
                                     <button onclick="state.contagem.horario='19:00–07:00';render()"
-                                        class="${state.contagem.horario==='19:00–07:00'?'btn-primary':'btn-secondary'}"
+                                        class="${state.contagem.horario === '19:00–07:00' ? 'btn-primary' : 'btn-secondary'}"
                                         style="font-size:13px;padding:8px 14px;">19:00–07:00</button>
                                     `}
                                 </div>
@@ -3469,7 +3940,9 @@
                     </div>`;
                 }
 
-                return ''; // step 3 handled by buildCountForm
+                // step 3: exibe o formulário da etapa atual (contagemStep)
+                const cStep = state.contagem.contagemStep || 1;
+                return buildCountForm(cStep);
             }
 
             // ---- Relatório (após salvar C2) ----
@@ -3493,33 +3966,39 @@
                             ${state.contagem.horario ? `<span style="font-size:12px;color:var(--text-3);">${state.contagem.horario}</span>` : ''}
                             ${resumoBadge}
                         </div>
-                        <p style="font-size:12px;color:var(--text-3);">C1 (fim de turno) − C2 (início do turno) = consumido</p>
+                        <p style="font-size:12px;color:var(--text-3);">Consumo do turno: <strong>C1 − C2</strong> &nbsp;|&nbsp; Distribuição ADM: <strong>C2 − C3</strong></p>
                     </div>
                     ${buildRelatorioTable(state.contagem.savedResult)}
                     <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border);">
                         ${baixaJaFeita
-                            ? `<div style="display:flex;align-items:center;gap:8px;background:#e8f5ee;color:var(--green);padding:12px 16px;border-radius:8px;font-size:13px;font-weight:600;border:1px solid var(--green);margin-bottom:12px;">
+                        ? `<div style="display:flex;align-items:center;gap:8px;background:#e8f5ee;color:var(--green);padding:12px 16px;border-radius:8px;font-size:13px;font-weight:600;border:1px solid var(--green);margin-bottom:12px;">
                                 <i class="ph-fill ph-check-circle" style="font-size:18px;"></i>
                                 Baixa já aplicada no estoque do Almoxarifado 2
                                </div>`
-                            : `<div style="background:#fff8e1;border:1px solid #ffc107;border-radius:8px;padding:12px 16px;margin-bottom:12px;font-size:12px;color:#7a5800;">
+                        : `<div style="background:#fff8e1;border:1px solid #ffc107;border-radius:8px;padding:12px 16px;margin-bottom:12px;font-size:12px;color:#7a5800;">
                                 <i class="ph ph-warning" style="margin-right:4px;"></i>
                                 Baixa pendente — clique em "Dar Baixa" para atualizar o estoque e registrar os movimentos.
                                </div>`
-                        }
+                    }
                         <div style="display:flex;gap:10px;flex-wrap:wrap;">
-                            <button onclick="state.contagem.savedResult=null;render()" class="btn-secondary">
+                            <button onclick="editContagemDate('${state.contagem.date}',1,'${state.contagem.turno || ''}','${state.contagem.horario || ''}')" class="btn-secondary">
+                                <i class="ph ph-pencil"></i> Corrigir C1
+                            </button>
+                            <button onclick="editContagemDate('${state.contagem.date}',2,'${state.contagem.turno || ''}','${state.contagem.horario || ''}')" class="btn-secondary">
                                 <i class="ph ph-pencil"></i> Corrigir C2
+                            </button>
+                            <button onclick="editContagemDate('${state.contagem.date}',3,'${state.contagem.turno || ''}','${state.contagem.horario || ''}')" class="btn-secondary">
+                                <i class="ph ph-pencil"></i> Corrigir C3
                             </button>
                             <button onclick="switchContagemTab('history')" class="btn-secondary">
                                 <i class="ph ph-clock-counter-clockwise"></i> Ver Histórico
                             </button>
                             ${baixaJaFeita
-                                ? ''
-                                : `<button onclick="aplicarBaixaContagem()" class="btn-primary" style="background:var(--green);" ${state.contagem.saving ? 'disabled' : ''}>
+                        ? ''
+                        : `<button onclick="aplicarBaixaContagem()" class="btn-primary" style="background:var(--green);" ${state.contagem.saving ? 'disabled' : ''}>
                                     <i class="ph-fill ph-arrow-fat-lines-down"></i> Dar Baixa no Almoxarifado 2
                                    </button>`
-                            }
+                    }
                         </div>
                     </div>
                 </div>`;
@@ -3542,11 +4021,11 @@
                     // ---- Filtro de turno ----
                     const turnoFilterBar = `
                         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">
-                            ${['TODOS','A','B','C','D'].map(t => `
+                            ${['TODOS', 'A', 'B', 'C', 'D'].map(t => `
                                 <button onclick="state.contagem.historyTurnoFilter='${t}';render()"
-                                    style="padding:6px 14px;border-radius:20px;border:1px solid ${t==='TODOS'?'var(--border)':turnoColor(t)};
-                                           background:${state.contagem.historyTurnoFilter===t ? (t==='TODOS'?'var(--bg-3)':turnoBg(t)) : 'transparent'};
-                                           color:${t==='TODOS'?'var(--text-2)':turnoColor(t)};font-size:12px;font-weight:600;cursor:pointer;">
+                                    style="padding:6px 14px;border-radius:20px;border:1px solid ${t === 'TODOS' ? 'var(--border)' : turnoColor(t)};
+                                           background:${state.contagem.historyTurnoFilter === t ? (t === 'TODOS' ? 'var(--bg-3)' : turnoBg(t)) : 'transparent'};
+                                           color:${t === 'TODOS' ? 'var(--text-2)' : turnoColor(t)};font-size:12px;font-weight:600;cursor:pointer;">
                                     ${t === 'TODOS' ? 'Todos' : `Turno ${t}`}
                                 </button>`).join('')}
                         </div>`;
@@ -3557,38 +4036,50 @@
                     allRows.forEach(row => {
                         const key = `${row.date}_${row.turno || 'null'}`;
                         if (!histGroups[key]) {
-                            histGroups[key] = { date: row.date, turno: row.turno || null, horario: row.horario || '', c1Map: {}, c2Map: {} };
+                            histGroups[key] = { date: row.date, turno: row.turno || null, horario: row.horario || '', c1Map: {}, c2Map: {}, c3Map: {} };
                         }
                         if (row.contagem_num === 1) histGroups[key].c1Map[row.item_id] = row;
                         if (row.contagem_num === 2) histGroups[key].c2Map[row.item_id] = row;
+                        if (row.contagem_num === 3) histGroups[key].c3Map[row.item_id] = row;
                     });
 
-                    // Aplica filtro de turno
-                    const histFilter = state.contagem.historyTurnoFilter;
                     const filteredHistGroups = Object.values(histGroups)
-                        .filter(g => histFilter === 'TODOS' || g.turno === histFilter)
-                        .sort((a, b) => b.date.localeCompare(a.date) || (a.turno || '').localeCompare(b.turno || ''));
+                        .filter(g => state.contagem.historyTurnoFilter === 'TODOS' || g.turno === state.contagem.historyTurnoFilter)
+                        .sort((a, b) => b.date.localeCompare(a.date));
 
-                    // ---- Gera cards ----
                     const histCards = [];
                     filteredHistGroups.forEach(g => {
-                        const { date, turno, horario, c1Map, c2Map } = g;
+                        const { date, turno, horario, c1Map, c2Map, c3Map } = g;
                         const baixaKey = turno ? `${date}_${turno}` : date;
                         const baixaFeita = state.contagem.baixaDates[baixaKey];
 
-                        if (Object.keys(c2Map).length > 0) {
-                            const itens = Object.values(c2Map).map(row => {
-                                const c1 = c1Map[row.item_id];
-                                const saida = c1 != null ? c1.quantidade - row.quantidade : null;
-                                return { item_name: row.item_name, c1_qtd: c1?.quantidade ?? null, c2_qtd: row.quantidade, saida };
+                        if (Object.keys(c3Map).length > 0 || Object.keys(c2Map).length > 0) {
+                            const allItemIds = new Set([...Object.keys(c1Map), ...Object.keys(c2Map), ...Object.keys(c3Map)]);
+                            const itens = Array.from(allItemIds).map(itemId => {
+                                const c1 = c1Map[itemId];
+                                const c2 = c2Map[itemId];
+                                const c3 = c3Map[itemId];
+                                const saida = (c1 != null && c2 != null) ? c1.quantidade - c2.quantidade : null;
+                                const saida_adm = (c2 != null && c3 != null) ? c2.quantidade - c3.quantidade : null;
+                                return { 
+                                    item_id: itemId,
+                                    item_name: (c1 || c2 || c3).item_name, 
+                                    c1_qtd: c1?.quantidade ?? null, 
+                                    c2_qtd: c2?.quantidade ?? null, 
+                                    c3_qtd: c3?.quantidade ?? null,
+                                    saida, 
+                                    saida_adm 
+                                };
                             });
                             const totalConsumo = itens.filter(r => r.saida > 0).length;
+                            const statusLabel = Object.keys(c3Map).length > 0 ? 'Relatório completo' : 'Aguardando C3 (ADM)';
                             const resumoBadge = totalConsumo > 0
                                 ? `<span class="badge badge-red">${totalConsumo} consumido(s)</span>`
                                 : `<span class="badge badge-green">sem consumo</span>`;
                             const baixaBadge = baixaFeita
                                 ? `<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--green);font-weight:600;"><i class="ph-fill ph-check-circle"></i> Baixa aplicada</span>`
                                 : '';
+                            
                             histCards.push(`<div class="card">
                                 <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px;gap:8px;flex-wrap:wrap;">
                                     <div>
@@ -3598,13 +4089,19 @@
                                             ${horario ? `<span style="font-size:11px;color:var(--text-3);">${horario}</span>` : ''}
                                             ${resumoBadge}
                                         </div>
-                                        <div style="font-size:11px;color:var(--text-3);">Relatório completo &nbsp;${baixaBadge}</div>
+                                        <div style="font-size:11px;color:var(--text-3);">${statusLabel} &nbsp;${baixaBadge}</div>
                                     </div>
-                                    <div style="display:flex;gap:6px;flex-shrink:0;">
-                                        <button onclick="editContagemDate('${date}',2,'${turno||''}','${horario||''}')" class="btn-secondary" style="font-size:11px;padding:4px 10px;">
-                                            <i class="ph ph-pencil"></i> Editar
+                                    <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap;">
+                                        <button onclick="editContagemDate('${date}',1,'${turno || ''}','${horario || ''}')" class="btn-secondary" style="font-size:11px;padding:4px 10px;">
+                                            <i class="ph ph-pencil"></i> C1
                                         </button>
-                                        <button onclick="deleteContagemDate('${date}',2,'${turno||''}')" class="btn-secondary" style="font-size:11px;padding:4px 10px;color:var(--red);border-color:var(--red);">
+                                        <button onclick="editContagemDate('${date}',2,'${turno || ''}','${horario || ''}')" class="btn-secondary" style="font-size:11px;padding:4px 10px;">
+                                            <i class="ph ph-pencil"></i> C2
+                                        </button>
+                                        <button onclick="editContagemDate('${date}',3,'${turno || ''}','${horario || ''}')" class="btn-secondary" style="font-size:11px;padding:4px 10px;">
+                                            <i class="ph ph-pencil"></i> C3
+                                        </button>
+                                        <button onclick="deleteContagemDate('${date}',0,'${turno || ''}')" class="btn-secondary" style="font-size:11px;padding:4px 10px;color:var(--red);border-color:var(--red);">
                                             <i class="ph ph-trash"></i> Excluir
                                         </button>
                                     </div>
@@ -3631,10 +4128,10 @@
                                         <div style="font-size:11px;color:var(--text-3);">Contagem 1 registrada &nbsp;<span class="badge badge-gray" style="font-size:10px;">C2 pendente</span></div>
                                     </div>
                                     <div style="display:flex;gap:6px;flex-shrink:0;">
-                                        <button onclick="editContagemDate('${date}',1,'${turno||''}','${horario||''}')" class="btn-secondary" style="font-size:11px;padding:4px 10px;">
+                                        <button onclick="editContagemDate('${date}',1,'${turno || ''}','${horario || ''}')" class="btn-secondary" style="font-size:11px;padding:4px 10px;">
                                             <i class="ph ph-pencil"></i> Editar
                                         </button>
-                                        <button onclick="deleteContagemDate('${date}',1,'${turno||''}')" class="btn-secondary" style="font-size:11px;padding:4px 10px;color:var(--red);border-color:var(--red);">
+                                        <button onclick="deleteContagemDate('${date}',1,'${turno || ''}')" class="btn-secondary" style="font-size:11px;padding:4px 10px;color:var(--red);border-color:var(--red);">
                                             <i class="ph ph-trash"></i> Excluir
                                         </button>
                                     </div>
@@ -3697,21 +4194,21 @@
                        </div>`
                     : `<div style="display:flex;flex-direction:column;gap:10px;">
                            ${openTickets.map(t => {
-                               const cor = turnoColor(t.turno);
-                               const bg  = turnoBg(t.turno);
-                               const statusLabel = t.hasC2
-                                   ? `<span style="font-size:11px;color:var(--green);font-weight:600;"><i class="ph-fill ph-check-circle"></i> C2 feita — aguardando baixa</span>`
-                                   : `<span style="font-size:11px;color:var(--orange);font-weight:600;"><i class="ph ph-clock"></i> Aguardando C2</span>`;
-                               const actionBtn = t.hasC2
-                                   ? `<button onclick="openTicketForBaixa('${t.date}','${t.turno || ''}','${t.horario || ''}')"
+                        const cor = turnoColor(t.turno);
+                        const bg = turnoBg(t.turno);
+                        const statusLabel = t.hasC2
+                            ? `<span style="font-size:11px;color:var(--green);font-weight:600;"><i class="ph-fill ph-check-circle"></i> C2 feita — aguardando baixa</span>`
+                            : `<span style="font-size:11px;color:var(--orange);font-weight:600;"><i class="ph ph-clock"></i> Aguardando C2</span>`;
+                        const actionBtn = t.hasC2
+                            ? `<button onclick="openTicketForBaixa('${t.date}','${t.turno || ''}','${t.horario || ''}')"
                                          class="btn-primary" style="flex:1;font-size:12px;padding:8px 12px;background:var(--green);border-color:var(--green);">
                                          <i class="ph-fill ph-arrow-fat-lines-down"></i> Dar Baixa
                                       </button>`
-                                   : `<button onclick="openTicketForC2('${t.date}','${t.turno || ''}','${t.horario || ''}')"
+                            : `<button onclick="openTicketForC2('${t.date}','${t.turno || ''}','${t.horario || ''}')"
                                          class="btn-primary" style="flex:1;font-size:12px;padding:8px 12px;">
                                          <i class="ph-fill ph-clipboard-check"></i> Fechar (C2)
                                       </button>`;
-                               return `<div style="border:2px solid ${cor};border-radius:12px;padding:14px 16px;background:${bg};display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+                        return `<div style="border:2px solid ${cor};border-radius:12px;padding:14px 16px;background:${bg};display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
                                    <div style="display:flex;align-items:center;gap:10px;min-width:100px;">
                                        <span style="font-weight:800;font-size:26px;color:${cor};font-family:var(--font-display);line-height:1;">
                                            ${t.turno || '—'}
@@ -3731,7 +4228,7 @@
                                        </button>
                                    </div>
                                </div>`;
-                           }).join('')}
+                    }).join('')}
                        </div>`;
 
             const tab = state.contagem.tab;
@@ -3742,8 +4239,17 @@
                 if (state.contagem.savedResult) {
                     mainContent = resultContent;
                 } else if (state.contagem.newStep === 3) {
-                    const hasSavedC1 = Object.values(state.contagem.todayCounts).some(c => c.c1);
-                    mainContent = buildCountForm(hasSavedC1 ? 2 : 1);
+                    // Prioridade: 1) editingNum (edição pontual)  2) contagemStep (clique na bolinha)  3) auto
+                    let formNum;
+                    if (state.contagem.editingNum) {
+                        formNum = state.contagem.editingNum;
+                    } else if (state.contagem.contagemStep) {
+                        formNum = state.contagem.contagemStep;
+                    } else {
+                        const hasSavedC1 = Object.values(state.contagem.todayCounts).some(c => c.c1);
+                        formNum = hasSavedC1 ? 2 : 1;
+                    }
+                    mainContent = buildCountForm(formNum);
                 } else {
                     mainContent = buildNewContagemFlow();
                 }
@@ -3792,10 +4298,10 @@
 
         function renderHeader() {
             const views = [
-                { id: 'stock',      label: 'Estoque',         icon: 'ph ph-warehouse' },
-                { id: 'contagem',   label: 'Contagem Diária', icon: 'ph ph-clipboard-text' },
-                { id: 'history',    label: 'Histórico',       icon: 'ph ph-clock-counter-clockwise' },
-                { id: 'warehouses', label: 'Almoxarifados',   icon: 'ph ph-buildings' },
+                { id: 'stock', label: 'Estoque', icon: 'ph ph-warehouse' },
+                { id: 'contagem', label: 'Contagem Diária', icon: 'ph ph-clipboard-text' },
+                { id: 'history', label: 'Histórico', icon: 'ph ph-clock-counter-clockwise' },
+                { id: 'warehouses', label: 'Almoxarifados', icon: 'ph ph-buildings' },
             ];
             return `
                 <div id="global-sync-bar"></div>
@@ -3810,7 +4316,7 @@
                         <div class="logo-divider"></div>
                         <span class="logo-gestao">Almoxarifado EPI</span>
                     </div>
-                    ${['stock','history'].includes(state.view) ? `
+                    ${['stock', 'history'].includes(state.view) ? `
                     <div class="topbar-search-wrapper">
                         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"
                             style="position:absolute;left:12px;top:50%;transform:translateY(-50%);width:13px;height:13px;color:var(--text-3);pointer-events:none;">
@@ -3843,11 +4349,11 @@
                         </div>
                         <div class="nav-menu-body">
                             ${views.map(v => {
-                                const openCount = v.id === 'contagem' ? state.contagem.openTickets.length : 0;
-                                const badge = openCount > 0
-                                    ? `<span style="margin-left:auto;background:var(--orange);color:#fff;border-radius:99px;font-size:10px;font-weight:700;padding:2px 8px;min-width:20px;text-align:center;">${openCount}</span>`
-                                    : '';
-                                return `
+                const openCount = v.id === 'contagem' ? state.contagem.openTickets.length : 0;
+                const badge = openCount > 0
+                    ? `<span style="margin-left:auto;background:var(--orange);color:#fff;border-radius:99px;font-size:10px;font-weight:700;padding:2px 8px;min-width:20px;text-align:center;">${openCount}</span>`
+                    : '';
+                return `
                                 <button class="nav-menu-item ${state.view === v.id ? 'active' : ''}"
                                     onclick="closeSidebar(); ${v.id === 'contagem' ? 'navigateToContagem()' : `navigateTo('${v.id}')`}"
                                     style="display:flex;align-items:center;gap:8px;">
@@ -3855,7 +4361,7 @@
                                     <span style="flex:1;">${v.label}</span>
                                     ${badge}
                                 </button>`;
-                            }).join('')}
+            }).join('')}
                         </div>
                         <div class="nav-menu-footer">
                             <div class="nav-menu-user-info">
@@ -3926,7 +4432,7 @@
                 }
             } catch (err) {
                 console.warn('Sessão inválida, redirecionando para login:', err.message);
-                try { await sbClient.auth.signOut(); } catch (_) {}
+                try { await sbClient.auth.signOut(); } catch (_) { }
                 navigateTo('login');
             }
         });

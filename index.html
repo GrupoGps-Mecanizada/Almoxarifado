@@ -1,5 +1,4 @@
-﻿PRE
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="pt-BR">
 
 <head>
@@ -23,6 +22,7 @@
 <body>
     <div id="app"></div>
     <div id="toast-container"></div>
+    <div id="date-modal"></div>
 
     <script>
         // ============================================
@@ -185,7 +185,7 @@
                 tab: 'chamados',
                 history: [],
                 historyLoading: false,
-                turno: null,         // session_id (ex: CTG-20250513-001)
+                turno: null,         // session_id (ex: 20250513)
                 horario: '',
                 newStep: 1,          // 1=form sessão | 2=data | 3=tabela contagem
                 contagemStep: 1,
@@ -1452,7 +1452,7 @@
                 unidades_por_caixa: parseInt(document.getElementById('itemUnitsPerBox')?.value) || 1,
                 tamanhos: tamanhos,
                 observacoes: document.getElementById('itemObs').value,
-                warehouse_id: selectedWarehouse?.value || state.activeWarehouse
+                warehouse_id: selectedWarehouse?.value || state.editingItem?.warehouse_id || state.activeWarehouse
             };
 
             const result = await saveItem(itemData);
@@ -1724,15 +1724,13 @@
             setTimeout(() => renderCharts(), 100);
         }
 
-        // ---- Gera ID único de sessão: CTG-YYYYMMDD-NNN ----
+        // ---- Gera ID de sessão: YYYYMMDD (1 por dia) ----
         function generateSessionId(date) {
             const d = date || getCurrentDate();
-            const base = 'CTG-' + d.replace(/-/g, '');
-            // Conta sessões já salvas no histórico para o mesmo dia
-            const sameDay = state.contagem.history.filter(s => s.date === d).length;
-            const seq = String(sameDay + 1).padStart(3, '0');
-            return `${base}-${seq}`;
+            return d.replace(/-/g, '');
         }
+
+        function isSessionId(t) { return t && /^\d{8}$/.test(t); }
 
         // ---- Salva sessão no Supabase e carrega contagem vinculada ----
         async function createCountSession(sessionData) {
@@ -1773,10 +1771,10 @@
             const sessionId = sess.id || generateSessionId(state.contagem.date);
 
             if (!sess.turno_noite) {
-                showToast('Selecione o Turno Noite (C1)', 'error'); return;
+                showToast('Selecione o Turno da Noite', 'error'); return;
             }
             if (!sess.turno_dia) {
-                showToast('Selecione o Turno Dia (C3)', 'error'); return;
+                showToast('Selecione o Turno do Dia / ADM', 'error'); return;
             }
 
             const sessionPayload = {
@@ -1784,17 +1782,20 @@
                 date: state.contagem.date,
                 turno_noite: sess.turno_noite,
                 turno_dia: sess.turno_dia,
-                c1_horario: sess.c1_horario || '00:00',
-                c2_horario: sess.c2_horario || '07:00',
-                c3_horario: sess.c3_horario || '08:00',
+                c1_horario: '19:00',
+                c2_horario: '07:00',
+                c3_horario: '07:00',
+                observacao: (sess.isFDS && sess.turnosWeekend?.length)
+                    ? JSON.stringify({ fds: true, turnos: sess.turnosWeekend })
+                    : null,
             };
 
             const saved = await createCountSession(sessionPayload);
-            if (!saved) return; // erro já exibido por createCountSession
+            if (!saved) return;
 
             state.contagem.currentSession = saved;
-            state.contagem.turno = sessionId;         // daily_counts.turno = session_id
-            state.contagem.horario = saved.c1_horario;
+            state.contagem.turno = sessionId;
+            state.contagem.horario = '19:00';
             state.contagem.newStep = 3;
             state.contagem.contagemStep = 1;
             state.contagem.loading = true;
@@ -1839,6 +1840,12 @@
             const itemIds = alm2Items.map(i => i.id);
             if (itemIds.length === 0) { state.contagem.loading = false; render(); return; }
             try {
+                // Carrega sessão se ainda não estiver no state
+                if (turno && isSessionId(turno) && (!state.contagem.currentSession || state.contagem.currentSession.id !== turno)) {
+                    const { data: sessData } = await sbClient.from('count_sessions').select('*').eq('id', turno).maybeSingle();
+                    if (sessData) state.contagem.currentSession = sessData;
+                }
+
                 let q = sbClient.from('daily_counts').select('*').in('item_id', itemIds).eq('date', date);
                 if (turno) {
                     q = q.eq('turno', turno);
@@ -1858,15 +1865,11 @@
                     const c1 = c1Map[itemId];
                     const c2 = c2Map[itemId];
                     const c3 = c3Map[itemId];
-
-                    const saida = (c1 != null && c2 != null) ? c1.quantidade - c2.quantidade : null;
-                    const saida_adm = (c2 != null && c3 != null) ? c2.quantidade - c3.quantidade : null;
-
                     return {
                         item_id: itemId,
                         item_name: (c1 || c2 || c3).item_name,
-                        saida,
-                        saida_adm,
+                        saida: (c1 != null && c2 != null) ? c1.quantidade - c2.quantidade : null,
+                        saida_adm: (c2 != null && c3 != null) ? c2.quantidade - c3.quantidade : null,
                         c1_qtd: c1?.quantidade ?? null,
                         c1_date: c1?.date ?? null,
                         c2_qtd: c2?.quantidade ?? null,
@@ -2202,29 +2205,119 @@
         }
 
         async function deleteContagemDate(date, num, turno) {
-            const tipo = num === 2 ? 'Contagem de Saída' : 'Contagem de Entrega';
-            const turnoLabel = turno ? ` (Turno ${turno})` : '';
-            if (!confirm(`Excluir ${tipo} de ${formatDate(date)}${turnoLabel}? Esta ação não pode ser desfeita.`)) return;
+            const isAll = num === 0;
+            const tipo = isAll ? 'Sessão completa' : num === 2 ? 'Contagem C2' : num === 3 ? 'Contagem C3' : 'Contagem C1';
+            const turnoLabel = turno ? ` do dia ${formatDate(date)}` : ` de ${formatDate(date)}`;
+            if (!confirm(`Excluir ${tipo}${turnoLabel}?\n\nEsta ação não pode ser desfeita.`)) return;
             try {
-                let q = sbClient.from('daily_counts').delete()
-                    .eq('date', date)
-                    .eq('contagem_num', num);
-                if (turno) q = q.eq('turno', turno);
-                const { error } = await q;
-                if (error) throw error;
-                state.contagem.history = state.contagem.history.filter(
-                    r => !(r.date === date && r.contagem_num === num && (r.turno || null) === (turno || null))
-                );
-                if (num === 1) {
-                    state.contagem.openTickets = state.contagem.openTickets.filter(
-                        t => !(t.date === date && t.turno === (turno || null))
+                if (isAll) {
+                    // Apaga todos os registros de daily_counts para essa sessão
+                    let q = sbClient.from('daily_counts').delete().eq('date', date);
+                    if (turno) q = q.eq('turno', turno); else q = q.is('turno', null);
+                    const { error: e1 } = await q;
+                    if (e1) throw e1;
+                    // Apaga a sessão de count_sessions se existir
+                    if (turno) {
+                        await sbClient.from('count_sessions').delete().eq('id', turno);
+                    }
+                    state.contagem.history = state.contagem.history.filter(
+                        r => !(r.date === date && (r.turno || null) === (turno || null))
                     );
+                    state.contagem.openTickets = state.contagem.openTickets.filter(
+                        t => !(t.date === date && (t.turno || null) === (turno || null))
+                    );
+                } else {
+                    let q = sbClient.from('daily_counts').delete()
+                        .eq('date', date)
+                        .eq('contagem_num', num);
+                    if (turno) q = q.eq('turno', turno); else q = q.is('turno', null);
+                    const { error } = await q;
+                    if (error) throw error;
+                    state.contagem.history = state.contagem.history.filter(
+                        r => !(r.date === date && r.contagem_num === num && (r.turno || null) === (turno || null))
+                    );
+                    if (num === 1) {
+                        state.contagem.openTickets = state.contagem.openTickets.filter(
+                            t => !(t.date === date && (t.turno || null) === (turno || null))
+                        );
+                    }
                 }
                 showToast(`${tipo} excluída!`, 'success');
                 render();
             } catch (e) {
-                showToast('Erro ao excluir contagem', 'error');
+                showToast('Erro ao excluir', 'error');
                 console.error(e);
+            }
+        }
+
+        function showDateChangeModal(oldDate, turno) {
+            var container = document.getElementById('date-modal');
+            if (!container) return;
+            var dd = oldDate ? oldDate.slice(8, 10) + '/' + oldDate.slice(5, 7) + '/' + oldDate.slice(0, 4) : '';
+            container.innerHTML =
+                '<div onclick="hideDateChangeModal()" style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:900;display:flex;align-items:center;justify-content:center;padding:16px;">' +
+                '<div onclick="event.stopPropagation()" style="background:var(--bg-1);border-radius:16px;padding:24px;width:340px;max-width:100%;box-shadow:0 8px 48px rgba(0,0,0,.22);">' +
+                '<div style="font-weight:700;font-size:16px;margin-bottom:4px;color:var(--text-1);">' +
+                '<i class="ph ph-calendar" style="color:var(--accent);margin-right:6px;"></i>Alterar Data da Contagem</div>' +
+                '<p style="font-size:12px;color:var(--text-3);margin:0 0 18px;">Data atual: <strong style="color:var(--text-1);">' + dd + '</strong></p>' +
+                '<label style="font-size:12px;font-weight:600;color:var(--text-2);display:block;margin-bottom:6px;">Nova data</label>' +
+                '<input id="date-change-input" type="date" value="' + (oldDate || '') + '" ' +
+                'style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;background:var(--bg-2);color:var(--text-1);margin-bottom:18px;">' +
+                '<p style="font-size:11px;color:var(--orange);margin:0 0 14px;"><i class="ph ph-warning"></i> Todos os registros de C1, C2 e C3 da sessão serão movidos para a nova data.</p>' +
+                '<div style="display:flex;gap:8px;">' +
+                '<button onclick="hideDateChangeModal()" class="btn-secondary" style="flex:1;">Cancelar</button>' +
+                '<button onclick="confirmarTrocaData(\'' + (oldDate || '') + '\',\'' + (turno || '') + '\')" class="btn-primary" style="flex:1;">Confirmar</button>' +
+                '</div></div></div>';
+        }
+
+        function hideDateChangeModal() {
+            var c = document.getElementById('date-modal');
+            if (c) c.innerHTML = '';
+        }
+
+        async function confirmarTrocaData(oldDate, turno) {
+            var input = document.getElementById('date-change-input');
+            if (!input) return;
+            var newDate = input.value;
+            if (!newDate) { showToast('Selecione uma nova data.', 'error'); return; }
+            if (newDate === oldDate) { hideDateChangeModal(); return; }
+            var isSess = turno && isSessionId(turno);
+            var newSessionId = isSess ? newDate.replace(/-/g, '') : turno;
+            hideDateChangeModal();
+            try {
+                if (isSess) {
+                    // Verifica conflito
+                    var { data: existing } = await sbClient.from('count_sessions').select('id').eq('id', newSessionId).maybeSingle();
+                    if (existing) {
+                        showToast('Já existe uma sessão para essa data. Escolha outra.', 'error');
+                        return;
+                    }
+                    // Copia sessão com novo ID
+                    var { data: oldSess } = await sbClient.from('count_sessions').select('*').eq('id', turno).maybeSingle();
+                    if (oldSess) {
+                        var newSess = Object.assign({}, oldSess, { id: newSessionId });
+                        var { error: insErr } = await sbClient.from('count_sessions').insert(newSess);
+                        if (insErr) throw insErr;
+                    }
+                }
+                // Atualiza daily_counts
+                var updateData = { date: newDate };
+                if (isSess) updateData.turno = newSessionId;
+                var q = sbClient.from('daily_counts').update(updateData).eq('date', oldDate);
+                if (turno) q = q.eq('turno', turno); else q = q.is('turno', null);
+                var { error: upErr } = await q;
+                if (upErr) throw upErr;
+                // Remove sessão antiga
+                if (isSess) {
+                    await sbClient.from('count_sessions').delete().eq('id', turno);
+                }
+                showToast('Data alterada com sucesso!', 'success');
+                state.contagem.history = [];
+                state.contagem.openTickets = [];
+                loadContagemHistory();
+            } catch (e) {
+                console.error('Erro ao trocar data:', e);
+                showToast('Erro ao alterar data: ' + (e.message || ''), 'error');
             }
         }
 
@@ -2273,7 +2366,7 @@
                 const baixaDates = {};
                 if (!baixaRes.error && baixaRes.data) {
                     baixaRes.data.forEach(m => {
-                        const sessMatch = m.observations?.match(/(CTG-\d{8}-\d{3})/);
+                        const sessMatch = m.observations?.match(/Turno ((?:CTG-)?\d+(?:-\d+)?)\b/);
                         const turnoMatch = m.observations?.match(/Turno ([ABCD])\b/);
                         const t = sessMatch ? sessMatch[1] : (turnoMatch ? turnoMatch[1] : null);
 
@@ -2619,6 +2712,46 @@
         function setTurnoDia(t) {
             state.contagem.currentSession = Object.assign({}, state.contagem.currentSession || {}, { turno_dia: t });
             render();
+        }
+        function applyShiftPreset(tipo) {
+            const patch = tipo === 'noite'
+                ? { c1_horario: '19:00', c2_horario: '07:00', c3_horario: '08:00' }
+                : { c1_horario: '07:00', c2_horario: '19:00', c3_horario: '20:00' };
+            state.contagem.currentSession = Object.assign({}, state.contagem.currentSession || {}, patch);
+            render();
+        }
+
+        // ---- Fim de semana: turnos intermediários ----
+        function toggleFDS() {
+            const sess = state.contagem.currentSession || {};
+            const ativando = !sess.isFDS;
+            state.contagem.currentSession = Object.assign({}, sess, {
+                isFDS: ativando,
+                turnosWeekend: ativando ? (sess.turnosWeekend || [{ data: '', letra: '', horario: '19 A 07' }]) : []
+            });
+            render();
+        }
+        function addWeekendShift() {
+            const sess = state.contagem.currentSession || {};
+            const turnos = [...(sess.turnosWeekend || []), { data: '', letra: '', horario: '19 A 07' }];
+            state.contagem.currentSession = Object.assign({}, sess, { turnosWeekend: turnos });
+            render();
+        }
+        function removeWeekendShift(i) {
+            const sess = state.contagem.currentSession || {};
+            const turnos = (sess.turnosWeekend || []).filter((_, idx) => idx !== i);
+            state.contagem.currentSession = Object.assign({}, sess, { turnosWeekend: turnos });
+            render();
+        }
+        function setWeekendShift(i, field, val) {
+            const sess = state.contagem.currentSession || {};
+            const turnos = (sess.turnosWeekend || []).map((t, idx) => idx === i ? Object.assign({}, t, { [field]: val }) : t);
+            state.contagem.currentSession = Object.assign({}, sess, { turnosWeekend: turnos });
+            render();
+        }
+        function parseFDS(obs) {
+            if (!obs) return null;
+            try { const p = JSON.parse(obs); return p.fds ? p : null; } catch { return null; }
         }
 
         // ============================================
@@ -3351,6 +3484,14 @@
                                             <div class="size-chip"><strong>${s}:</strong> <span class="qty ${q > 0 ? 'ok' : 'low'}">${q}</span></div>
                                         `).join('')}
                                     </div>` : ''}
+                                <div style="display:flex;gap:6px;margin-top:10px;border-top:1px solid var(--border);padding-top:10px;">
+                                    <button onclick='openEditItem(${JSON.stringify(item).replace(/'/g, "&#39;")})' class="btn-secondary" style="flex:1;font-size:11px;padding:5px 8px;">
+                                        <i class="ph ph-pencil-simple"></i> Editar
+                                    </button>
+                                    <button onclick="handleDeleteItem('${item.id}')" class="btn-secondary" style="font-size:11px;padding:5px 8px;color:var(--red);border-color:var(--red);">
+                                        <i class="ph ph-trash"></i>
+                                    </button>
+                                </div>
                             </div>`).join('')}
                     </div>
                 </div>`;
@@ -3650,10 +3791,16 @@
             ${renderHeader()}
             <div class="page-content-sm">
                 <div class="card-lg">
-                    <div class="row-between" style="margin-bottom:24px;">
+                    <div class="row-between" style="margin-bottom:${item.warehouse_id === 'alm-emergencial' ? '12px' : '24px'};">
                         <h1 class="page-title">${item.id ? 'Editar Item' : 'Novo Item'}</h1>
                         <button onclick="goBack()" class="btn-icon"><i class="ph ph-x"></i></button>
                     </div>
+                    ${item.warehouse_id === 'alm-emergencial' ? `
+                    <div style="display:flex;align-items:center;gap:8px;background:rgba(214,69,69,.08);border:1.5px solid var(--red);border-radius:10px;padding:10px 14px;margin-bottom:20px;">
+                        <i class="ph ph-warning-circle" style="color:var(--red);font-size:18px;flex-shrink:0;"></i>
+                        <span style="font-size:13px;font-weight:600;color:var(--red);">Almoxarifado Emergencial</span>
+                        <span style="font-size:12px;color:var(--text-3);margin-left:4px;">— alterações afetam apenas o estoque emergencial</span>
+                    </div>` : ''}
                     <form onsubmit="handleSaveItem(event)" class="stack">
                         <div class="grid-2">
                             <div class="field-group" style="grid-column:1/-1;">
@@ -3829,33 +3976,29 @@
 
                 const sess = state.contagem.currentSession;
                 const sessionId = state.contagem.turno || '';
-                const isSession = sessionId.startsWith('CTG-');
+                const isSession = isSessionId(sessionId);
 
                 // Banner de contexto da sessão
                 const turnoInfo = sessionId
                     ? `<div style="display:flex;align-items:center;gap:10px;padding:10px 16px;
                                   background:var(--bg-2);border-bottom:1px solid var(--border);flex-wrap:wrap;">
-                           <span style="font-size:11px;font-weight:700;color:var(--text-3);letter-spacing:0.04em;">${sessionId}</span>
-                           <span style="font-size:11px;color:var(--text-3);">|</span>
-                           <span style="font-size:12px;color:var(--text-2);">${formatDate(state.contagem.date)}</span>
+                           <span style="font-size:12px;color:var(--text-2);font-weight:600;">${formatDate(state.contagem.date)}</span>
                            ${isSession && sess ? `
                              <span style="font-size:11px;color:var(--text-3);">|</span>
-                             ${turnoBadge(sess.turno_noite)} <span style="font-size:11px;color:var(--text-3);">noite</span>
+                             ${turnoBadge(sess.turno_noite)} <span style="font-size:11px;color:var(--text-3);">19:00 → 07:00</span>
                              <span style="font-size:11px;color:var(--text-3);">·</span>
-                             ${turnoBadge(sess.turno_dia)} <span style="font-size:11px;color:var(--text-3);">dia</span>
+                             ${turnoBadge(sess.turno_dia)} <span style="font-size:11px;color:var(--text-3);">ADM</span>
                            ` : ''}
                        </div>` : '';
 
-                // Sublabels dinâmicos das colunas baseados na sessão
+                // Sublabels das colunas — horários sempre fixos
                 const c1Sub = sess
-                    ? `${sess.c1_horario || '00:00'} · Turno ${sess.turno_noite || '—'}`
-                    : 'Abastecimento';
-                const c2Sub = sess
-                    ? `${sess.c2_horario || '07:00'} · Conferência`
-                    : 'Chegada';
+                    ? `19:00 · Turno ${sess.turno_noite || '—'}`
+                    : '19:00 · Turno Noite';
+                const c2Sub = '07:00 · Conferência';
                 const c3Sub = sess
-                    ? `${sess.c3_horario || '08:00'} · Turno ${sess.turno_dia || '—'} + ADM`
-                    : 'Pós-ADM';
+                    ? `ADM + Turno ${sess.turno_dia || '—'}`
+                    : 'ADM + Turno Dia';
 
                 function colHeader(n, label, sublabel, done) {
                     const clr = done ? 'var(--green)' : n === num ? 'var(--accent)' : 'var(--text-2)';
@@ -3963,9 +4106,6 @@
 
                 // Passo 1: formulário de configuração da sessão
                 if (step === 1) {
-                    // Gera ID sugerido se ainda não tiver
-                    const suggestedId = sess.id || generateSessionId(state.contagem.date);
-
                     function turnoOpts(selected, onChangeFn) {
                         return ['A', 'B', 'C', 'D'].map(t => {
                             const sel = selected === t;
@@ -3986,62 +4126,104 @@
                     return `<div class="card-lg">
                         <div style="margin-bottom:20px;">
                             <div style="font-weight:700;font-size:15px;color:var(--text-1);margin-bottom:4px;">Nova Contagem</div>
-                            <p style="font-size:12px;color:var(--text-3);">Configure os dados da sessão antes de iniciar.</p>
+                            <p style="font-size:12px;color:var(--text-3);">Selecione a data e os turnos para iniciar.</p>
                         </div>
                         <div class="stack-sm">
 
-                            <!-- ID e Data -->
-                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-                                <div class="field-group">
-                                    <label class="field-label">ID da Sessão</label>
-                                    <input class="field-input" type="text" value="${suggestedId}"
-                                        oninput="state.contagem.currentSession={...(state.contagem.currentSession||{}),id:this.value}"
-                                        placeholder="CTG-YYYYMMDD-001">
-                                </div>
-                                <div class="field-group">
-                                    <label class="field-label">Data</label>
-                                    <input class="field-input" type="date" value="${state.contagem.date}"
-                                        onchange="state.contagem.date=this.value;state.contagem.entries1={};state.contagem.entries2={};state.contagem.entries3={};state.contagem.todayCounts={};render();">
-                                </div>
+                            <!-- Data -->
+                            <div class="field-group">
+                                <label class="field-label">Data da contagem</label>
+                                <input class="field-input" type="date" value="${state.contagem.date}"
+                                    onchange="state.contagem.date=this.value;state.contagem.entries1={};state.contagem.entries2={};state.contagem.entries3={};state.contagem.todayCounts={};render();">
                             </div>
 
-                            <!-- C1: Abastecimento Turno Noite -->
+                            <!-- Turno Noite (C1) — fixo 19:00 → 07:00 -->
                             <div style="border:1px solid var(--border);border-radius:10px;padding:14px;background:var(--bg-2);">
-                                <div style="font-weight:700;font-size:13px;color:var(--text-1);margin-bottom:4px;">C1 — Abastecimento (Turno Noite)</div>
-                                <p style="font-size:11px;color:var(--text-3);margin-bottom:10px;">Qual turno vai pegar de 19h às 07h?</p>
-                                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+                                <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+                                    <div style="font-weight:700;font-size:13px;color:var(--text-1);">Turno da Noite</div>
+                                    <span style="font-size:11px;font-weight:600;color:var(--text-3);background:var(--bg-3);padding:2px 8px;border-radius:4px;">19:00 → 07:00</span>
+                                </div>
+                                <p style="font-size:11px;color:var(--text-3);margin-bottom:10px;">Quem está de plantão na noite?</p>
+                                <div style="display:flex;gap:8px;flex-wrap:wrap;">
                                     ${turnoOpts(noite, 'setTurnoNoite')}
                                 </div>
-                                <div class="field-group" style="margin:0;">
-                                    <label class="field-label">Horário de C1</label>
-                                    <input class="field-input" type="time" value="${sess.c1_horario || '00:00'}"
-                                        oninput="state.contagem.currentSession={...(state.contagem.currentSession||{}),c1_horario:this.value}">
-                                </div>
                             </div>
 
-                            <!-- C2: Conferência de chegada -->
+                            <!-- ADM + Turno Dia (C3) -->
                             <div style="border:1px solid var(--border);border-radius:10px;padding:14px;background:var(--bg-2);">
-                                <div style="font-weight:700;font-size:13px;color:var(--text-1);margin-bottom:4px;">C2 — Conferência de Chegada</div>
-                                <p style="font-size:11px;color:var(--text-3);margin-bottom:10px;">O que encontramos no almoxarifado às 07h.</p>
-                                <div class="field-group" style="margin:0;">
-                                    <label class="field-label">Horário de C2</label>
-                                    <input class="field-input" type="time" value="${sess.c2_horario || '07:00'}"
-                                        oninput="state.contagem.currentSession={...(state.contagem.currentSession||{}),c2_horario:this.value}">
+                                <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+                                    <div style="font-weight:700;font-size:13px;color:var(--text-1);">ADM + Turno do Dia</div>
                                 </div>
-                            </div>
-
-                            <!-- C3: Pós-distribuição ADM + Turno Dia -->
-                            <div style="border:1px solid var(--border);border-radius:10px;padding:14px;background:var(--bg-2);">
-                                <div style="font-weight:700;font-size:13px;color:var(--text-1);margin-bottom:4px;">C3 — Pós-distribuição ADM</div>
-                                <p style="font-size:11px;color:var(--text-3);margin-bottom:10px;">Qual turno divide com o ADM de 07h às 19h?</p>
-                                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+                                <p style="font-size:11px;color:var(--text-3);margin-bottom:10px;">Quem divide o dia com o ADM?</p>
+                                <div style="display:flex;gap:8px;flex-wrap:wrap;">
                                     ${turnoOpts(dia, 'setTurnoDia')}
                                 </div>
-                                <div class="field-group" style="margin:0;">
-                                    <label class="field-label">Horário de C3</label>
-                                    <input class="field-input" type="time" value="${sess.c3_horario || '08:00'}"
-                                        oninput="state.contagem.currentSession={...(state.contagem.currentSession||{}),c3_horario:this.value}">
-                                </div>
+                            </div>
+
+                            <!-- Fim de Semana -->
+                            <div style="border:1px solid var(--border);border-radius:10px;overflow:hidden;">
+                                <button type="button" onclick="toggleFDS()"
+                                    style="width:100%;display:flex;align-items:center;justify-content:space-between;
+                                           padding:12px 14px;background:${sess.isFDS ? '#eef2ff' : 'var(--bg-2)'};
+                                           border:none;cursor:pointer;gap:10px;">
+                                    <div style="display:flex;align-items:center;gap:8px;">
+                                        <i class="ph ${sess.isFDS ? 'ph-calendar-check' : 'ph-calendar'}"
+                                           style="font-size:16px;color:${sess.isFDS ? 'var(--accent)' : 'var(--text-3)'}"></i>
+                                        <span style="font-weight:700;font-size:13px;color:${sess.isFDS ? 'var(--accent)' : 'var(--text-2)'}">
+                                            Final de Semana
+                                        </span>
+                                    </div>
+                                    <div style="width:36px;height:20px;border-radius:10px;
+                                                background:${sess.isFDS ? 'var(--accent)' : 'var(--border)'};
+                                                position:relative;transition:background .2s;">
+                                        <div style="width:16px;height:16px;border-radius:50%;background:#fff;
+                                                    position:absolute;top:2px;
+                                                    left:${sess.isFDS ? '18px' : '2px'};transition:left .2s;"></div>
+                                    </div>
+                                </button>
+
+                                ${sess.isFDS ? `
+                                <div style="padding:12px 14px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:8px;">
+                                    <div style="font-size:11px;color:var(--text-3);margin-bottom:2px;">
+                                        Liste os turnos que cobriram o período:
+                                    </div>
+                                    ${(sess.turnosWeekend || []).map((t, i) => `
+                                    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                                        <input type="text" value="${t.data}" placeholder="DD/MM"
+                                            oninput="setWeekendShift(${i},'data',this.value)"
+                                            style="width:68px;padding:7px 8px;border:1px solid var(--border);border-radius:7px;
+                                                   font-size:13px;font-weight:600;text-align:center;color:var(--text-1);">
+                                        <div style="display:flex;gap:4px;">
+                                            ${['A','B','C','D'].map(l => `
+                                            <button type="button" onclick="setWeekendShift(${i},'letra','${l}')"
+                                                style="width:30px;height:30px;border-radius:6px;border:2px solid ${t.letra===l?turnoColor(l):'var(--border)'};
+                                                       background:${t.letra===l?turnoBg(l):'transparent'};
+                                                       color:${t.letra===l?turnoColor(l):'var(--text-3)'};
+                                                       font-weight:800;font-size:12px;cursor:pointer;">${l}</button>`).join('')}
+                                        </div>
+                                        <div style="display:flex;gap:4px;">
+                                            ${[['19 A 07','🌙'],['07 A 19','☀️']].map(([h,ic]) => `
+                                            <button type="button" onclick="setWeekendShift(${i},'horario','${h}')"
+                                                style="padding:5px 10px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;
+                                                       border:2px solid ${t.horario===h?'var(--accent)':'var(--border)'};
+                                                       background:${t.horario===h?'var(--accent)':'transparent'};
+                                                       color:${t.horario===h?'#fff':'var(--text-3)'};">
+                                                ${ic} ${h}</button>`).join('')}
+                                        </div>
+                                        <button type="button" onclick="removeWeekendShift(${i})"
+                                            style="width:28px;height:28px;border-radius:6px;border:1px solid var(--border);
+                                                   background:transparent;color:var(--red);cursor:pointer;font-size:14px;
+                                                   display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                                            <i class="ph ph-trash"></i>
+                                        </button>
+                                    </div>`).join('')}
+                                    <button type="button" onclick="addWeekendShift()"
+                                        style="display:flex;align-items:center;gap:6px;padding:7px 12px;border-radius:7px;
+                                               border:1px dashed var(--accent);background:transparent;
+                                               color:var(--accent);font-size:12px;font-weight:600;cursor:pointer;margin-top:2px;">
+                                        <i class="ph ph-plus"></i> Adicionar turno
+                                    </button>
+                                </div>` : ''}
                             </div>
 
                             <!-- Botões -->
@@ -4113,14 +4295,11 @@
                     </div>`;
                 }
 
-                const c1h = rSess?.c1_horario || '00:00';
-                const c2h = rSess?.c2_horario || '07:00';
-                const c3h = rSess?.c3_horario || '08:00';
-                const turnoNoite = rSess
-                    ? `LETRA ${rSess.turno_noite} - HORARIO: ${c1h} A ${c2h}`
-                    : 'Turno Noite';
-                const turnoDiaAdm = rSess
-                    ? `ADM + LETRA ${rSess.turno_dia} - HORARIO: ${c2h} AS ${c3h}`
+                const turnoNoite = rSess?.turno_noite
+                    ? `TURNO ${rSess.turno_noite} — 19:00 A 07:00`
+                    : 'Turno Noite — 19:00 A 07:00';
+                const turnoDiaAdm = rSess?.turno_dia
+                    ? `ADM + TURNO ${rSess.turno_dia}`
                     : 'ADM + Turno Dia';
                 const sessionId = state.contagem.turno || '';
 
@@ -4131,17 +4310,32 @@
 
                     <!-- Cabecalho da sessao -->
                     <div class="card" style="padding:14px 16px;">
-                        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px;">
-                            <span style="font-weight:800;font-size:15px;color:var(--text-1);">Relatorio da Sessao</span>
-                            <span style="font-size:12px;font-weight:700;color:var(--text-3);letter-spacing:0.04em;">${sessionId}</span>
-                            <span style="font-size:12px;color:var(--text-3);">${formatDate(state.contagem.date)}</span>
-                        </div>
-                        <div style="display:flex;gap:16px;flex-wrap:wrap;">
-                            <span style="font-size:12px;color:var(--text-2);">
-                                <span style="font-weight:600;">C1</span> ${c1h} &nbsp;
-                                <span style="font-weight:600;">C2</span> ${c2h} &nbsp;
-                                <span style="font-weight:600;">C3</span> ${c3h}
-                            </span>
+                        <div style="display:flex;flex-direction:column;gap:6px;">
+                            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                                <span style="font-weight:800;font-size:15px;color:var(--text-1);">Relatório de Distribuição Almoxarifado</span>
+                                <span style="font-size:12px;color:var(--text-3);">${formatDate(state.contagem.date)}</span>
+                                ${rSess ? `
+                                <span style="font-size:12px;color:var(--text-3);">·</span>
+                                ${turnoBadge(rSess.turno_noite)} <span style="font-size:12px;color:var(--text-3);">noite</span>
+                                <span style="font-size:12px;color:var(--text-3);">·</span>
+                                ${turnoBadge(rSess.turno_dia)} <span style="font-size:12px;color:var(--text-3);">dia</span>` : ''}
+                            </div>
+                            ${(() => {
+                                const fds = parseFDS(rSess?.observacao);
+                                if (!fds) return '';
+                                const linhas = fds.turnos.map(t =>
+                                    `<span style="display:inline-flex;align-items:center;gap:6px;font-size:11px;">
+                                        <span style="font-weight:600;color:var(--text-2);">${t.data}</span>
+                                        ${turnoBadge(t.letra)}
+                                        <span style="color:var(--text-3);">${t.horario}</span>
+                                    </span>`
+                                ).join('<span style="color:var(--border);margin:0 4px;">|</span>');
+                                return `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:2px;">
+                                    <span style="font-size:11px;font-weight:700;color:var(--orange);text-transform:uppercase;letter-spacing:.04em;">Final de Semana</span>
+                                    <span style="color:var(--border);">·</span>
+                                    ${linhas}
+                                </div>`;
+                            })()}
                         </div>
                     </div>
 
@@ -4153,7 +4347,7 @@
                                 <div style="font-weight:700;font-size:13px;color:var(--text-1);">${turnoNoite}</div>
                                 <div style="font-size:11px;color:var(--text-3);">Consumo = C1 - C2</div>
                             </div>
-                            <span style="font-size:20px;font-weight:800;color:var(--red);">−${totalC1C2} unid</span>
+                            <span style="font-size:20px;font-weight:800;color:${totalC1C2>0?'var(--red)':'var(--text-3)'};">${totalC1C2>0?'−'+totalC1C2:'0'} unid</span>
                         </div>
                         ${sectionTable(result, 'c1_qtd', 'c2_qtd', 'Consumido', (a, b) => Math.max(0, a - b))}
                     </div>
@@ -4166,7 +4360,7 @@
                                 <div style="font-weight:700;font-size:13px;color:var(--text-1);">${turnoDiaAdm}</div>
                                 <div style="font-size:11px;color:var(--text-3);">Distribuido = C2 - C3</div>
                             </div>
-                            <span style="font-size:20px;font-weight:800;color:var(--orange);">−${totalC2C3} unid</span>
+                            <span style="font-size:20px;font-weight:800;color:${totalC2C3>0?'var(--orange)':'var(--text-3)'};">${totalC2C3>0?'−'+totalC2C3:'0'} unid</span>
                         </div>
                         ${sectionTable(result, 'c2_qtd', 'c3_qtd', 'Distribuido', (a, b) => Math.max(0, a - b))}
                     </div>
@@ -4241,7 +4435,7 @@
                     });
 
                     const filteredHistGroups = Object.values(histGroups)
-                        .filter(g => state.contagem.historyTurnoFilter === 'TODOS' || (!g.turno?.startsWith('CTG-') && g.turno === state.contagem.historyTurnoFilter))
+                        .filter(g => state.contagem.historyTurnoFilter === 'TODOS' || (!isSessionId(g.turno) && g.turno === state.contagem.historyTurnoFilter))
                         .sort((a, b) => b.date.localeCompare(a.date));
 
                     const histCards = [];
@@ -4282,8 +4476,8 @@
                                     <div>
                                         <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap;">
                                             <span style="font-weight:700;font-size:14px;">${formatDate(date)}</span>
-                                            ${turno && turno.startsWith('CTG-')
-                                    ? `<span style="font-size:11px;font-weight:700;color:var(--accent);background:#eef2ff;padding:2px 8px;border-radius:4px;letter-spacing:0.03em;">${turno}</span>`
+                                            ${isSessionId(turno)
+                                    ? `<span style="font-size:11px;font-weight:700;color:var(--accent);background:#eef2ff;padding:2px 8px;border-radius:4px;letter-spacing:0.03em;">Sessão</span>`
                                     : turnoBadge(turno)}
                                             ${horario ? `<span style="font-size:11px;color:var(--text-3);">${horario}</span>` : ''}
                                             ${resumoBadge}
@@ -4302,6 +4496,9 @@
                                         </button>
                                         <button onclick="editContagemDate('${date}',3,'${turno || ''}','${horario || ''}')" class="btn-secondary" style="font-size:11px;padding:4px 10px;">
                                             <i class="ph ph-pencil"></i> C3
+                                        </button>
+                                        <button onclick="showDateChangeModal('${date}','${turno || ''}')" class="btn-secondary" style="font-size:11px;padding:4px 10px;color:var(--accent);border-color:var(--accent);">
+                                            <i class="ph ph-calendar-blank"></i> Data
                                         </button>
                                         <button onclick="deleteContagemDate('${date}',0,'${turno || ''}')" class="btn-secondary" style="font-size:11px;padding:4px 10px;color:var(--red);border-color:var(--red);">
                                             <i class="ph ph-trash"></i> Excluir
@@ -4323,16 +4520,19 @@
                                     <div>
                                         <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap;">
                                             <span style="font-weight:700;font-size:14px;">${formatDate(date)}</span>
-                                            ${turno && turno.startsWith('CTG-')
-                                    ? `<span style="font-size:11px;font-weight:700;color:var(--accent);background:#eef2ff;padding:2px 8px;border-radius:4px;letter-spacing:0.03em;">${turno}</span>`
+                                            ${isSessionId(turno)
+                                    ? `<span style="font-size:11px;font-weight:700;color:var(--accent);background:#eef2ff;padding:2px 8px;border-radius:4px;letter-spacing:0.03em;">Sessão</span>`
                                     : turnoBadge(turno)}
                                             ${horario ? `<span style="font-size:11px;color:var(--text-3);">${horario}</span>` : ''}
                                         </div>
                                         <div style="font-size:11px;color:var(--text-3);">Contagem 1 registrada &nbsp;<span class="badge badge-gray" style="font-size:10px;">C2 pendente</span></div>
                                     </div>
-                                    <div style="display:flex;gap:6px;flex-shrink:0;">
+                                    <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap;">
                                         <button onclick="editContagemDate('${date}',1,'${turno || ''}','${horario || ''}')" class="btn-secondary" style="font-size:11px;padding:4px 10px;">
                                             <i class="ph ph-pencil"></i> Editar
+                                        </button>
+                                        <button onclick="showDateChangeModal('${date}','${turno || ''}')" class="btn-secondary" style="font-size:11px;padding:4px 10px;color:var(--accent);border-color:var(--accent);">
+                                            <i class="ph ph-calendar-blank"></i> Data
                                         </button>
                                         <button onclick="deleteContagemDate('${date}',1,'${turno || ''}')" class="btn-secondary" style="font-size:11px;padding:4px 10px;color:var(--red);border-color:var(--red);">
                                             <i class="ph ph-trash"></i> Excluir
@@ -4397,7 +4597,7 @@
                        </div>`
                     : `<div style="display:flex;flex-direction:column;gap:10px;">
                             ${openTickets.map(t => {
-                        const isSess = t.turno?.startsWith('CTG-');
+                        const isSess = isSessionId(t.turno);
                         const cor = isSess ? 'var(--accent)' : turnoColor(t.turno);
                         const bg = isSess ? '#eef2ff' : turnoBg(t.turno);
                         const statusLabel = t.hasC3
@@ -4428,7 +4628,7 @@
                                           <i class="ph-fill ph-clipboard-check"></i> Fazer C2
                                        </button>`;
                         const headerLabel = isSess
-                            ? `<span style="font-size:12px;font-weight:800;color:${cor};letter-spacing:0.03em;">${t.turno}</span>`
+                            ? `<span style="font-size:12px;font-weight:800;color:${cor};letter-spacing:0.03em;">SESSÃO</span>`
                             : `<span style="font-weight:800;font-size:26px;color:${cor};font-family:var(--font-display);line-height:1;">${t.turno || '—'}</span>`;
                         return `<div style="border:2px solid ${cor};border-radius:12px;padding:14px 16px;background:${bg};display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
                                     <div style="display:flex;align-items:center;gap:10px;min-width:${isSess ? '160px' : '100px'};">
@@ -4625,49 +4825,82 @@
         function copiarRelatorioWhatsApp() {
             var result = state.contagem.savedResult;
             var rSess = state.contagem.currentSession;
-            var sessId = state.contagem.turno || '';
             if (!result) return;
-            var c1h = (rSess && rSess.c1_horario) ? rSess.c1_horario : '00:00';
-            var c2h = (rSess && rSess.c2_horario) ? rSess.c2_horario : '07:00';
-            var c3h = (rSess && rSess.c3_horario) ? rSess.c3_horario : '08:00';
-            var dataFmt = formatDate(state.contagem.date);
-            var sep = '-------------------------------';
-            var txt = 'RELATORIO DA SESSAO' + (sessId ? ' - ' + sessId : '') + '\n';
-            txt += 'Data: ' + dataFmt + '\nC1: ' + c1h + ' | C2: ' + c2h + ' | C3: ' + c3h + '\n';
-            var noiteLabel = rSess
-                ? 'LETRA ' + rSess.turno_noite + ' - HORARIO: ' + c1h + ' A ' + c2h
-                : 'TURNO NOITE';
-            var totalC1C2 = result.reduce(function (a, r) { return a + ((r.c1_qtd != null && r.c2_qtd != null) ? Math.max(0, r.c1_qtd - r.c2_qtd) : 0); }, 0);
-            txt += '\n' + noiteLabel + '\nConsumo = C1 - C2\n' + sep + '\n';
-            result.forEach(function (r) {
-                var cons = (r.c1_qtd != null && r.c2_qtd != null) ? Math.max(0, r.c1_qtd - r.c2_qtd) : null;
-                if (!cons) return;
-                var nm = String(r.item_name); while (nm.length < 24) nm += ' ';
-                txt += nm + ' C1:' + (r.c1_qtd != null ? r.c1_qtd : '-') + ' | C2:' + (r.c2_qtd != null ? r.c2_qtd : '-') + ' | Consumido: ' + cons + '\n';
+
+            var turnoNoite = (rSess && rSess.turno_noite) ? rSess.turno_noite : '?';
+            var turnoDia   = (rSess && rSess.turno_dia)   ? rSess.turno_dia   : '?';
+
+            // Noite é sempre 19:00→07:00 (cruza meia-noite: data do relatório = dia seguinte)
+            var sessDate  = new Date(state.contagem.date + 'T12:00:00');
+            var noiteDate = new Date(sessDate.getTime() - 86400000);
+
+            function fmtDia(d) {
+                return String(d.getDate()).padStart(2,'0') + '/' + String(d.getMonth()+1).padStart(2,'0');
+            }
+
+            // Inclui itens com valor positivo: usa diferença quando ambos existem,
+            // ou o valor único disponível quando só um lado foi preenchido
+            var itensNoite = result.filter(function(r) {
+                if (r.c1_qtd != null && r.c2_qtd != null) return (r.c1_qtd - r.c2_qtd) > 0;
+                return false; // sem C1 não há como saber consumo noturno
             });
-            txt += sep + '\nTotal consumido: ' + totalC1C2 + ' unid\n';
-            var diaLabel = rSess ? 'ADM + LETRA ' + rSess.turno_dia + ' - HORARIO: ' + c2h + ' AS ' + c3h : 'ADM + TURNO DIA';
-            var totalC2C3 = result.reduce(function (a, r) { return a + ((r.c2_qtd != null && r.c3_qtd != null) ? Math.max(0, r.c2_qtd - r.c3_qtd) : 0); }, 0);
-            txt += '\n' + diaLabel + '\nDistribuicao = C2 - C3\n' + sep + '\n';
-            result.forEach(function (r) {
-                var dist = (r.c2_qtd != null && r.c3_qtd != null) ? Math.max(0, r.c2_qtd - r.c3_qtd) : null;
-                if (!dist) return;
-                var nm = String(r.item_name); while (nm.length < 24) nm += ' ';
-                txt += nm + ' C2:' + (r.c2_qtd != null ? r.c2_qtd : '-') + ' | C3:' + (r.c3_qtd != null ? r.c3_qtd : '-') + ' | Distribuido: ' + dist + '\n';
+            var itensDia = result.filter(function(r) {
+                if (r.c2_qtd != null && r.c3_qtd != null) return (r.c2_qtd - r.c3_qtd) > 0;
+                if (r.c2_qtd == null  && r.c3_qtd != null) return r.c3_qtd > 0; // só C3: usa direto
+                return false;
             });
-            txt += sep + '\nTotal distribuido: ' + totalC2C3 + ' unid\n';
+
+            function qtdNoite(r) {
+                return (r.c1_qtd != null && r.c2_qtd != null) ? r.c1_qtd - r.c2_qtd : r.c1_qtd;
+            }
+            function qtdDia(r) {
+                return (r.c2_qtd != null && r.c3_qtd != null) ? r.c2_qtd - r.c3_qtd : r.c3_qtd;
+            }
+
+            var txt = 'RELATORIO DE DISTRIBUIÇÃO ALMOXARIFADO\n';
+            var fdsData = parseFDS(rSess && rSess.observacao);
+            if (fdsData && fdsData.turnos && fdsData.turnos.length) {
+                txt += 'Final De Semana\n';
+                fdsData.turnos.forEach(function(t) {
+                    txt += (t.data || '—') + ' - letra ' + (t.letra || '?') + ' - ' + (t.horario || '') + '\n';
+                });
+            }
+            txt += '\n';
+
+            if (itensNoite.length > 0) {
+                txt += '*TURNO ' + turnoNoite + ' — ' + fmtDia(noiteDate) + ' — 19:00 às 07:00*\n\n';
+                itensNoite.forEach(function(r) {
+                    txt += '• ' + qtdNoite(r) + ' ' + r.item_name.toUpperCase() + '\n';
+                });
+            }
+
+            if (itensDia.length > 0) {
+                txt += '\n';
+                txt += '*ADM + TURNO ' + turnoDia + ' — ' + fmtDia(sessDate) + '*\n\n';
+                itensDia.forEach(function(r) {
+                    txt += '• ' + qtdDia(r) + ' ' + r.item_name.toUpperCase() + '\n';
+                });
+            }
+
+            if (itensNoite.length === 0 && itensDia.length === 0) {
+                showToast('Sem dados para copiar — complete a contagem primeiro.', 'error');
+                return;
+            }
+
             navigator.clipboard.writeText(txt)
-                .then(function () { showToast('Relatorio copiado! Cole no WhatsApp.', 'success'); })
+                .then(function () { showToast('Copiado! Cole no WhatsApp.', 'success'); })
                 .catch(function () { showToast('Erro ao copiar. Tente novamente.', 'error'); });
         }
 
         // ============================================
-        // DASHBOARD EPI
+        // DASHBOARD EPI — COMPLETO
         // ============================================
+        var _dashCharts = {};
+
         async function navigateToEpiDashboard() {
             state.view = 'epi_dashboard';
             if (!state.dashboard) {
-                state.dashboard = { loading: false, data: [], period: '30d' };
+                state.dashboard = { loading: false, data: [], sessions: [], stockItems: [], movements: [], period: '30d', dashTab: 'overview' };
             }
             render();
             await loadDashboardData();
@@ -4679,171 +4912,439 @@
             render();
             try {
                 var p = state.dashboard.period;
-                var query = sbClient.from('daily_counts').select('*').order('date', { ascending: false });
-                if (p !== 'all') {
-                    var days = p === '7d' ? 7 : p === '30d' ? 30 : 90;
-                    var since = new Date();
-                    since.setDate(since.getDate() - days);
-                    query = query.gte('date', since.toISOString().split('T')[0]);
+                var days = p === '7d' ? 7 : p === '30d' ? 30 : p === '90d' ? 90 : null;
+                var since = null;
+                if (days) {
+                    var sd = new Date();
+                    sd.setDate(sd.getDate() - days);
+                    since = sd.toISOString().split('T')[0];
                 }
-                var res = await query;
-                state.dashboard.data = res.data || [];
-            } catch (e) { state.dashboard.data = []; }
+                var dcQ = sbClient.from('daily_counts').select('*').order('date', { ascending: true });
+                var sQ = sbClient.from('count_sessions').select('*').order('created_at', { ascending: false });
+                var mQ = sbClient.from('movements').select('*').order('date', { ascending: false }).limit(100);
+                if (since) { dcQ = dcQ.gte('date', since); sQ = sQ.gte('created_at', since); mQ = mQ.gte('date', since); }
+                var results = await Promise.all([dcQ, sQ, sbClient.from('items').select('*').order('nome'), mQ]);
+                state.dashboard.data = results[0].data || [];
+                state.dashboard.sessions = results[1].data || [];
+                state.dashboard.stockItems = results[2].data || [];
+                state.dashboard.movements = results[3].data || [];
+            } catch (e) {
+                state.dashboard.data = [];
+                state.dashboard.sessions = [];
+                state.dashboard.stockItems = [];
+                state.dashboard.movements = [];
+            }
             state.dashboard.loading = false;
             render();
-            renderDashboardCharts();
+            setTimeout(renderDashboardCharts, 60);
+        }
+
+        function setDashTab(tab) {
+            if (!state.dashboard) return;
+            state.dashboard.dashTab = tab;
+            render();
+            setTimeout(renderDashboardCharts, 60);
+        }
+
+        function _destroyDashChart(id) {
+            if (_dashCharts[id]) { try { _dashCharts[id].destroy(); } catch (e) { } delete _dashCharts[id]; }
+        }
+
+        function _mkDashChart(id, cfg) {
+            _destroyDashChart(id);
+            var el = document.getElementById(id);
+            if (!el) return;
+            _dashCharts[id] = new Chart(el, cfg);
+        }
+
+        function _computeDashMetrics() {
+            var dash = state.dashboard || {};
+            var rows = dash.data || [];
+            var sessions = dash.sessions || [];
+            var stockItems = dash.stockItems || [];
+            var sessMap = {};
+            sessions.forEach(function (s) { sessMap[s.id] = s; });
+            var sesRows = rows.filter(function (r) { return isSessionId(r.turno || ''); });
+            var byItem = {}, byTurnoLetter = { A: 0, B: 0, C: 0, D: 0, ADM: 0 }, byDate = {};
+            var totalConsNoite = 0, totalDistAdm = 0;
+            sesRows.forEach(function (r) {
+                var cons = (r.c1_qtd != null && r.c2_qtd != null) ? Math.max(0, r.c1_qtd - r.c2_qtd) : 0;
+                var dist = (r.c2_qtd != null && r.c3_qtd != null) ? Math.max(0, r.c2_qtd - r.c3_qtd) : 0;
+                if (cons === 0 && dist === 0) return;
+                if (!byItem[r.item_name]) byItem[r.item_name] = { consumo: 0, distAdm: 0 };
+                byItem[r.item_name].consumo += cons;
+                byItem[r.item_name].distAdm += dist;
+                totalConsNoite += cons;
+                totalDistAdm += dist;
+                var sess = sessMap[r.turno];
+                var letra = sess ? (sess.turno_noite || '') : '';
+                if (['A', 'B', 'C', 'D'].includes(letra)) byTurnoLetter[letra] += cons;
+                byTurnoLetter.ADM += dist;
+                var d = r.date;
+                if (!byDate[d]) byDate[d] = { cons: 0, dist: 0 };
+                byDate[d].cons += cons;
+                byDate[d].dist += dist;
+            });
+            var allItems = Object.entries(byItem).sort(function (a, b) {
+                return (b[1].consumo + b[1].distAdm) - (a[1].consumo + a[1].distAdm);
+            });
+            var lowStock = stockItems.filter(function (i) {
+                return i.estoque_minimo != null && i.quantidade != null && i.quantidade <= i.estoque_minimo;
+            });
+            return {
+                byItem: byItem, byTurnoLetter: byTurnoLetter, byDate: byDate,
+                sortedDates: Object.keys(byDate).sort(),
+                allItems: allItems, totalEPIs: totalConsNoite + totalDistAdm,
+                totalConsNoite: totalConsNoite, totalDistAdm: totalDistAdm,
+                sessCount: sessions.length, lowStock: lowStock,
+                totalStockItems: stockItems.length
+            };
+        }
+
+        function _kpiCard(label, value, icon, color, alert) {
+            return '<div class="card" style="padding:14px 12px;text-align:center;' + (alert ? 'border:1.5px solid ' + color + ';' : '') + '">' +
+                '<div style="font-size:10px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">' +
+                '<i class="ph ' + icon + '" style="color:' + color + ';"></i> ' + label + '</div>' +
+                '<div style="font-size:28px;font-weight:800;color:' + color + ';">' + value + '</div></div>';
+        }
+
+        function _chartCard(title, chartId, height) {
+            return '<div class="card" style="padding:16px;">' +
+                '<div class="section-title" style="margin-bottom:12px;">' + title + '</div>' +
+                '<div style="position:relative;height:' + (height || 220) + 'px;"><canvas id="' + chartId + '"></canvas></div></div>';
+        }
+
+        function _renderTabOverview(m) {
+            return '<div style="display:grid;grid-template-columns:2fr 1fr;gap:14px;margin-bottom:14px;">' +
+                _chartCard('<i class="ph ph-trend-up" style="color:var(--accent);"></i> Distribuição Diária — Linha do Tempo', 'dash-chart-timeline', 200) +
+                _chartCard('<i class="ph ph-chart-pie" style="color:var(--accent);"></i> Por Turno', 'dash-chart-turno', 200) +
+                '</div>' +
+                _chartCard('<i class="ph ph-ranking" style="color:var(--accent);"></i> Top 10 EPIs Consumidos', 'dash-chart-top', 250);
+        }
+
+        function _renderTabItems(m) {
+            var total = m.totalEPIs || 1;
+            var rows = m.allItems.map(function (entry, i) {
+                var nome = entry[0], v = entry[1];
+                var tot = v.consumo + v.distAdm;
+                var pct = ((tot / total) * 100).toFixed(1);
+                var barW = Math.min(100, parseFloat(pct));
+                return '<tr style="border-bottom:1px solid var(--border);">' +
+                    '<td style="padding:9px 12px;font-weight:700;color:var(--text-3);font-size:12px;">' + (i + 1) + '</td>' +
+                    '<td style="padding:9px 12px;font-weight:600;">' + nome + '</td>' +
+                    '<td style="padding:9px 12px;text-align:right;color:var(--red);font-weight:700;">' + v.consumo + '</td>' +
+                    '<td style="padding:9px 12px;text-align:right;color:var(--orange);font-weight:700;">' + v.distAdm + '</td>' +
+                    '<td style="padding:9px 12px;text-align:right;font-weight:800;">' + tot + '</td>' +
+                    '<td style="padding:9px 12px;text-align:right;">' +
+                    '<div style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">' +
+                    '<div style="width:60px;height:5px;border-radius:3px;background:var(--border);">' +
+                    '<div style="height:5px;border-radius:3px;background:var(--accent);width:' + barW + '%;"></div></div>' +
+                    '<span style="font-size:11px;color:var(--text-2);min-width:36px;">' + pct + '%</span></div></td></tr>';
+            }).join('');
+            var empty = m.allItems.length === 0 ? '<tr><td colspan="6" style="padding:32px;text-align:center;color:var(--text-3);">Nenhum dado no período selecionado</td></tr>' : '';
+            return '<div class="card"><div style="padding:14px 16px 10px;border-bottom:1px solid var(--border);">' +
+                '<div class="section-title"><i class="ph ph-list-numbers" style="color:var(--accent);"></i> Ranking Completo de Itens</div>' +
+                '<p style="font-size:12px;color:var(--text-3);margin:4px 0 0;">' + m.allItems.length + ' itens com movimentação no período</p>' +
+                '</div><div style="overflow-x:auto;">' +
+                '<table style="width:100%;border-collapse:collapse;font-size:13px;">' +
+                '<thead><tr style="background:var(--bg-2);">' +
+                '<th style="padding:8px 12px;text-align:left;font-size:11px;color:var(--text-3);">#</th>' +
+                '<th style="padding:8px 12px;text-align:left;font-size:11px;color:var(--text-3);">Item</th>' +
+                '<th style="padding:8px 12px;text-align:right;font-size:11px;color:var(--red);">Cons. Noite</th>' +
+                '<th style="padding:8px 12px;text-align:right;font-size:11px;color:var(--orange);">Dist. ADM</th>' +
+                '<th style="padding:8px 12px;text-align:right;font-size:11px;color:var(--text-2);">Total</th>' +
+                '<th style="padding:8px 12px;text-align:right;font-size:11px;color:var(--text-3);">% do Total</th>' +
+                '</tr></thead><tbody>' + rows + empty + '</tbody></table></div></div>';
+        }
+
+        function _renderTabSessions() {
+            var dash = state.dashboard || {};
+            var sessions = dash.sessions || [];
+            var fdsCount = 0;
+            sessions.forEach(function (s) {
+                try { var o = JSON.parse(s.observacao || '{}'); if (o.fds) fdsCount++; } catch (e) { }
+            });
+            var cards = '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px;">' +
+                _kpiCard('Total de Sessões', sessions.length, 'ph-calendar', 'var(--accent)') +
+                _kpiCard('Final de Semana', fdsCount, 'ph-calendar-blank', 'var(--orange)') +
+                _kpiCard('Sessões Normais', sessions.length - fdsCount, 'ph-calendar-check', 'var(--green)') +
+                '</div>';
+            var rows = sessions.map(function (s) {
+                var isFDS = false, fdsInfo = '';
+                try {
+                    var o = JSON.parse(s.observacao || '{}');
+                    if (o.fds && o.turnos) {
+                        isFDS = true;
+                        fdsInfo = o.turnos.map(function (t) { return (t.data || '') + ' ' + (t.letra || '') + ' ' + (t.horario || ''); }).join(' / ');
+                    }
+                } catch (e) { }
+                var sid = s.id || '';
+                var dateStr = sid.length === 8 ? sid.slice(6, 8) + '/' + sid.slice(4, 6) + '/' + sid.slice(0, 4) : sid;
+                var tn = s.turno_noite || '?', td2 = s.turno_dia || '?';
+                var badge = function (l, c) {
+                    return '<span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:' + c + ';color:#fff;font-size:11px;font-weight:800;">' + l + '</span>';
+                };
+                var typeBg = isFDS ? 'rgba(224,135,42,.12)' : 'rgba(46,158,90,.12)';
+                var typeColor = isFDS ? 'var(--orange)' : 'var(--green)';
+                return '<tr style="border-bottom:1px solid var(--border);">' +
+                    '<td style="padding:9px 12px;font-weight:600;">' + dateStr + '</td>' +
+                    '<td style="padding:9px 12px;">' + badge(tn, 'var(--red)') + '<span style="font-size:11px;color:var(--text-3);margin-left:6px;">19:00 → 07:00</span></td>' +
+                    '<td style="padding:9px 12px;">' + badge(td2, 'var(--orange)') + '</td>' +
+                    '<td style="padding:9px 12px;"><span style="padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700;background:' + typeBg + ';color:' + typeColor + ';">' + (isFDS ? 'FDS' : 'Normal') + '</span></td>' +
+                    '<td style="padding:9px 12px;font-size:12px;color:var(--text-2);">' + (fdsInfo || '—') + '</td></tr>';
+            }).join('');
+            var empty = sessions.length === 0 ? '<tr><td colspan="5" style="padding:32px;text-align:center;color:var(--text-3);">Nenhuma sessão no período</td></tr>' : '';
+            var table = '<div class="card"><div style="padding:14px 16px 10px;border-bottom:1px solid var(--border);">' +
+                '<div class="section-title"><i class="ph ph-calendar-check" style="color:var(--accent);"></i> Histórico de Sessões</div></div>' +
+                '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">' +
+                '<thead><tr style="background:var(--bg-2);">' +
+                '<th style="padding:8px 12px;text-align:left;font-size:11px;color:var(--text-3);">Data</th>' +
+                '<th style="padding:8px 12px;text-align:left;font-size:11px;color:var(--text-3);">Turno Noite</th>' +
+                '<th style="padding:8px 12px;text-align:left;font-size:11px;color:var(--text-3);">ADM + Dia</th>' +
+                '<th style="padding:8px 12px;text-align:left;font-size:11px;color:var(--text-3);">Tipo</th>' +
+                '<th style="padding:8px 12px;text-align:left;font-size:11px;color:var(--text-3);">Final de Semana</th>' +
+                '</tr></thead><tbody>' + rows + empty + '</tbody></table></div></div>';
+            return cards + table;
+        }
+
+        function _renderTabStock() {
+            var dash = state.dashboard || {};
+            var items = dash.stockItems || [];
+            var lowStock = items.filter(function (i) {
+                return i.estoque_minimo != null && i.quantidade != null && i.quantidade <= i.estoque_minimo;
+            });
+            var alertSection = '';
+            if (lowStock.length > 0) {
+                var alertRows = lowStock.map(function (i) {
+                    return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-radius:8px;margin-bottom:4px;background:rgba(214,69,69,.06);">' +
+                        '<div><div style="font-weight:600;font-size:13px;">' + i.nome + '</div>' +
+                        '<div style="font-size:11px;color:var(--text-3);">' + (i.categoria || 'Sem categoria') + '</div></div>' +
+                        '<div style="text-align:right;"><div style="font-size:22px;font-weight:800;color:var(--red);">' + (i.quantidade || 0) + '</div>' +
+                        '<div style="font-size:10px;color:var(--text-3);">mín: ' + i.estoque_minimo + '</div></div></div>';
+                }).join('');
+                alertSection = '<div class="card" style="margin-bottom:14px;border:1.5px solid var(--red);">' +
+                    '<div style="padding:12px 16px;background:rgba(214,69,69,.06);border-bottom:1px solid var(--border);">' +
+                    '<div class="section-title" style="color:var(--red);"><i class="ph ph-warning"></i> Alertas — Estoque Baixo (' + lowStock.length + ')</div></div>' +
+                    '<div style="padding:8px;">' + alertRows + '</div></div>';
+            }
+            var tableRows = items.map(function (i) {
+                var isLow = i.estoque_minimo != null && i.quantidade != null && i.quantidade <= i.estoque_minimo;
+                var sc = isLow ? 'var(--red)' : 'var(--green)';
+                var sbg = isLow ? 'rgba(214,69,69,.1)' : 'rgba(46,158,90,.1)';
+                return '<tr style="border-bottom:1px solid var(--border);">' +
+                    '<td style="padding:9px 12px;font-weight:600;">' + i.nome + '</td>' +
+                    '<td style="padding:9px 12px;font-size:12px;color:var(--text-2);">' + (i.categoria || '—') + '</td>' +
+                    '<td style="padding:9px 12px;text-align:right;font-weight:800;color:' + (isLow ? 'var(--red)' : 'var(--text-1)') + ';">' + (i.quantidade || 0) + '</td>' +
+                    '<td style="padding:9px 12px;text-align:right;color:var(--text-3);">' + (i.estoque_minimo != null ? i.estoque_minimo : '—') + '</td>' +
+                    '<td style="padding:9px 12px;"><span style="padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700;background:' + sbg + ';color:' + sc + ';">' + (isLow ? 'BAIXO' : 'OK') + '</span></td></tr>';
+            }).join('');
+            var empty = items.length === 0 ? '<tr><td colspan="5" style="padding:32px;text-align:center;color:var(--text-3);">Nenhum item cadastrado</td></tr>' : '';
+            var chartCard = '<div style="margin-bottom:14px;">' + _chartCard('<i class="ph ph-chart-bar" style="color:var(--accent);"></i> Estoque por Item (Top 20)', 'dash-chart-stock', 300) + '</div>';
+            var tableCard = '<div class="card"><div style="padding:14px 16px 10px;border-bottom:1px solid var(--border);">' +
+                '<div class="section-title"><i class="ph ph-package" style="color:var(--accent);"></i> Todos os Itens em Estoque (' + items.length + ')</div></div>' +
+                '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">' +
+                '<thead><tr style="background:var(--bg-2);">' +
+                '<th style="padding:8px 12px;text-align:left;font-size:11px;color:var(--text-3);">Item</th>' +
+                '<th style="padding:8px 12px;text-align:left;font-size:11px;color:var(--text-3);">Categoria</th>' +
+                '<th style="padding:8px 12px;text-align:right;font-size:11px;color:var(--text-3);">Qtd</th>' +
+                '<th style="padding:8px 12px;text-align:right;font-size:11px;color:var(--text-3);">Mínimo</th>' +
+                '<th style="padding:8px 12px;text-align:left;font-size:11px;color:var(--text-3);">Status</th>' +
+                '</tr></thead><tbody>' + tableRows + empty + '</tbody></table></div></div>';
+            return alertSection + chartCard + tableCard;
+        }
+
+        function _renderTabMovements(m) {
+            var dash = state.dashboard || {};
+            var movements = dash.movements || [];
+            var byType = {};
+            movements.forEach(function (mv) { byType[mv.type] = (byType[mv.type] || 0) + 1; });
+            var typeColors = { emerald: 'var(--green)', blue: 'var(--accent)', purple: '#6366f1', red: 'var(--red)', amber: 'var(--orange)', cyan: '#06b6d4' };
+            var typeBgs = { emerald: 'rgba(46,158,90,.12)', blue: 'rgba(74,127,215,.12)', purple: 'rgba(99,102,241,.12)', red: 'rgba(214,69,69,.12)', amber: 'rgba(224,135,42,.12)', cyan: 'rgba(6,182,212,.12)' };
+            var summaryCards = Object.entries(MOVEMENT_TYPES).filter(function (e) { return byType[e[0]] > 0; }).map(function (e) {
+                var k = e[0], v = e[1];
+                var c = typeColors[v.color] || 'var(--text-2)';
+                return _kpiCard(v.label, byType[k], 'ph-' + v.icon, c);
+            }).join('');
+            var movRows = movements.map(function (mv) {
+                var td2 = MOVEMENT_TYPES[mv.type] || { label: mv.type, color: 'blue', icon: 'arrow-right', sign: '' };
+                var c = typeColors[td2.color] || 'var(--text-2)';
+                var cbg = typeBgs[td2.color] || 'rgba(0,0,0,.06)';
+                var dfmt = mv.date ? mv.date.slice(8, 10) + '/' + mv.date.slice(5, 7) + '/' + mv.date.slice(0, 4) : '—';
+                var obs = mv.observations || '—';
+                if (obs.length > 40) obs = obs.slice(0, 40) + '…';
+                return '<tr style="border-bottom:1px solid var(--border);">' +
+                    '<td style="padding:9px 12px;font-size:12px;color:var(--text-2);">' + dfmt + '</td>' +
+                    '<td style="padding:9px 12px;"><span style="padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700;background:' + cbg + ';color:' + c + ';">' + td2.sign + ' ' + td2.label + '</span></td>' +
+                    '<td style="padding:9px 12px;font-weight:600;">' + (mv.item_name || '—') + '</td>' +
+                    '<td style="padding:9px 12px;text-align:right;font-weight:700;">' + (mv.quantity || 0) + '</td>' +
+                    '<td style="padding:9px 12px;font-size:12px;color:var(--text-2);">' + (mv.user_name || '—') + '</td>' +
+                    '<td style="padding:9px 12px;font-size:12px;color:var(--text-3);">' + obs + '</td></tr>';
+            }).join('');
+            var empty = movements.length === 0 ? '<tr><td colspan="6" style="padding:32px;text-align:center;color:var(--text-3);">Nenhuma movimentação no período</td></tr>' : '';
+            return '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px;">' + summaryCards + '</div>' +
+                '<div class="card"><div style="padding:14px 16px 10px;border-bottom:1px solid var(--border);">' +
+                '<div class="section-title"><i class="ph ph-arrows-left-right" style="color:var(--accent);"></i> Últimas ' + movements.length + ' Movimentações</div></div>' +
+                '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">' +
+                '<thead><tr style="background:var(--bg-2);">' +
+                '<th style="padding:8px 12px;text-align:left;font-size:11px;color:var(--text-3);">Data</th>' +
+                '<th style="padding:8px 12px;text-align:left;font-size:11px;color:var(--text-3);">Tipo</th>' +
+                '<th style="padding:8px 12px;text-align:left;font-size:11px;color:var(--text-3);">Item</th>' +
+                '<th style="padding:8px 12px;text-align:right;font-size:11px;color:var(--text-3);">Qtd</th>' +
+                '<th style="padding:8px 12px;text-align:left;font-size:11px;color:var(--text-3);">Usuário</th>' +
+                '<th style="padding:8px 12px;text-align:left;font-size:11px;color:var(--text-3);">Obs</th>' +
+                '</tr></thead><tbody>' + movRows + empty + '</tbody></table></div></div>';
         }
 
         function renderEpiDashboard() {
-            var dash = state.dashboard || { loading: false, data: [], period: '30d' };
-            var rows = dash.data || [];
-            var byItem = {}, byTurno = { A: 0, B: 0, C: 0, D: 0, ADM: 0 };
-            rows.forEach(function (r) {
-                var cons = (r.c1_qtd != null && r.c2_qtd != null) ? Math.max(0, r.c1_qtd - r.c2_qtd) : 0;
-                var dist = (r.c2_qtd != null && r.c3_qtd != null) ? Math.max(0, r.c2_qtd - r.c3_qtd) : 0;
-                if (!byItem[r.item_name]) byItem[r.item_name] = { consumo: 0, distAdm: 0 };
-                byItem[r.item_name].consumo += cons; byItem[r.item_name].distAdm += dist;
-                var t = r.turno || '';
-                ['A', 'B', 'C', 'D'].forEach(function (k) { if (t === k) byTurno[k] += cons; });
-                byTurno.ADM += dist;
-            });
-            var top10 = Object.entries(byItem)
-                .sort(function (a, b) { return (b[1].consumo + b[1].distAdm) - (a[1].consumo + a[1].distAdm); })
-                .slice(0, 10);
-            var totalEPIs = top10.reduce(function (s, e) { return s + e[1].consumo + e[1].distAdm; }, 0);
-            var totalNoite = byTurno.A + byTurno.B + byTurno.C + byTurno.D;
+            var dash = state.dashboard || { loading: false, data: [], period: '30d', dashTab: 'overview' };
+            var tab = dash.dashTab || 'overview';
+
+            if (dash.loading) {
+                return '<div class="page-wrap">' + renderHeader() + '<div class="page-content">' +
+                    '<div class="row-between" style="margin-bottom:16px;">' +
+                    '<h1 class="page-title"><i class="ph ph-chart-bar" style="color:var(--accent);"></i> Dashboard EPI</h1></div>' +
+                    '<div class="card" style="text-align:center;padding:64px;">' +
+                    '<div class="loading-spinner" style="margin:0 auto 16px;"></div>' +
+                    '<p style="color:var(--text-2);">Carregando dados...</p></div></div></div>';
+            }
+
+            var m = _computeDashMetrics();
+            var lowN = m.lowStock.length;
             var periodOpts = [['7d', '7 dias'], ['30d', '30 dias'], ['90d', '90 dias'], ['all', 'Tudo']];
-            return `
-            <div class="page-wrap">
-                ${renderHeader()}
-                <div class="page-content">
-                    <div class="row-between" style="margin-bottom:16px;">
-                        <h1 class="page-title"><i class="ph ph-chart-bar" style="color:var(--accent);"></i> Dashboard EPI</h1>
-                        <button onclick="loadDashboardData()" class="btn-secondary" ${dash.loading ? 'disabled' : ''}>
-                            <i class="ph ph-arrows-clockwise"></i> Atualizar
-                        </button>
-                    </div>
-                    <div class="card" style="margin-bottom:14px;">
-                        <div class="section-title" style="margin-bottom:10px;">Periodo</div>
-                        <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                            ${periodOpts.map(([v, l]) => `
-                                <button onclick="state.dashboard.period='${v}';loadDashboardData()"
-                                    style="padding:6px 18px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;
-                                           border:1.5px solid ${dash.period === v ? 'var(--accent)' : 'var(--border)'};
-                                           background:${dash.period === v ? 'var(--accent)' : 'transparent'};
-                                           color:${dash.period === v ? '#fff' : 'var(--text-2)'};">${l}
-                                </button>`).join('')}
-                        </div>
-                    </div>
-                    ${dash.loading ? `
-                    <div class="card" style="text-align:center;padding:48px;">
-                        <div class="loading-spinner" style="margin:0 auto 16px;"></div>
-                        <p style="color:var(--text-2);">Carregando dados...</p>
-                    </div>` : `
-                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:14px;">
-                        <div class="card" style="text-align:center;padding:16px 12px;">
-                            <div style="font-size:30px;font-weight:800;color:var(--accent);">${totalEPIs}</div>
-                            <div style="font-size:11px;color:var(--text-3);margin-top:4px;">EPIs Distribuidos</div>
-                        </div>
-                        <div class="card" style="text-align:center;padding:16px 12px;">
-                            <div style="font-size:30px;font-weight:800;color:var(--red);">${totalNoite}</div>
-                            <div style="font-size:11px;color:var(--text-3);margin-top:4px;">Consumo Turno Noite</div>
-                        </div>
-                        <div class="card" style="text-align:center;padding:16px 12px;">
-                            <div style="font-size:30px;font-weight:800;color:var(--orange);">${byTurno.ADM || 0}</div>
-                            <div style="font-size:11px;color:var(--text-3);margin-top:4px;">Dist. ADM + Dia</div>
-                        </div>
-                        <div class="card" style="text-align:center;padding:16px 12px;">
-                            <div style="font-size:30px;font-weight:800;color:var(--green);">${top10.length}</div>
-                            <div style="font-size:11px;color:var(--text-3);margin-top:4px;">Itens com Movimento</div>
-                        </div>
-                    </div>
-                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
-                        <div class="card" style="padding:16px;">
-                            <div class="section-title" style="margin-bottom:10px;">Top 10 Itens Consumidos</div>
-                            <div style="position:relative;height:220px;"><canvas id="dash-chart-top"></canvas></div>
-                        </div>
-                        <div class="card" style="padding:16px;">
-                            <div class="section-title" style="margin-bottom:10px;">Distribuicao por Turno</div>
-                            <div style="position:relative;height:220px;"><canvas id="dash-chart-turno"></canvas></div>
-                        </div>
-                    </div>
-                    <div class="card">
-                        <div class="section-title" style="margin-bottom:12px;">Ranking de Consumo</div>
-                        <div style="overflow-x:auto;">
-                            <table style="width:100%;border-collapse:collapse;font-size:13px;">
-                                <thead><tr style="background:var(--bg-2);border-bottom:2px solid var(--border);">
-                                    <th style="padding:8px 10px;text-align:left;font-size:11px;color:var(--text-3);">#</th>
-                                    <th style="padding:8px 10px;text-align:left;font-size:11px;color:var(--text-3);">Item</th>
-                                    <th style="padding:8px 10px;text-align:right;font-size:11px;color:var(--text-3);">Cons. Noite</th>
-                                    <th style="padding:8px 10px;text-align:right;font-size:11px;color:var(--text-3);">Dist. ADM</th>
-                                    <th style="padding:8px 10px;text-align:right;font-size:11px;color:var(--text-3);">Total</th>
-                                </tr></thead>
-                                <tbody>
-                                    ${top10.map(([nome, v], i) => `
-                                    <tr style="border-bottom:1px solid var(--border);">
-                                        <td style="padding:10px;color:var(--text-3);font-weight:700;">${i + 1}</td>
-                                        <td style="padding:10px;font-weight:600;">${nome}</td>
-                                        <td style="padding:10px;text-align:right;color:var(--red);font-weight:700;">${v.consumo}</td>
-                                        <td style="padding:10px;text-align:right;color:var(--orange);font-weight:700;">${v.distAdm}</td>
-                                        <td style="padding:10px;text-align:right;font-weight:800;">${v.consumo + v.distAdm}</td>
-                                    </tr>`).join('')}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>`}
-                </div>
-            </div>`;
+            var tabs = [
+                ['overview', 'ph-chart-line', 'Visão Geral'],
+                ['items', 'ph-list-numbers', 'Por Item'],
+                ['sessions', 'ph-calendar-check', 'Sessões'],
+                ['stock', 'ph-package', 'Estoque'],
+                ['movements', 'ph-arrows-left-right', 'Movimentações']
+            ];
+
+            var kpis = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:16px;">' +
+                _kpiCard('EPIs Distribuídos', m.totalEPIs, 'ph-package', 'var(--accent)') +
+                _kpiCard('Cons. Noite', m.totalConsNoite, 'ph-moon', 'var(--red)') +
+                _kpiCard('Dist. ADM', m.totalDistAdm, 'ph-sun', 'var(--orange)') +
+                _kpiCard('Sessões', m.sessCount, 'ph-calendar-check', 'var(--green)') +
+                _kpiCard('Itens Únicos', m.allItems.length, 'ph-tag', '#6366f1') +
+                _kpiCard('Est. Baixo', lowN, 'ph-warning', lowN > 0 ? 'var(--red)' : 'var(--green)', lowN > 0) +
+                '</div>';
+
+            var perOpts = periodOpts.map(function (po) {
+                var active = dash.period === po[0];
+                return '<button onclick="state.dashboard.period=\'' + po[0] + '\';loadDashboardData()"' +
+                    ' style="padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;' +
+                    'border:1.5px solid ' + (active ? 'var(--accent)' : 'var(--border)') + ';' +
+                    'background:' + (active ? 'var(--accent)' : 'transparent') + ';' +
+                    'color:' + (active ? '#fff' : 'var(--text-2)') + ';">' + po[1] + '</button>';
+            }).join('');
+
+            var periodBar = '<div class="card" style="margin-bottom:12px;padding:12px 16px;">' +
+                '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">' +
+                '<span style="font-size:12px;font-weight:600;color:var(--text-3);">PERÍODO:</span>' +
+                perOpts + '</div></div>';
+
+            var tabNav = '<div style="display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:16px;overflow-x:auto;">' +
+                tabs.map(function (t) {
+                    var active = tab === t[0];
+                    return '<button onclick="setDashTab(\'' + t[0] + '\')"' +
+                        ' style="display:flex;align-items:center;gap:6px;padding:10px 16px;font-size:13px;font-weight:600;' +
+                        'border:none;background:none;cursor:pointer;white-space:nowrap;' +
+                        'color:' + (active ? 'var(--accent)' : 'var(--text-2)') + ';' +
+                        'border-bottom:2px solid ' + (active ? 'var(--accent)' : 'transparent') + ';' +
+                        'margin-bottom:-2px;">' +
+                        '<i class="ph ' + t[1] + '"></i> ' + t[2] + '</button>';
+                }).join('') + '</div>';
+
+            var content = '';
+            if (tab === 'overview') content = _renderTabOverview(m);
+            else if (tab === 'items') content = _renderTabItems(m);
+            else if (tab === 'sessions') content = _renderTabSessions();
+            else if (tab === 'stock') content = _renderTabStock();
+            else if (tab === 'movements') content = _renderTabMovements(m);
+
+            return '<div class="page-wrap">' + renderHeader() + '<div class="page-content">' +
+                '<div class="row-between" style="margin-bottom:16px;">' +
+                '<h1 class="page-title"><i class="ph ph-chart-bar" style="color:var(--accent);"></i> Dashboard EPI</h1>' +
+                '<button onclick="loadDashboardData()" class="btn-secondary"><i class="ph ph-arrows-clockwise"></i> Atualizar</button></div>' +
+                periodBar + kpis + tabNav + content + '</div></div>';
         }
 
         function renderDashboardCharts() {
             if (state.view !== 'epi_dashboard') return;
-            var rows = (state.dashboard || {}).data || [];
-            var byItem = {}, byTurno = { A: 0, B: 0, C: 0, D: 0, ADM: 0 };
-            rows.forEach(function (r) {
-                var cons = (r.c1_qtd != null && r.c2_qtd != null) ? Math.max(0, r.c1_qtd - r.c2_qtd) : 0;
-                var dist = (r.c2_qtd != null && r.c3_qtd != null) ? Math.max(0, r.c2_qtd - r.c3_qtd) : 0;
-                if (!byItem[r.item_name]) byItem[r.item_name] = 0;
-                byItem[r.item_name] += cons + dist;
-                var t = r.turno || '';
-                ['A', 'B', 'C', 'D'].forEach(function (k) { if (t === k) byTurno[k] += cons; });
-                byTurno.ADM += dist;
-            });
-            var top10 = Object.entries(byItem).sort(function (a, b) { return b[1] - a[1]; }).slice(0, 10);
-            var ctxTop = document.getElementById('dash-chart-top');
-            if (ctxTop) {
-                if (ctxTop._chart) ctxTop._chart.destroy();
-                ctxTop._chart = new Chart(ctxTop, {
-                    type: 'bar',
+            var dash = state.dashboard || {};
+            if (dash.loading) return;
+            var tab = dash.dashTab || 'overview';
+            var m = _computeDashMetrics();
+
+            if (tab === 'overview') {
+                var timeLabels = m.sortedDates.map(function (d) { return d.slice(8, 10) + '/' + d.slice(5, 7); });
+                var timeConsData = m.sortedDates.map(function (d) { return m.byDate[d].cons; });
+                var timeDistData = m.sortedDates.map(function (d) { return m.byDate[d].dist; });
+                _mkDashChart('dash-chart-timeline', {
+                    type: 'line',
                     data: {
-                        labels: top10.map(function (e) { var n = e[0]; return n.length > 18 ? n.slice(0, 18) + '...' : n; }),
-                        datasets: [{
-                            label: 'Total', data: top10.map(function (e) { return e[1]; }),
-                            backgroundColor: 'rgba(99,102,241,0.8)', borderRadius: 6
-                        }]
+                        labels: timeLabels,
+                        datasets: [
+                            { label: 'Cons. Noite', data: timeConsData, borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,.12)', fill: true, tension: 0.35, pointRadius: 3, borderWidth: 2 },
+                            { label: 'Dist. ADM', data: timeDistData, borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,.12)', fill: true, tension: 0.35, pointRadius: 3, borderWidth: 2 }
+                        ]
                     },
                     options: {
-                        indexAxis: 'y', plugins: { legend: { display: false } },
                         responsive: true, maintainAspectRatio: false,
-                        scales: { x: { grid: { color: 'rgba(0,0,0,0.05)' } }, y: { grid: { display: false } } }
+                        plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
+                        scales: {
+                            x: { grid: { display: false }, ticks: { font: { size: 10 }, maxRotation: 45 } },
+                            y: { grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { font: { size: 10 } }, beginAtZero: true }
+                        }
                     }
                 });
-            }
-            var ctxT = document.getElementById('dash-chart-turno');
-            if (ctxT) {
-                if (ctxT._chart) ctxT._chart.destroy();
-                var labels = Object.keys(byTurno).filter(function (k) { return byTurno[k] > 0; });
-                var colors = ['#6366f1', '#f59e0b', '#ef4444', '#10b981', '#64748b'];
-                ctxT._chart = new Chart(ctxT, {
+                var turnoLabels = [], turnoData = [], turnoColors = ['#6366f1', '#f59e0b', '#ef4444', '#10b981', '#64748b'];
+                var tIdx = 0;
+                Object.entries(m.byTurnoLetter).forEach(function (e) {
+                    if (e[1] > 0) { turnoLabels.push(e[0] === 'ADM' ? 'ADM/Dia' : 'Turno ' + e[0]); turnoData.push(e[1]); tIdx++; }
+                });
+                _mkDashChart('dash-chart-turno', {
                     type: 'doughnut',
+                    data: { labels: turnoLabels, datasets: [{ data: turnoData, backgroundColor: turnoColors.slice(0, tIdx), borderWidth: 2 }] },
+                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } } }
+                });
+                var top10 = m.allItems.slice(0, 10);
+                _mkDashChart('dash-chart-top', {
+                    type: 'bar',
                     data: {
-                        labels: labels.map(function (l) { return l === 'ADM' ? 'ADM/Dia' : 'Turno ' + l; }),
-                        datasets: [{
-                            data: labels.map(function (l) { return byTurno[l]; }),
-                            backgroundColor: colors.slice(0, labels.length), borderWidth: 2
-                        }]
+                        labels: top10.map(function (e) { var n = e[0]; return n.length > 22 ? n.slice(0, 22) + '…' : n; }),
+                        datasets: [
+                            { label: 'Cons. Noite', data: top10.map(function (e) { return e[1].consumo; }), backgroundColor: 'rgba(239,68,68,.8)', borderRadius: 4 },
+                            { label: 'Dist. ADM', data: top10.map(function (e) { return e[1].distAdm; }), backgroundColor: 'rgba(245,158,11,.8)', borderRadius: 4 }
+                        ]
                     },
-                    options: { plugins: { legend: { position: 'bottom' } }, responsive: true, maintainAspectRatio: false }
+                    options: {
+                        indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+                        plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
+                        scales: {
+                            x: { stacked: false, grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { font: { size: 10 } } },
+                            y: { stacked: false, grid: { display: false }, ticks: { font: { size: 11 } } }
+                        }
+                    }
+                });
+            } else if (tab === 'stock') {
+                var stockItems = (dash.stockItems || []).slice().sort(function (a, b) { return (b.quantidade || 0) - (a.quantidade || 0); }).slice(0, 20);
+                var stockColors = stockItems.map(function (i) {
+                    return (i.estoque_minimo != null && i.quantidade != null && i.quantidade <= i.estoque_minimo) ? 'rgba(214,69,69,.8)' : 'rgba(46,158,90,.8)';
+                });
+                _mkDashChart('dash-chart-stock', {
+                    type: 'bar',
+                    data: {
+                        labels: stockItems.map(function (i) { var n = i.nome || ''; return n.length > 20 ? n.slice(0, 20) + '…' : n; }),
+                        datasets: [{ label: 'Em Estoque', data: stockItems.map(function (i) { return i.quantidade || 0; }), backgroundColor: stockColors, borderRadius: 4 }]
+                    },
+                    options: {
+                        indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            x: { grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { font: { size: 10 } }, beginAtZero: true },
+                            y: { grid: { display: false }, ticks: { font: { size: 11 } } }
+                        }
+                    }
                 });
             }
         }

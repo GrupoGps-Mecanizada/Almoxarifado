@@ -1,3 +1,4 @@
+﻿PRE
 <!DOCTYPE html>
 <html lang="pt-BR">
 
@@ -1779,13 +1780,13 @@
             }
 
             const sessionPayload = {
-                id:          sessionId,
-                date:        state.contagem.date,
+                id: sessionId,
+                date: state.contagem.date,
                 turno_noite: sess.turno_noite,
-                turno_dia:   sess.turno_dia,
-                c1_horario:  sess.c1_horario  || '00:00',
-                c2_horario:  sess.c2_horario  || '07:00',
-                c3_horario:  sess.c3_horario  || '08:00',
+                turno_dia: sess.turno_dia,
+                c1_horario: sess.c1_horario || '00:00',
+                c2_horario: sess.c2_horario || '07:00',
+                c3_horario: sess.c3_horario || '08:00',
             };
 
             const saved = await createCountSession(sessionPayload);
@@ -1815,6 +1816,10 @@
             state.contagem.loading = true;
             render();
             loadContagem();
+        }
+
+        function viewSessionReport(date, turno, horario) {
+            openTicketForBaixa(date, turno, horario);
         }
 
         function openTicketForBaixa(date, turno, horario) {
@@ -1847,23 +1852,23 @@
                     if (r.contagem_num === 2) c2Map[r.item_id] = r;
                     if (r.contagem_num === 3) c3Map[r.item_id] = r;
                 });
-                
+
                 const allItemIdsWithCounts = new Set([...Object.keys(c1Map), ...Object.keys(c2Map), ...Object.keys(c3Map)]);
                 const result = Array.from(allItemIdsWithCounts).map(itemId => {
                     const c1 = c1Map[itemId];
                     const c2 = c2Map[itemId];
                     const c3 = c3Map[itemId];
-                    
+
                     const saida = (c1 != null && c2 != null) ? c1.quantidade - c2.quantidade : null;
                     const saida_adm = (c2 != null && c3 != null) ? c2.quantidade - c3.quantidade : null;
-                    
-                    return { 
-                        item_id: itemId, 
-                        item_name: (c1 || c2 || c3).item_name, 
-                        saida, 
+
+                    return {
+                        item_id: itemId,
+                        item_name: (c1 || c2 || c3).item_name,
+                        saida,
                         saida_adm,
-                        c1_qtd: c1?.quantidade ?? null, 
-                        c1_date: c1?.date ?? null, 
+                        c1_qtd: c1?.quantidade ?? null,
+                        c1_date: c1?.date ?? null,
                         c2_qtd: c2?.quantidade ?? null,
                         c3_qtd: c3?.quantidade ?? null
                     };
@@ -1953,8 +1958,8 @@
 
         async function saveContagem(num) {
             const entries = num === 1 ? state.contagem.entries1
-                         : num === 2 ? state.contagem.entries2
-                         : state.contagem.entries3;
+                : num === 2 ? state.contagem.entries2
+                    : state.contagem.entries3;
             const validEntries = Object.entries(entries)
                 .filter(([, qty]) => qty !== '' && qty !== null && qty !== undefined);
             if (validEntries.length === 0) {
@@ -2000,7 +2005,7 @@
                     // Saída ADM = C2 (início do turno) - C3 (pós-distribuição)
                     const result = rows.map(row => {
                         const c2 = state.contagem.todayCounts[row.item_id]?.c2
-                               ?? state.contagem.lastC2[row.item_id];
+                            ?? state.contagem.lastC2[row.item_id];
                         const c1 = state.contagem.lastC1[row.item_id];
                         const saidaADM = c2 != null ? c2.quantidade - row.quantidade : null;
                         const saidaTurno = c1 != null && c2 != null ? c1.quantidade - c2.quantidade : null;
@@ -2268,7 +2273,7 @@
                 const baixaDates = {};
                 if (!baixaRes.error && baixaRes.data) {
                     baixaRes.data.forEach(m => {
-                        const sessMatch  = m.observations?.match(/(CTG-\d{8}-\d{3})/);
+                        const sessMatch = m.observations?.match(/(CTG-\d{8}-\d{3})/);
                         const turnoMatch = m.observations?.match(/Turno ([ABCD])\b/);
                         const t = sessMatch ? sessMatch[1] : (turnoMatch ? turnoMatch[1] : null);
 
@@ -2636,6 +2641,7 @@
                 case 'warehouses': app.innerHTML = renderWarehouses(); break;
                 case 'contagem': app.innerHTML = renderContagem(); break;
                 case 'transfer': app.innerHTML = renderTransfer(); break;
+                case 'epi_dashboard': app.innerHTML = renderEpiDashboard(); break;
             }
 
             // Restaura foco no campo de busca da topbar após re-render
@@ -3510,13 +3516,13 @@
                         <div class="row-end" style="padding-top:8px; gap: 8px;">
                             <button type="button" onclick="goBack()" class="btn-ghost">CANCELAR</button>
                             ${op.toWarehouse === 'DAR_BAIXA'
-                                ? `<button type="button" onclick="transferDarBaixa()" class="btn-primary" style="min-width:160px;background:var(--red);border-color:var(--red);">
+                    ? `<button type="button" onclick="transferDarBaixa()" class="btn-primary" style="min-width:160px;background:var(--red);border-color:var(--red);">
                                         <i class="ph-fill ph-arrow-fat-lines-down"></i> CONFIRMAR BAIXA
                                    </button>`
-                                : `<button type="submit" class="btn-cyan" style="min-width:160px;">
+                    : `<button type="submit" class="btn-cyan" style="min-width:160px;">
                                         <i class="ph ph-arrows-left-right"></i> CONFIRMAR TRANSFERÊNCIA
                                    </button>`
-                            }
+                }
                         </div>
                     </form>
                 </div>
@@ -3853,8 +3859,8 @@
 
                 function colHeader(n, label, sublabel, done) {
                     const clr = done ? 'var(--green)' : n === num ? 'var(--accent)' : 'var(--text-2)';
-                    const bg  = done ? '#e8f5ee'      : n === num ? '#eef2ff'       : 'var(--bg-2)';
-                    const bdr = done ? 'var(--green)'  : n === num ? 'var(--accent)'  : 'var(--border)';
+                    const bg = done ? '#e8f5ee' : n === num ? '#eef2ff' : 'var(--bg-2)';
+                    const bdr = done ? 'var(--green)' : n === num ? 'var(--accent)' : 'var(--border)';
                     return `<th style="padding:10px 6px;text-align:center;background:${bg};border-left:1px solid var(--border);border-bottom:2px solid ${bdr};min-width:110px;cursor:pointer;"
                                 onclick="state.contagem.contagemStep=${n};render()">
                         <div style="display:flex;flex-direction:column;align-items:center;gap:2px;">
@@ -3892,9 +3898,9 @@
                             ${item.nome}
                             <span style="font-size:10px;color:var(--text-3);font-weight:400;margin-left:4px;">${item.unidade}</span>
                         </td>
-                        ${cellInput('entries1',val1,cell1Bg)}
-                        ${cellInput('entries2',val2,cell2Bg)}
-                        ${cellInput('entries3',val3,cell3Bg)}
+                        ${cellInput('entries1', val1, cell1Bg)}
+                        ${cellInput('entries2', val2, cell2Bg)}
+                        ${cellInput('entries3', val3, cell3Bg)}
                     </tr>`;
                 }).join('');
 
@@ -3925,9 +3931,9 @@
                                         EPI's
                                         <span style="font-size:10px;font-weight:400;color:var(--text-3);margin-left:4px;">(${alm2Items.length} itens)</span>
                                     </th>
-                                     ${colHeader(1,'C1',c1Sub,hasC1done)}
-                                     ${colHeader(2,'C2',c2Sub,hasC2done)}
-                                     ${colHeader(3,'C3',c3Sub,hasC3done)}
+                                     ${colHeader(1, 'C1', c1Sub, hasC1done)}
+                                     ${colHeader(2, 'C2', c2Sub, hasC2done)}
+                                     ${colHeader(3, 'C3', c3Sub, hasC3done)}
                                 </tr>
                             </thead>
                             <tbody>
@@ -3937,12 +3943,12 @@
                                 <tr style="border-top:2px solid var(--border);background:var(--bg-2);">
                                     <td style="padding:10px 12px;font-size:11px;color:var(--text-3);">
                                         ${hasC1done && hasC2done && hasC3done
-                                            ? `<span style="color:var(--green);font-weight:700;">✓ Todas as contagens salvas</span>`
-                                            : 'Preencha e salve cada coluna'}
+                        ? `<span style="color:var(--green);font-weight:700;">✓ Todas as contagens salvas</span>`
+                        : 'Preencha e salve cada coluna'}
                                     </td>
-                                    ${saveBtn(1,hasC1done)}
-                                    ${saveBtn(2,hasC2done)}
-                                    ${saveBtn(3,hasC3done)}
+                                    ${saveBtn(1, hasC1done)}
+                                    ${saveBtn(2, hasC2done)}
+                                    ${saveBtn(3, hasC3done)}
                                 </tr>
                             </tfoot>
                         </table>
@@ -3961,7 +3967,7 @@
                     const suggestedId = sess.id || generateSessionId(state.contagem.date);
 
                     function turnoOpts(selected, onChangeFn) {
-                        return ['A','B','C','D'].map(t => {
+                        return ['A', 'B', 'C', 'D'].map(t => {
                             const sel = selected === t;
                             return '<button type="button"'
                                 + ' onclick="' + onChangeFn + '(\'' + t + '\');render()"'
@@ -3975,7 +3981,7 @@
                     }
 
                     const noite = sess.turno_noite || '';
-                    const dia   = sess.turno_dia   || '';
+                    const dia = sess.turno_dia || '';
 
                     return `<div class="card-lg">
                         <div style="margin-bottom:20px;">
@@ -4077,10 +4083,10 @@
                         const diffColor = diff > 0 ? 'var(--red)' : diff === 0 ? 'var(--text-3)' : 'var(--text-2)';
                         return `<tr style="border-bottom:1px solid var(--border);">
                             <td style="padding:8px 10px;font-weight:500;font-size:13px;">${r.item_name}</td>
-                            <td style="padding:8px 6px;text-align:right;font-size:13px;color:var(--text-2);">${v1 ?? 'â€”'}</td>
-                            <td style="padding:8px 6px;text-align:right;font-size:13px;color:var(--text-2);">${v2 ?? 'â€”'}</td>
+                            <td style="padding:8px 6px;text-align:right;font-size:13px;color:var(--text-2);">${v1 ?? '—'}</td>
+                            <td style="padding:8px 6px;text-align:right;font-size:13px;color:var(--text-2);">${v2 ?? '—'}</td>
                             <td style="padding:8px 10px;text-align:right;font-weight:700;font-size:13px;color:${diffColor};">
-                                ${diff !== null ? (diff > 0 ? 'âˆ’' + diff : diff === 0 ? '0' : '+' + Math.abs(diff)) : 'â€”'}
+                                ${diff !== null ? (diff > 0 ? '−' + diff : diff === 0 ? '0' : '+' + Math.abs(diff)) : '—'}
                             </td>
                         </tr>`;
                     }).join('');
@@ -4100,22 +4106,26 @@
                             <tfoot><tr style="background:var(--bg-2);border-top:2px solid var(--border);">
                                 <td colspan="3" style="padding:8px 10px;font-size:12px;font-weight:700;">Total consumido</td>
                                 <td style="padding:8px 10px;text-align:right;font-weight:800;font-size:14px;color:${totalDiff > 0 ? 'var(--red)' : 'var(--text-2)'};">
-                                    ${totalDiff > 0 ? 'âˆ’' + totalDiff : totalDiff}
+                                    ${totalDiff > 0 ? '−' + totalDiff : totalDiff}
                                 </td>
                             </tr></tfoot>
                         </table>
                     </div>`;
                 }
 
-                const turnoNoite  = rSess ? `Turno ${rSess.turno_noite} (19hâ€“07h)` : 'Turno Noite';
-                const turnoDiaAdm = rSess ? `ADM + Turno ${rSess.turno_dia} (07hâ€“19h)` : 'ADM + Turno Dia';
                 const c1h = rSess?.c1_horario || '00:00';
                 const c2h = rSess?.c2_horario || '07:00';
                 const c3h = rSess?.c3_horario || '08:00';
+                const turnoNoite = rSess
+                    ? `LETRA ${rSess.turno_noite} - HORARIO: ${c1h} A ${c2h}`
+                    : 'Turno Noite';
+                const turnoDiaAdm = rSess
+                    ? `ADM + LETRA ${rSess.turno_dia} - HORARIO: ${c2h} AS ${c3h}`
+                    : 'ADM + Turno Dia';
                 const sessionId = state.contagem.turno || '';
 
-                const totalC1C2 = result.reduce((a,r) => a + ((r.c1_qtd != null && r.c2_qtd != null) ? Math.max(0, r.c1_qtd - r.c2_qtd) : 0), 0);
-                const totalC2C3 = result.reduce((a,r) => a + ((r.c2_qtd != null && r.c3_qtd != null) ? Math.max(0, r.c2_qtd - r.c3_qtd) : 0), 0);
+                const totalC1C2 = result.reduce((a, r) => a + ((r.c1_qtd != null && r.c2_qtd != null) ? Math.max(0, r.c1_qtd - r.c2_qtd) : 0), 0);
+                const totalC2C3 = result.reduce((a, r) => a + ((r.c2_qtd != null && r.c3_qtd != null) ? Math.max(0, r.c2_qtd - r.c3_qtd) : 0), 0);
 
                 resultContent = `<div style="display:flex;flex-direction:column;gap:14px;">
 
@@ -4143,9 +4153,9 @@
                                 <div style="font-weight:700;font-size:13px;color:var(--text-1);">${turnoNoite}</div>
                                 <div style="font-size:11px;color:var(--text-3);">Consumo = C1 - C2</div>
                             </div>
-                            <span style="font-size:20px;font-weight:800;color:var(--red);">âˆ’${totalC1C2} unid</span>
+                            <span style="font-size:20px;font-weight:800;color:var(--red);">−${totalC1C2} unid</span>
                         </div>
-                        ${sectionTable(result, 'c1_qtd', 'c2_qtd', 'Consumido', (a,b) => Math.max(0,a-b))}
+                        ${sectionTable(result, 'c1_qtd', 'c2_qtd', 'Consumido', (a, b) => Math.max(0, a - b))}
                     </div>
 
                     <!-- Secao ADM + Turno Dia -->
@@ -4156,28 +4166,31 @@
                                 <div style="font-weight:700;font-size:13px;color:var(--text-1);">${turnoDiaAdm}</div>
                                 <div style="font-size:11px;color:var(--text-3);">Distribuido = C2 - C3</div>
                             </div>
-                            <span style="font-size:20px;font-weight:800;color:var(--orange);">âˆ’${totalC2C3} unid</span>
+                            <span style="font-size:20px;font-weight:800;color:var(--orange);">−${totalC2C3} unid</span>
                         </div>
-                        ${sectionTable(result, 'c2_qtd', 'c3_qtd', 'Distribuido', (a,b) => Math.max(0,a-b))}
+                        ${sectionTable(result, 'c2_qtd', 'c3_qtd', 'Distribuido', (a, b) => Math.max(0, a - b))}
                     </div>
 
                     <!-- Acoes -->
                     <div class="card" style="padding:14px 16px;">
                         ${baixaJaFeita
-                            ? `<div style="display:flex;align-items:center;gap:8px;background:#e8f5ee;color:var(--green);padding:10px 14px;border-radius:8px;font-size:13px;font-weight:600;border:1px solid var(--green);margin-bottom:12px;">
+                        ? `<div style="display:flex;align-items:center;gap:8px;background:#e8f5ee;color:var(--green);padding:10px 14px;border-radius:8px;font-size:13px;font-weight:600;border:1px solid var(--green);margin-bottom:12px;">
                                    <i class="ph-fill ph-check-circle" style="font-size:16px;"></i>
                                    Baixa ja aplicada no estoque do Almoxarifado 2
                                </div>`
-                            : `<div style="background:#fff8e1;border:1px solid #ffc107;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:#7a5800;">
-                                   Baixa pendente â€” clique em "Dar Baixa" para atualizar o estoque.
+                        : `<div style="background:#fff8e1;border:1px solid #ffc107;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:#7a5800;">
+                                   Baixa pendente &mdash; clique em &ldquo;Dar Baixa&rdquo; para atualizar o estoque.
                                </div>`
-                        }
+                    }
                         <div style="display:flex;gap:10px;flex-wrap:wrap;">
                             <button onclick="switchContagemTab('history')" class="btn-secondary">
                                 <i class="ph ph-clock-counter-clockwise"></i> Ver Historico
                             </button>
                             <button onclick="state.contagem.savedResult=null;state.contagem.newStep=3;render()" class="btn-secondary">
                                 <i class="ph ph-pencil"></i> Corrigir Contagem
+                            </button>
+                            <button onclick="copiarRelatorioWhatsApp()" class="btn-secondary" title="Copiar relatorio formatado para WhatsApp" style="gap:6px;">
+                                <i class="ph ph-copy"></i> Copiar WhatsApp
                             </button>
                             ${baixaJaFeita ? '' : `
                             <button onclick="aplicarBaixaContagem()" class="btn-primary" style="flex:1;background:var(--green);" ${state.contagem.saving ? 'disabled' : ''}>
@@ -4245,14 +4258,14 @@
                                 const c3 = c3Map[itemId];
                                 const saida = (c1 != null && c2 != null) ? c1.quantidade - c2.quantidade : null;
                                 const saida_adm = (c2 != null && c3 != null) ? c2.quantidade - c3.quantidade : null;
-                                return { 
+                                return {
                                     item_id: itemId,
-                                    item_name: (c1 || c2 || c3).item_name, 
-                                    c1_qtd: c1?.quantidade ?? null, 
-                                    c2_qtd: c2?.quantidade ?? null, 
+                                    item_name: (c1 || c2 || c3).item_name,
+                                    c1_qtd: c1?.quantidade ?? null,
+                                    c2_qtd: c2?.quantidade ?? null,
                                     c3_qtd: c3?.quantidade ?? null,
-                                    saida, 
-                                    saida_adm 
+                                    saida,
+                                    saida_adm
                                 };
                             });
                             const totalConsumo = itens.filter(r => r.saida > 0).length;
@@ -4263,21 +4276,24 @@
                             const baixaBadge = baixaFeita
                                 ? `<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--green);font-weight:600;"><i class="ph-fill ph-check-circle"></i> Baixa aplicada</span>`
                                 : '';
-                            
+
                             histCards.push(`<div class="card">
                                 <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px;gap:8px;flex-wrap:wrap;">
                                     <div>
                                         <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap;">
                                             <span style="font-weight:700;font-size:14px;">${formatDate(date)}</span>
                                             ${turno && turno.startsWith('CTG-')
-                                                ? `<span style="font-size:11px;font-weight:700;color:var(--accent);background:#eef2ff;padding:2px 8px;border-radius:4px;letter-spacing:0.03em;">${turno}</span>`
-                                                : turnoBadge(turno)}
+                                    ? `<span style="font-size:11px;font-weight:700;color:var(--accent);background:#eef2ff;padding:2px 8px;border-radius:4px;letter-spacing:0.03em;">${turno}</span>`
+                                    : turnoBadge(turno)}
                                             ${horario ? `<span style="font-size:11px;color:var(--text-3);">${horario}</span>` : ''}
                                             ${resumoBadge}
                                         </div>
                                         <div style="font-size:11px;color:var(--text-3);">${statusLabel} &nbsp;${baixaBadge}</div>
                                     </div>
                                     <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap;">
+                                        <button onclick="viewSessionReport('${date}','${turno || ''}','${horario || ''}')" class="btn-primary" style="font-size:11px;padding:4px 10px;">
+                                            <i class="ph ph-file-text"></i> Visualizar
+                                        </button>
                                         <button onclick="editContagemDate('${date}',1,'${turno || ''}','${horario || ''}')" class="btn-secondary" style="font-size:11px;padding:4px 10px;">
                                             <i class="ph ph-pencil"></i> C1
                                         </button>
@@ -4292,7 +4308,6 @@
                                         </button>
                                     </div>
                                 </div>
-                                ${buildRelatorioTable(itens)}
                             </div>`);
                         } else if (Object.keys(c1Map).length > 0) {
                             const rowsHtml = Object.values(c1Map).map(row =>
@@ -4309,8 +4324,8 @@
                                         <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap;">
                                             <span style="font-weight:700;font-size:14px;">${formatDate(date)}</span>
                                             ${turno && turno.startsWith('CTG-')
-                                                ? `<span style="font-size:11px;font-weight:700;color:var(--accent);background:#eef2ff;padding:2px 8px;border-radius:4px;letter-spacing:0.03em;">${turno}</span>`
-                                                : turnoBadge(turno)}
+                                    ? `<span style="font-size:11px;font-weight:700;color:var(--accent);background:#eef2ff;padding:2px 8px;border-radius:4px;letter-spacing:0.03em;">${turno}</span>`
+                                    : turnoBadge(turno)}
                                             ${horario ? `<span style="font-size:11px;color:var(--text-3);">${horario}</span>` : ''}
                                         </div>
                                         <div style="font-size:11px;color:var(--text-3);">Contagem 1 registrada &nbsp;<span class="badge badge-gray" style="font-size:10px;">C2 pendente</span></div>
@@ -4382,32 +4397,40 @@
                        </div>`
                     : `<div style="display:flex;flex-direction:column;gap:10px;">
                             ${openTickets.map(t => {
-                         const isSess = t.turno?.startsWith('CTG-');
-                         const cor = isSess ? 'var(--accent)' : turnoColor(t.turno);
-                         const bg  = isSess ? '#eef2ff'       : turnoBg(t.turno);
-                         const statusLabel = t.hasC3
-                             ? `<span style="font-size:11px;color:var(--green);font-weight:600;"><i class="ph-fill ph-check-circle"></i> C3 feita — aguardando baixa</span>`
-                             : t.hasC2
-                             ? `<span style="font-size:11px;color:var(--blue,#3b82f6);font-weight:600;"><i class="ph ph-hourglass"></i> C2 feita — aguardando C3 (ADM)</span>`
-                             : `<span style="font-size:11px;color:var(--orange);font-weight:600;"><i class="ph ph-clock"></i> C1 registrada — aguardando C2</span>`;
-                         const actionBtn = t.hasC3
-                             ? `<button onclick="openTicketForBaixa('${t.date}','${t.turno || ''}','${t.horario || ''}')"
+                        const isSess = t.turno?.startsWith('CTG-');
+                        const cor = isSess ? 'var(--accent)' : turnoColor(t.turno);
+                        const bg = isSess ? '#eef2ff' : turnoBg(t.turno);
+                        const statusLabel = t.hasC3
+                            ? `<span style="font-size:11px;color:var(--green);font-weight:600;"><i class="ph-fill ph-check-circle"></i> C3 feita — aguardando baixa</span>`
+                            : t.hasC2
+                                ? `<span style="font-size:11px;color:var(--blue,#3b82f6);font-weight:600;"><i class="ph ph-hourglass"></i> C2 feita — aguardando C3 (ADM)</span>`
+                                : `<span style="font-size:11px;color:var(--orange);font-weight:600;"><i class="ph ph-clock"></i> C1 registrada — aguardando C2</span>`;
+                        const actionBtn = t.hasC3
+                            ? `<button onclick="viewSessionReport('${t.date}','${t.turno || ''}','${t.horario || ''}')"
                                           class="btn-primary" style="flex:1;font-size:12px;padding:8px 12px;background:var(--green);border-color:var(--green);">
                                           <i class="ph-fill ph-arrow-fat-lines-down"></i> Dar Baixa
                                        </button>`
-                             : t.hasC2
-                             ? `<button onclick="openTicketForC2('${t.date}','${t.turno || ''}','${t.horario || ''}')"
+                            : t.hasC2
+                                ? `<button onclick="editContagemDate('${t.date}',2,'${t.turno || ''}','${t.horario || ''}')"
+                                          class="btn-secondary" style="font-size:12px;padding:8px 12px;">
+                                          <i class="ph ph-pencil"></i> Editar C2
+                                       </button>
+                                   <button onclick="openTicketForC2('${t.date}','${t.turno || ''}','${t.horario || ''}')"
                                           class="btn-primary" style="flex:1;font-size:12px;padding:8px 12px;">
                                           <i class="ph-fill ph-clipboard-check"></i> Fazer C3 (ADM)
                                        </button>`
-                             : `<button onclick="openTicketForC2('${t.date}','${t.turno || ''}','${t.horario || ''}')"
+                                : `<button onclick="editContagemDate('${t.date}',1,'${t.turno || ''}','${t.horario || ''}')"
+                                          class="btn-secondary" style="font-size:12px;padding:8px 12px;">
+                                          <i class="ph ph-pencil"></i> Editar C1
+                                       </button>
+                                   <button onclick="openTicketForC2('${t.date}','${t.turno || ''}','${t.horario || ''}')"
                                           class="btn-secondary" style="flex:1;font-size:12px;padding:8px 12px;">
                                           <i class="ph-fill ph-clipboard-check"></i> Fazer C2
                                        </button>`;
-                         const headerLabel = isSess
-                             ? `<span style="font-size:12px;font-weight:800;color:${cor};letter-spacing:0.03em;">${t.turno}</span>`
-                             : `<span style="font-weight:800;font-size:26px;color:${cor};font-family:var(--font-display);line-height:1;">${t.turno || '—'}</span>`;
-                         return `<div style="border:2px solid ${cor};border-radius:12px;padding:14px 16px;background:${bg};display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+                        const headerLabel = isSess
+                            ? `<span style="font-size:12px;font-weight:800;color:${cor};letter-spacing:0.03em;">${t.turno}</span>`
+                            : `<span style="font-weight:800;font-size:26px;color:${cor};font-family:var(--font-display);line-height:1;">${t.turno || '—'}</span>`;
+                        return `<div style="border:2px solid ${cor};border-radius:12px;padding:14px 16px;background:${bg};display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
                                     <div style="display:flex;align-items:center;gap:10px;min-width:${isSess ? '160px' : '100px'};">
                                         ${headerLabel}
                                         <div>
@@ -4425,7 +4448,7 @@
                                         </button>
                                     </div>
                                 </div>`;
-                     }).join('')}
+                    }).join('')}
                         </div>`;
 
             const tab = state.contagem.tab;
@@ -4498,6 +4521,7 @@
                 { id: 'stock', label: 'Estoque', icon: 'ph ph-warehouse' },
                 { id: 'contagem', label: 'Contagem Diária', icon: 'ph ph-clipboard-text' },
                 { id: 'history', label: 'Histórico', icon: 'ph ph-clock-counter-clockwise' },
+                { id: 'epi_dashboard', label: 'Dashboard EPI', icon: 'ph ph-chart-bar' },
                 { id: 'warehouses', label: 'Almoxarifados', icon: 'ph ph-buildings' },
             ];
             return `
@@ -4552,7 +4576,10 @@
                     : '';
                 return `
                                 <button class="nav-menu-item ${state.view === v.id ? 'active' : ''}"
-                                    onclick="closeSidebar(); ${v.id === 'contagem' ? 'navigateToContagem()' : `navigateTo('${v.id}')`}"
+                                    onclick="closeSidebar(); ${v.id === 'contagem' ? 'navigateToContagem()'
+                        : v.id === 'epi_dashboard' ? 'navigateToEpiDashboard()'
+                            : `navigateTo('${v.id}')`
+                    }"
                                     style="display:flex;align-items:center;gap:8px;">
                                     <i class="${v.icon}"></i>
                                     <span style="flex:1;">${v.label}</span>
@@ -4589,6 +4616,235 @@
                 exportMovementsToXLSX();
             } else {
                 exportStockToXLSX();
+            }
+        }
+
+        // ============================================
+        // COPIAR RELATORIO PARA WHATSAPP
+        // ============================================
+        function copiarRelatorioWhatsApp() {
+            var result = state.contagem.savedResult;
+            var rSess = state.contagem.currentSession;
+            var sessId = state.contagem.turno || '';
+            if (!result) return;
+            var c1h = (rSess && rSess.c1_horario) ? rSess.c1_horario : '00:00';
+            var c2h = (rSess && rSess.c2_horario) ? rSess.c2_horario : '07:00';
+            var c3h = (rSess && rSess.c3_horario) ? rSess.c3_horario : '08:00';
+            var dataFmt = formatDate(state.contagem.date);
+            var sep = '-------------------------------';
+            var txt = 'RELATORIO DA SESSAO' + (sessId ? ' - ' + sessId : '') + '\n';
+            txt += 'Data: ' + dataFmt + '\nC1: ' + c1h + ' | C2: ' + c2h + ' | C3: ' + c3h + '\n';
+            var noiteLabel = rSess
+                ? 'LETRA ' + rSess.turno_noite + ' - HORARIO: ' + c1h + ' A ' + c2h
+                : 'TURNO NOITE';
+            var totalC1C2 = result.reduce(function (a, r) { return a + ((r.c1_qtd != null && r.c2_qtd != null) ? Math.max(0, r.c1_qtd - r.c2_qtd) : 0); }, 0);
+            txt += '\n' + noiteLabel + '\nConsumo = C1 - C2\n' + sep + '\n';
+            result.forEach(function (r) {
+                var cons = (r.c1_qtd != null && r.c2_qtd != null) ? Math.max(0, r.c1_qtd - r.c2_qtd) : null;
+                if (!cons) return;
+                var nm = String(r.item_name); while (nm.length < 24) nm += ' ';
+                txt += nm + ' C1:' + (r.c1_qtd != null ? r.c1_qtd : '-') + ' | C2:' + (r.c2_qtd != null ? r.c2_qtd : '-') + ' | Consumido: ' + cons + '\n';
+            });
+            txt += sep + '\nTotal consumido: ' + totalC1C2 + ' unid\n';
+            var diaLabel = rSess ? 'ADM + LETRA ' + rSess.turno_dia + ' - HORARIO: ' + c2h + ' AS ' + c3h : 'ADM + TURNO DIA';
+            var totalC2C3 = result.reduce(function (a, r) { return a + ((r.c2_qtd != null && r.c3_qtd != null) ? Math.max(0, r.c2_qtd - r.c3_qtd) : 0); }, 0);
+            txt += '\n' + diaLabel + '\nDistribuicao = C2 - C3\n' + sep + '\n';
+            result.forEach(function (r) {
+                var dist = (r.c2_qtd != null && r.c3_qtd != null) ? Math.max(0, r.c2_qtd - r.c3_qtd) : null;
+                if (!dist) return;
+                var nm = String(r.item_name); while (nm.length < 24) nm += ' ';
+                txt += nm + ' C2:' + (r.c2_qtd != null ? r.c2_qtd : '-') + ' | C3:' + (r.c3_qtd != null ? r.c3_qtd : '-') + ' | Distribuido: ' + dist + '\n';
+            });
+            txt += sep + '\nTotal distribuido: ' + totalC2C3 + ' unid\n';
+            navigator.clipboard.writeText(txt)
+                .then(function () { showToast('Relatorio copiado! Cole no WhatsApp.', 'success'); })
+                .catch(function () { showToast('Erro ao copiar. Tente novamente.', 'error'); });
+        }
+
+        // ============================================
+        // DASHBOARD EPI
+        // ============================================
+        async function navigateToEpiDashboard() {
+            state.view = 'epi_dashboard';
+            if (!state.dashboard) {
+                state.dashboard = { loading: false, data: [], period: '30d' };
+            }
+            render();
+            await loadDashboardData();
+        }
+
+        async function loadDashboardData() {
+            if (!state.dashboard) return;
+            state.dashboard.loading = true;
+            render();
+            try {
+                var p = state.dashboard.period;
+                var query = sbClient.from('daily_counts').select('*').order('date', { ascending: false });
+                if (p !== 'all') {
+                    var days = p === '7d' ? 7 : p === '30d' ? 30 : 90;
+                    var since = new Date();
+                    since.setDate(since.getDate() - days);
+                    query = query.gte('date', since.toISOString().split('T')[0]);
+                }
+                var res = await query;
+                state.dashboard.data = res.data || [];
+            } catch (e) { state.dashboard.data = []; }
+            state.dashboard.loading = false;
+            render();
+            renderDashboardCharts();
+        }
+
+        function renderEpiDashboard() {
+            var dash = state.dashboard || { loading: false, data: [], period: '30d' };
+            var rows = dash.data || [];
+            var byItem = {}, byTurno = { A: 0, B: 0, C: 0, D: 0, ADM: 0 };
+            rows.forEach(function (r) {
+                var cons = (r.c1_qtd != null && r.c2_qtd != null) ? Math.max(0, r.c1_qtd - r.c2_qtd) : 0;
+                var dist = (r.c2_qtd != null && r.c3_qtd != null) ? Math.max(0, r.c2_qtd - r.c3_qtd) : 0;
+                if (!byItem[r.item_name]) byItem[r.item_name] = { consumo: 0, distAdm: 0 };
+                byItem[r.item_name].consumo += cons; byItem[r.item_name].distAdm += dist;
+                var t = r.turno || '';
+                ['A', 'B', 'C', 'D'].forEach(function (k) { if (t === k) byTurno[k] += cons; });
+                byTurno.ADM += dist;
+            });
+            var top10 = Object.entries(byItem)
+                .sort(function (a, b) { return (b[1].consumo + b[1].distAdm) - (a[1].consumo + a[1].distAdm); })
+                .slice(0, 10);
+            var totalEPIs = top10.reduce(function (s, e) { return s + e[1].consumo + e[1].distAdm; }, 0);
+            var totalNoite = byTurno.A + byTurno.B + byTurno.C + byTurno.D;
+            var periodOpts = [['7d', '7 dias'], ['30d', '30 dias'], ['90d', '90 dias'], ['all', 'Tudo']];
+            return `
+            <div class="page-wrap">
+                ${renderHeader()}
+                <div class="page-content">
+                    <div class="row-between" style="margin-bottom:16px;">
+                        <h1 class="page-title"><i class="ph ph-chart-bar" style="color:var(--accent);"></i> Dashboard EPI</h1>
+                        <button onclick="loadDashboardData()" class="btn-secondary" ${dash.loading ? 'disabled' : ''}>
+                            <i class="ph ph-arrows-clockwise"></i> Atualizar
+                        </button>
+                    </div>
+                    <div class="card" style="margin-bottom:14px;">
+                        <div class="section-title" style="margin-bottom:10px;">Periodo</div>
+                        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                            ${periodOpts.map(([v, l]) => `
+                                <button onclick="state.dashboard.period='${v}';loadDashboardData()"
+                                    style="padding:6px 18px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;
+                                           border:1.5px solid ${dash.period === v ? 'var(--accent)' : 'var(--border)'};
+                                           background:${dash.period === v ? 'var(--accent)' : 'transparent'};
+                                           color:${dash.period === v ? '#fff' : 'var(--text-2)'};">${l}
+                                </button>`).join('')}
+                        </div>
+                    </div>
+                    ${dash.loading ? `
+                    <div class="card" style="text-align:center;padding:48px;">
+                        <div class="loading-spinner" style="margin:0 auto 16px;"></div>
+                        <p style="color:var(--text-2);">Carregando dados...</p>
+                    </div>` : `
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:14px;">
+                        <div class="card" style="text-align:center;padding:16px 12px;">
+                            <div style="font-size:30px;font-weight:800;color:var(--accent);">${totalEPIs}</div>
+                            <div style="font-size:11px;color:var(--text-3);margin-top:4px;">EPIs Distribuidos</div>
+                        </div>
+                        <div class="card" style="text-align:center;padding:16px 12px;">
+                            <div style="font-size:30px;font-weight:800;color:var(--red);">${totalNoite}</div>
+                            <div style="font-size:11px;color:var(--text-3);margin-top:4px;">Consumo Turno Noite</div>
+                        </div>
+                        <div class="card" style="text-align:center;padding:16px 12px;">
+                            <div style="font-size:30px;font-weight:800;color:var(--orange);">${byTurno.ADM || 0}</div>
+                            <div style="font-size:11px;color:var(--text-3);margin-top:4px;">Dist. ADM + Dia</div>
+                        </div>
+                        <div class="card" style="text-align:center;padding:16px 12px;">
+                            <div style="font-size:30px;font-weight:800;color:var(--green);">${top10.length}</div>
+                            <div style="font-size:11px;color:var(--text-3);margin-top:4px;">Itens com Movimento</div>
+                        </div>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
+                        <div class="card" style="padding:16px;">
+                            <div class="section-title" style="margin-bottom:10px;">Top 10 Itens Consumidos</div>
+                            <div style="position:relative;height:220px;"><canvas id="dash-chart-top"></canvas></div>
+                        </div>
+                        <div class="card" style="padding:16px;">
+                            <div class="section-title" style="margin-bottom:10px;">Distribuicao por Turno</div>
+                            <div style="position:relative;height:220px;"><canvas id="dash-chart-turno"></canvas></div>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="section-title" style="margin-bottom:12px;">Ranking de Consumo</div>
+                        <div style="overflow-x:auto;">
+                            <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                                <thead><tr style="background:var(--bg-2);border-bottom:2px solid var(--border);">
+                                    <th style="padding:8px 10px;text-align:left;font-size:11px;color:var(--text-3);">#</th>
+                                    <th style="padding:8px 10px;text-align:left;font-size:11px;color:var(--text-3);">Item</th>
+                                    <th style="padding:8px 10px;text-align:right;font-size:11px;color:var(--text-3);">Cons. Noite</th>
+                                    <th style="padding:8px 10px;text-align:right;font-size:11px;color:var(--text-3);">Dist. ADM</th>
+                                    <th style="padding:8px 10px;text-align:right;font-size:11px;color:var(--text-3);">Total</th>
+                                </tr></thead>
+                                <tbody>
+                                    ${top10.map(([nome, v], i) => `
+                                    <tr style="border-bottom:1px solid var(--border);">
+                                        <td style="padding:10px;color:var(--text-3);font-weight:700;">${i + 1}</td>
+                                        <td style="padding:10px;font-weight:600;">${nome}</td>
+                                        <td style="padding:10px;text-align:right;color:var(--red);font-weight:700;">${v.consumo}</td>
+                                        <td style="padding:10px;text-align:right;color:var(--orange);font-weight:700;">${v.distAdm}</td>
+                                        <td style="padding:10px;text-align:right;font-weight:800;">${v.consumo + v.distAdm}</td>
+                                    </tr>`).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>`}
+                </div>
+            </div>`;
+        }
+
+        function renderDashboardCharts() {
+            if (state.view !== 'epi_dashboard') return;
+            var rows = (state.dashboard || {}).data || [];
+            var byItem = {}, byTurno = { A: 0, B: 0, C: 0, D: 0, ADM: 0 };
+            rows.forEach(function (r) {
+                var cons = (r.c1_qtd != null && r.c2_qtd != null) ? Math.max(0, r.c1_qtd - r.c2_qtd) : 0;
+                var dist = (r.c2_qtd != null && r.c3_qtd != null) ? Math.max(0, r.c2_qtd - r.c3_qtd) : 0;
+                if (!byItem[r.item_name]) byItem[r.item_name] = 0;
+                byItem[r.item_name] += cons + dist;
+                var t = r.turno || '';
+                ['A', 'B', 'C', 'D'].forEach(function (k) { if (t === k) byTurno[k] += cons; });
+                byTurno.ADM += dist;
+            });
+            var top10 = Object.entries(byItem).sort(function (a, b) { return b[1] - a[1]; }).slice(0, 10);
+            var ctxTop = document.getElementById('dash-chart-top');
+            if (ctxTop) {
+                if (ctxTop._chart) ctxTop._chart.destroy();
+                ctxTop._chart = new Chart(ctxTop, {
+                    type: 'bar',
+                    data: {
+                        labels: top10.map(function (e) { var n = e[0]; return n.length > 18 ? n.slice(0, 18) + '...' : n; }),
+                        datasets: [{
+                            label: 'Total', data: top10.map(function (e) { return e[1]; }),
+                            backgroundColor: 'rgba(99,102,241,0.8)', borderRadius: 6
+                        }]
+                    },
+                    options: {
+                        indexAxis: 'y', plugins: { legend: { display: false } },
+                        responsive: true, maintainAspectRatio: false,
+                        scales: { x: { grid: { color: 'rgba(0,0,0,0.05)' } }, y: { grid: { display: false } } }
+                    }
+                });
+            }
+            var ctxT = document.getElementById('dash-chart-turno');
+            if (ctxT) {
+                if (ctxT._chart) ctxT._chart.destroy();
+                var labels = Object.keys(byTurno).filter(function (k) { return byTurno[k] > 0; });
+                var colors = ['#6366f1', '#f59e0b', '#ef4444', '#10b981', '#64748b'];
+                ctxT._chart = new Chart(ctxT, {
+                    type: 'doughnut',
+                    data: {
+                        labels: labels.map(function (l) { return l === 'ADM' ? 'ADM/Dia' : 'Turno ' + l; }),
+                        datasets: [{
+                            data: labels.map(function (l) { return byTurno[l]; }),
+                            backgroundColor: colors.slice(0, labels.length), borderWidth: 2
+                        }]
+                    },
+                    options: { plugins: { legend: { position: 'bottom' } }, responsive: true, maintainAspectRatio: false }
+                });
             }
         }
 

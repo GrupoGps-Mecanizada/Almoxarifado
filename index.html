@@ -2392,6 +2392,45 @@
             }
         }
 
+        function isVinculoAlmoxEnabled() {
+            return localStorage.getItem('contagemVinculoAlmox') !== 'false';
+        }
+
+        function getContagemWarehouseId() {
+            if (!isVinculoAlmoxEnabled()) return 'alm-2';
+            const sessionId = state.contagem.turno;
+            if (!sessionId || !state.contagem.sessionMap) return 'alm-2';
+            const obs = state.contagem.sessionMap[sessionId] || {};
+            return obs.c1_warehouse_id || 'alm-2';
+        }
+
+        async function salvarWarehouseC1(sessionId, warehouseId) {
+            const { data: sess } = await sbClient.from('count_sessions').select('*').eq('id', sessionId).maybeSingle();
+            var obs = {};
+            try { obs = JSON.parse(sess?.observacao || '{}'); } catch {}
+            obs.c1_warehouse_id = warehouseId;
+            const { error } = await sbClient.from('count_sessions').update({ observacao: JSON.stringify(obs) }).eq('id', sessionId);
+            if (error) throw error;
+            if (!state.contagem.sessionMap) state.contagem.sessionMap = {};
+            state.contagem.sessionMap[sessionId] = obs;
+        }
+
+        async function confirmarWarehouseC1() {
+            const selected = document.querySelector('input[name="c1-warehouse"]:checked');
+            if (!selected) { showToast('Selecione um almoxarifado', 'warning'); return; }
+            const sessionId = state.contagem.turno;
+            if (!sessionId) return;
+            try {
+                await salvarWarehouseC1(sessionId, selected.value);
+                state.contagem.loading = true;
+                render();
+                loadContagem();
+            } catch (e) {
+                console.error('Erro ao vincular almoxarifado:', e);
+                showToast('Erro ao vincular almoxarifado', 'error');
+            }
+        }
+
         async function confirmarTrocaData(oldDate, turno) {
             var input = document.getElementById('date-change-input');
             if (!input) return;

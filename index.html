@@ -4135,12 +4135,39 @@
 
             // ---- Helper: formulário de contagem ----
             function buildCountForm(num) {
-                // Tabela Excel — todas as contagens visíveis ao mesmo tempo
+                // Tela de seleção de almoxarifado — aparece antes do formulário C1
+                if (num === 1 && vinculoOn) {
+                    const sessionId = state.contagem.turno;
+                    const obs = (sessionId && state.contagem.sessionMap)
+                        ? (state.contagem.sessionMap[sessionId] || {})
+                        : {};
+                    if (!obs.c1_warehouse_id) {
+                        return `<div class="card" style="padding:24px;">
+                            <h2 style="font-size:16px;font-weight:700;margin-bottom:6px;">Vincular C1 ao Almoxarifado</h2>
+                            <p style="font-size:12px;color:var(--text-2);margin-bottom:20px;">Escolha de qual almoxarifado os itens serão contados e descontados na baixa.</p>
+                            <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:24px;">
+                                ${state.warehouses.map(wh => `
+                                <label style="display:flex;align-items:center;gap:12px;padding:14px 16px;border:2px solid var(--border);border-radius:10px;cursor:pointer;transition:border-color .15s;"
+                                    onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+                                    <input type="radio" name="c1-warehouse" value="${wh.id}"
+                                        style="width:16px;height:16px;accent-color:var(--accent);">
+                                    <div>
+                                        <div style="font-weight:600;font-size:14px;">${wh.nome}</div>
+                                        <div style="font-size:11px;color:var(--text-3);">${wh.descricao || ''}</div>
+                                    </div>
+                                </label>`).join('')}
+                            </div>
+                            <button onclick="confirmarWarehouseC1()" class="btn-primary" style="width:100%;">
+                                <i class="ph-fill ph-arrow-right"></i> Confirmar e iniciar C1
+                            </button>
+                        </div>`;
+                    }
+                }
 
                 if (alm2Items.length === 0) {
                     return `<div class="card"><div class="empty-state">
                         <i class="ph ph-package"></i>
-                        <p>Nenhum item cadastrado no Almoxarifado Distribuição</p>
+                        <p>Nenhum item cadastrado em ${activeWhNome}</p>
                         <div style="margin-top:16px;"><button onclick="navigateTo('stock')" class="btn-secondary">Ver Estoque</button></div>
                     </div></div>`;
                 }
@@ -4165,6 +4192,15 @@
                              ${turnoBadge(sess.turno_dia)} <span style="font-size:11px;color:var(--text-3);">ADM</span>
                            ` : ''}
                        </div>` : '';
+
+                // Badge de warehouse vinculado (quando diferente do padrão)
+                const whBadge = (vinculoOn && activeWhId !== 'alm-2')
+                    ? `<div style="display:flex;align-items:center;gap:6px;padding:6px 16px;
+                                  background:#fff8e7;border-bottom:1px solid #f0d080;font-size:11px;color:#7a5900;font-weight:600;">
+                           <i class="ph-fill ph-warehouse"></i>
+                           Contando em: ${activeWhNome}
+                       </div>`
+                    : '';
 
                 // Sublabels das colunas — horários sempre fixos
                 const c1Sub = sess
@@ -4241,6 +4277,7 @@
 
                 return `<div class="card" style="padding:0;overflow:hidden;">
                     ${turnoInfo}
+                    ${whBadge}
                     <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
                         <table style="width:100%;border-collapse:collapse;font-size:13px;">
                             <thead>

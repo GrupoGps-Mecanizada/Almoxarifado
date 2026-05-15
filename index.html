@@ -1837,7 +1837,8 @@
         }
 
         async function loadContagemAndBuildResult(date, turno) {
-            const alm2Items = state.items.filter(i => (i.warehouse_id || 'alm-1') === 'alm-2');
+            const targetWh = getContagemWarehouseId();
+            const alm2Items = state.items.filter(i => (i.warehouse_id || 'alm-1') === targetWh);
             const itemIds = alm2Items.map(i => i.id);
             if (itemIds.length === 0) { state.contagem.loading = false; render(); return; }
             try {
@@ -1886,7 +1887,8 @@
         }
 
         async function loadContagem() {
-            const alm2Items = state.items.filter(i => (i.warehouse_id || 'alm-1') === 'alm-2');
+            const targetWh = getContagemWarehouseId();
+            const alm2Items = state.items.filter(i => (i.warehouse_id || 'alm-1') === targetWh);
             if (alm2Items.length === 0) {
                 state.contagem.loading = false;
                 render();

@@ -4059,8 +4059,11 @@
         }
 
         function renderContagem() {
+            const vinculoOn = isVinculoAlmoxEnabled();
+            const activeWhId = getContagemWarehouseId();
+            const activeWhNome = state.warehouses.find(w => w.id === activeWhId)?.nome || activeWhId;
             const alm2Items = state.items
-                .filter(i => (i.warehouse_id || 'alm-1') === 'alm-2')
+                .filter(i => (i.warehouse_id || 'alm-1') === activeWhId)
                 .sort((a, b) => a.nome.localeCompare(b.nome));
 
             if (state.contagem.loading) {
@@ -4882,7 +4885,13 @@
                     <div class="row-between" style="margin-bottom:4px;">
                         <div>
                             <h1 class="page-title">Contagem Diária</h1>
-                            <p style="font-size:12px;color:var(--text-3);margin-top:2px;">Almoxarifado 2 — Distribuição</p>
+                            <p style="font-size:12px;color:var(--text-3);margin-top:2px;">${vinculoOn ? activeWhNome : 'Almoxarifado 2 — Distribuição'}</p>
+                            <label style="display:flex;align-items:center;gap:6px;margin-top:6px;cursor:pointer;font-size:11px;color:var(--text-2);">
+                                <input type="checkbox" ${vinculoOn ? 'checked' : ''}
+                                    onchange="localStorage.setItem('contagemVinculoAlmox', this.checked ? 'true' : 'false');render()"
+                                    style="width:14px;height:14px;accent-color:var(--accent);cursor:pointer;">
+                                Vincular C1 ao almoxarifado
+                            </label>
                         </div>
                         ${tab !== 'newContagem' ? `
                         <button onclick="state.contagem.tab='newContagem';state.contagem.newStep=1;state.contagem.turno=null;state.contagem.horario='';render()" class="btn-primary">

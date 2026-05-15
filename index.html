@@ -1951,6 +1951,13 @@
                     if (counts.c2) entries2[id] = String(counts.c2.quantidade);
                     if (counts.c3) entries3[id] = String(counts.c3.quantidade);
                 });
+                if (isVinculoAlmoxEnabled()) {
+                    alm2Items.forEach(item => {
+                        if (entries1[item.id] === undefined && item.quantidade != null) {
+                            entries1[item.id] = String(item.quantidade);
+                        }
+                    });
+                }
                 state.contagem.entries1 = entries1;
                 state.contagem.entries2 = entries2;
                 state.contagem.entries3 = entries3;

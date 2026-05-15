@@ -1486,7 +1486,7 @@
             navigateTo('warehouses');
         }
 
-        function startTransfer(fromWarehouseId) {
+        function startTransfer(fromWarehouseId, preSelectedItemId) {
             const from = fromWarehouseId || state.activeWarehouse;
             // Destino padrão: próximo na lista, excluindo a origem
             const others = state.warehouses.filter(w => w.id !== from);
@@ -1495,7 +1495,7 @@
                 active: true,
                 fromWarehouse: from,
                 toWarehouse: defaultTo,
-                selectedItem: null,
+                selectedItem: preSelectedItemId || null,
                 size: null,
                 quantity: 1,
                 observations: ''
@@ -3463,7 +3463,7 @@
                                 ` : ''}
                                 <div class="item-actions">
                                     <button onclick='openEditItem(${JSON.stringify(item).replace(/'/g, "&#39;")})' class="btn-secondary" style="flex:1;font-size:12px;padding:8px;"><i class="ph ph-pencil-simple"></i> Editar</button>
-                                    <button onclick="state.transferOperation.selectedItem='${item.id}';startTransfer('${item.warehouse_id || 'alm-1'}')" class="btn-cyan" style="padding:8px 12px;font-size:12px;" title="Transferir / Dar Baixa"><i class="ph ph-arrows-left-right"></i> Transferir</button>
+                                    <button onclick="startTransfer('${item.warehouse_id || 'alm-1'}','${item.id}')" class="btn-cyan" style="padding:8px 12px;font-size:12px;" title="Transferir / Dar Baixa"><i class="ph ph-arrows-left-right"></i> Transferir</button>
                                     <button onclick="handleDeleteItem('${item.id}')" class="btn-danger" style="padding:8px 10px;"><i class="ph ph-trash"></i></button>
                                 </div>
                             </div>
@@ -4408,10 +4408,10 @@
                                     </div>
                                     ${(sess.turnosWeekend || []).map((t, i) => `
                                     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-                                        <input type="text" value="${t.data}" placeholder="DD/MM"
-                                            oninput="setWeekendShift(${i},'data',this.value)"
-                                            style="width:68px;padding:7px 8px;border:1px solid var(--border);border-radius:7px;
-                                                   font-size:13px;font-weight:600;text-align:center;color:var(--text-1);">
+                                        <input type="date" value="${t.data && /^\d{4}-\d{2}-\d{2}$/.test(t.data) ? t.data : ''}"
+                                            onchange="setWeekendShift(${i},'data',this.value)"
+                                            style="padding:7px 8px;border:1px solid var(--border);border-radius:7px;
+                                                   font-size:13px;font-weight:600;color:var(--text-1);">
                                         <div style="display:flex;gap:4px;">
                                             ${['A','B','C','D'].map(l => `
                                             <button type="button" onclick="setWeekendShift(${i},'letra','${l}')"
@@ -4421,13 +4421,13 @@
                                                        font-weight:800;font-size:12px;cursor:pointer;">${l}</button>`).join('')}
                                         </div>
                                         <div style="display:flex;gap:4px;">
-                                            ${[['19 A 07','🌙'],['07 A 19','☀️']].map(([h,ic]) => `
+                                            ${['19 A 07','07 A 19'].map(h => `
                                             <button type="button" onclick="setWeekendShift(${i},'horario','${h}')"
                                                 style="padding:5px 10px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;
                                                        border:2px solid ${t.horario===h?'var(--accent)':'var(--border)'};
                                                        background:${t.horario===h?'var(--accent)':'transparent'};
                                                        color:${t.horario===h?'#fff':'var(--text-3)'};">
-                                                ${ic} ${h}</button>`).join('')}
+                                                ${h}</button>`).join('')}
                                         </div>
                                         <button type="button" onclick="removeWeekendShift(${i})"
                                             style="width:28px;height:28px;border-radius:6px;border:1px solid var(--border);
@@ -4544,7 +4544,7 @@
                                 if (!fds) return '';
                                 const linhas = fds.turnos.map(t =>
                                     `<span style="display:inline-flex;align-items:center;gap:6px;font-size:11px;">
-                                        <span style="font-weight:600;color:var(--text-2);">${t.data}</span>
+                                        <span style="font-weight:600;color:var(--text-2);">${t.data && /^\d{4}-\d{2}-\d{2}$/.test(t.data) ? t.data.slice(8,10)+'/'+t.data.slice(5,7) : (t.data||'')}</span>
                                         ${turnoBadge(t.letra)}
                                         <span style="color:var(--text-3);">${t.horario}</span>
                                     </span>`

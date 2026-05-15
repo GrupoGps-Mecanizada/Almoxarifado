@@ -191,6 +191,7 @@
                 contagemStep: 1,
                 openTickets: [],
                 historyTurnoFilter: 'TODOS',
+                sessionMap: {},      // { sessionId: observacaoJSON }
                 // Sessão atual
                 currentSession: null, // { id, date, turno_noite, turno_dia, c1_horario, c2_horario, c3_horario }
             }
@@ -2055,62 +2056,137 @@
             const result = state.contagem.savedResult;
             if (!result) return;
 
-            const itensBaixa = result.filter(r => r.saida != null && r.saida > 0);
-            if (itensBaixa.length === 0) {
+            const sessionId = state.contagem.turno;
+            const date = state.contagem.date;
+            const dateLabel = formatDate(date);
+            const turnoLabel = sessionId ? ` — Turno ${sessionId}` : '';
+
+            const itensNoite = result.filter(r => r.saida != null && r.saida > 0);
+            const itensAdm   = result.filter(r => r.saida_adm != null && r.saida_adm > 0);
+
+            if (itensNoite.length === 0 && itensAdm.length === 0) {
                 showToast('Nenhuma saída registrada para dar baixa', 'error');
                 return;
             }
 
-            const lista = itensBaixa.map(r => `• ${r.item_name}: -${r.saida} unid.`).join('\n');
-            if (!confirm(`Deseja dar baixa no Almoxarifado 2 — Distribuição?\n\n${lista}\n\nEssa ação atualizará o estoque e registrará os movimentos.`)) return;
+            const listaNoite = itensNoite.length > 0
+                ? `\nNoturno:\n${itensNoite.map(r => `• ${r.item_name}: -${r.saida} unid.`).join('\n')}`
+                : '';
+            const listaAdm = itensAdm.length > 0
+                ? `\nADM:\n${itensAdm.map(r => `• ${r.item_name}: -${r.saida_adm} unid.`).join('\n')}`
+                : '';
+
+            if (!confirm(`Deseja dar baixa no Almoxarifado 2 — Distribuição?${listaNoite}${listaAdm}\n\nEssa ação atualizará o estoque e registrará os movimentos.`)) return;
 
             state.contagem.saving = true;
             render();
             try {
-                for (const r of itensBaixa) {
+                for (const r of itensNoite) {
                     const item = state.items.find(i => i.id === r.item_id);
                     if (!item) continue;
-
                     const novaQtd = Math.max(0, item.quantidade - r.saida);
-
-                    const { error: updErr } = await sbClient
-                        .from('items')
-                        .update({ quantidade: novaQtd })
-                        .eq('id', r.item_id);
+                    const { error: updErr } = await sbClient.from('items').update({ quantidade: novaQtd }).eq('id', r.item_id);
                     if (updErr) throw updErr;
-
-                    const turnoLabel = state.contagem.turno ? ` — Turno ${state.contagem.turno}` : '';
                     await sbClient.from('movements').insert({
-                        date: state.contagem.date,
-                        type: 'SAIDA',
-                        item_id: r.item_id,
-                        item_name: r.item_name,
+                        date, type: 'SAIDA',
+                        item_id: r.item_id, item_name: r.item_name,
                         quantity: r.saida,
                         warehouse_id: item.warehouse_id || 'alm-2',
                         user_name: state.user.nome,
-                        observations: `Baixa Contagem Diária ${formatDate(state.contagem.date)}${turnoLabel}`
+                        observations: `Baixa Contagem Diária ${dateLabel}${turnoLabel} — Noite`
                     });
-
+                    item.quantidade = novaQtd;
+                }
+                for (const r of itensAdm) {
+                    const item = state.items.find(i => i.id === r.item_id);
+                    if (!item) continue;
+                    const novaQtd = Math.max(0, item.quantidade - r.saida_adm);
+                    const { error: updErr } = await sbClient.from('items').update({ quantidade: novaQtd }).eq('id', r.item_id);
+                    if (updErr) throw updErr;
+                    await sbClient.from('movements').insert({
+                        date, type: 'DISTRIBUICAO',
+                        item_id: r.item_id, item_name: r.item_name,
+                        quantity: r.saida_adm,
+                        warehouse_id: item.warehouse_id || 'alm-2',
+                        user_name: state.user.nome,
+                        observations: `Baixa Contagem Diária ${dateLabel}${turnoLabel} — ADM`
+                    });
                     item.quantidade = novaQtd;
                 }
                 state.contagem.baixaAplicada = true;
-                const baixaKey = state.contagem.turno
-                    ? `${state.contagem.date}_${state.contagem.turno}`
-                    : state.contagem.date;
+                const baixaKey = sessionId ? `${date}_${sessionId}` : date;
                 state.contagem.baixaDates[baixaKey] = true;
-                // Remove o ticket fechado de openTickets
                 state.contagem.openTickets = state.contagem.openTickets.filter(
-                    t => !(t.date === state.contagem.date && t.turno === state.contagem.turno)
+                    t => !(t.date === date && t.turno === sessionId)
                 );
                 cache.items = null;
                 cache.movements = null;
-                showToast(`Baixa aplicada para ${itensBaixa.length} item(ns)!`, 'success');
+                const total = itensNoite.length + itensAdm.length;
+                showToast(`Baixa aplicada para ${total} item(ns)!`, 'success');
             } catch (e) {
                 showToast('Erro ao aplicar baixa: ' + e.message, 'error');
                 console.error(e);
             }
             state.contagem.saving = false;
             render();
+        }
+
+        async function desfazerBaixaContagem(date, turno) {
+            if (!confirm(`Desfazer a baixa de ${formatDate(date)}?\n\nO estoque do Almoxarifado 2 será restaurado e os movimentos removidos. Esta ação não pode ser desfeita.`)) return;
+
+            try {
+                const { data: movs, error: selErr } = await sbClient.from('movements')
+                    .select('*')
+                    .ilike('observations', 'Baixa Contagem Diária%')
+                    .eq('date', date);
+                if (selErr) throw selErr;
+
+                const turnoFilter = turno || '';
+                const filtered = (movs || []).filter(m => {
+                    if (!turnoFilter) return !m.observations?.includes('Turno');
+                    return m.observations?.includes(`Turno ${turnoFilter}`);
+                });
+
+                if (filtered.length === 0) {
+                    showToast('Movimentos não encontrados. Baixa pode ter sido removida manualmente.', 'error');
+                    return;
+                }
+
+                for (const m of filtered) {
+                    const item = state.items.find(i => i.id === m.item_id);
+                    if (!item) continue;
+                    const novaQtd = item.quantidade + m.quantity;
+                    const { error: updErr } = await sbClient.from('items').update({ quantidade: novaQtd }).eq('id', m.item_id);
+                    if (updErr) throw updErr;
+                    item.quantidade = novaQtd;
+                }
+
+                const ids = filtered.map(m => m.id);
+                const { error: delErr } = await sbClient.from('movements').delete().in('id', ids);
+                if (delErr) throw delErr;
+
+                const baixaKey = turno ? `${date}_${turno}` : date;
+                delete state.contagem.baixaDates[baixaKey];
+                if (state.contagem.date === date && state.contagem.turno === (turno || null)) {
+                    state.contagem.baixaAplicada = false;
+                }
+
+                const hasC1 = state.contagem.history.some(r => r.date === date && (r.turno || null) === (turno || null) && r.contagem_num === 1);
+                if (hasC1) {
+                    const exists = state.contagem.openTickets.some(t => t.date === date && t.turno === (turno || null));
+                    if (!exists) {
+                        state.contagem.openTickets.unshift({ date, turno: turno || null, horario: '', hasC1: true, hasC2: true, hasC3: true });
+                    }
+                }
+
+                cache.items = null;
+                cache.movements = null;
+                showToast('Baixa desfeita! Estoque restaurado.', 'success');
+                render();
+            } catch (e) {
+                showToast('Erro ao desfazer baixa: ' + (e.message || ''), 'error');
+                console.error(e);
+            }
         }
 
         function openBaixaModal(itemId) {
@@ -2275,6 +2351,47 @@
             if (c) c.innerHTML = '';
         }
 
+        function showContagemDateModal(sessionId, field, currentDate, label) {
+            var container = document.getElementById('date-modal');
+            if (!container) return;
+            var dd = currentDate ? currentDate.slice(8,10)+'/'+currentDate.slice(5,7)+'/'+currentDate.slice(0,4) : 'não definida';
+            container.innerHTML =
+                '<div onclick="hideDateChangeModal()" style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:900;display:flex;align-items:center;justify-content:center;padding:16px;">' +
+                '<div onclick="event.stopPropagation()" style="background:var(--bg-1);border-radius:16px;padding:24px;width:340px;max-width:100%;box-shadow:0 8px 48px rgba(0,0,0,.22);">' +
+                '<div style="font-weight:700;font-size:16px;margin-bottom:4px;color:var(--text-1);">' +
+                '<i class="ph ph-calendar" style="color:var(--accent);margin-right:6px;"></i>' + label + '</div>' +
+                '<p style="font-size:12px;color:var(--text-3);margin:0 0 18px;">Data atual: <strong style="color:var(--text-1);">' + dd + '</strong></p>' +
+                '<label style="font-size:12px;font-weight:600;color:var(--text-2);display:block;margin-bottom:6px;">Nova data</label>' +
+                '<input id="date-change-input" type="date" value="' + (currentDate || '') + '" ' +
+                'style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;background:var(--bg-2);color:var(--text-1);margin-bottom:18px;">' +
+                '<div style="display:flex;gap:8px;">' +
+                '<button onclick="hideDateChangeModal()" class="btn-secondary" style="flex:1;">Cancelar</button>' +
+                '<button onclick="salvarDataContagem(\'' + sessionId + '\',\'' + field + '\')" class="btn-primary" style="flex:1;">Confirmar</button>' +
+                '</div></div></div>';
+        }
+
+        async function salvarDataContagem(sessionId, field) {
+            var input = document.getElementById('date-change-input');
+            if (!input) return;
+            var newDate = input.value;
+            if (!newDate) { showToast('Selecione uma data.', 'error'); return; }
+            hideDateChangeModal();
+            try {
+                var { data: sess } = await sbClient.from('count_sessions').select('*').eq('id', sessionId).maybeSingle();
+                var obs = {};
+                try { obs = JSON.parse(sess?.observacao || '{}'); } catch {}
+                obs[field] = newDate;
+                var { error } = await sbClient.from('count_sessions').update({ observacao: JSON.stringify(obs) }).eq('id', sessionId);
+                if (error) throw error;
+                if (!state.contagem.sessionMap) state.contagem.sessionMap = {};
+                state.contagem.sessionMap[sessionId] = obs;
+                showToast('Data atualizada!', 'success');
+                render();
+            } catch (e) {
+                showToast('Erro ao salvar data: ' + (e.message || ''), 'error');
+            }
+        }
+
         async function confirmarTrocaData(oldDate, turno) {
             var input = document.getElementById('date-change-input');
             if (!input) return;
@@ -2346,7 +2463,7 @@
             state.contagem.historyLoading = true;
             render();
             try {
-                const [countsRes, baixaRes] = await Promise.all([
+                const [countsRes, baixaRes, sessRes] = await Promise.all([
                     sbClient.from('daily_counts')
                         .select('*')
                         .order('date', { ascending: false })
@@ -2355,6 +2472,9 @@
                     sbClient.from('movements')
                         .select('date, observations')
                         .ilike('observations', 'Baixa Contagem Diária%')
+                        .limit(200),
+                    sbClient.from('count_sessions')
+                        .select('id, observacao')
                         .limit(200)
                 ]);
 
@@ -2375,6 +2495,15 @@
                     });
                 }
                 state.contagem.baixaDates = baixaDates;
+
+                const sessionMap = {};
+                if (!sessRes.error && sessRes.data) {
+                    sessRes.data.forEach(s => {
+                        try { sessionMap[s.id] = JSON.parse(s.observacao || '{}'); }
+                        catch { sessionMap[s.id] = {}; }
+                    });
+                }
+                state.contagem.sessionMap = sessionMap;
 
                 // Sincroniza flag da sessão atual
                 if (state.contagem.turno) {
@@ -4471,6 +4600,16 @@
                                 ? `<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--green);font-weight:600;"><i class="ph-fill ph-check-circle"></i> Baixa aplicada</span>`
                                 : '';
 
+                            const sessObs = (isSessionId(turno) && state.contagem.sessionMap)
+                                ? (state.contagem.sessionMap[turno] || {})
+                                : {};
+                            const c1DateDisp = sessObs.c1_date ? sessObs.c1_date.slice(8,10)+'/'+sessObs.c1_date.slice(5,7) : formatDate(date).slice(0,5);
+                            const c2DateDisp = sessObs.c2_date ? sessObs.c2_date.slice(8,10)+'/'+sessObs.c2_date.slice(5,7) : formatDate(date).slice(0,5);
+                            const c3DateDisp = sessObs.c3_date ? sessObs.c3_date.slice(8,10)+'/'+sessObs.c3_date.slice(5,7) : formatDate(date).slice(0,5);
+                            const c1DateVal = sessObs.c1_date || date;
+                            const c2DateVal = sessObs.c2_date || date;
+                            const c3DateVal = sessObs.c3_date || date;
+
                             histCards.push(`<div class="card">
                                 <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px;gap:8px;flex-wrap:wrap;">
                                     <div>
@@ -4503,8 +4642,22 @@
                                         <button onclick="deleteContagemDate('${date}',0,'${turno || ''}')" class="btn-secondary" style="font-size:11px;padding:4px 10px;color:var(--red);border-color:var(--red);">
                                             <i class="ph ph-trash"></i> Excluir
                                         </button>
+                                        ${baixaFeita ? `<button onclick="desfazerBaixaContagem('${date}','${turno || ''}')" class="btn-secondary" style="font-size:11px;padding:4px 10px;color:var(--red);border-color:var(--red);">
+                                            <i class="ph ph-arrow-counter-clockwise"></i> Desfazer Baixa
+                                        </button>` : ''}
                                     </div>
                                 </div>
+                                ${isSessionId(turno) ? `<div style="display:flex;gap:16px;flex-wrap:wrap;padding-top:10px;border-top:1px solid var(--border);font-size:12px;color:var(--text-2);">
+                                    <span>C1 <strong>${c1DateDisp}</strong>
+                                        <button onclick="showContagemDateModal('${turno}','c1_date','${c1DateVal}','Data da C1')" style="background:none;border:none;cursor:pointer;padding:0 4px;color:var(--accent);font-size:13px;" title="Editar data C1">✏</button>
+                                    </span>
+                                    <span>C2 <strong>${c2DateDisp}</strong>
+                                        <button onclick="showContagemDateModal('${turno}','c2_date','${c2DateVal}','Data da C2')" style="background:none;border:none;cursor:pointer;padding:0 4px;color:var(--accent);font-size:13px;" title="Editar data C2">✏</button>
+                                    </span>
+                                    <span>C3 <strong>${c3DateDisp}</strong>
+                                        <button onclick="showContagemDateModal('${turno}','c3_date','${c3DateVal}','Data da C3')" style="background:none;border:none;cursor:pointer;padding:0 4px;color:var(--accent);font-size:13px;" title="Editar data C3">✏</button>
+                                    </span>
+                                </div>` : ''}
                             </div>`);
                         } else if (Object.keys(c1Map).length > 0) {
                             const rowsHtml = Object.values(c1Map).map(row =>

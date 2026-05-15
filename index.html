@@ -2062,6 +2062,8 @@
             const date = state.contagem.date;
             const dateLabel = formatDate(date);
             const turnoLabel = sessionId ? ` — Turno ${sessionId}` : '';
+            const targetWh = getContagemWarehouseId();
+            const targetWhNome = state.warehouses.find(w => w.id === targetWh)?.nome || targetWh;
 
             const itensNoite = result.filter(r => r.saida != null && r.saida > 0);
             const itensAdm   = result.filter(r => r.saida_adm != null && r.saida_adm > 0);
@@ -2078,7 +2080,7 @@
                 ? `\nADM:\n${itensAdm.map(r => `• ${r.item_name}: -${r.saida_adm} unid.`).join('\n')}`
                 : '';
 
-            if (!confirm(`Deseja dar baixa no Almoxarifado 2 — Distribuição?${listaNoite}${listaAdm}\n\nEssa ação atualizará o estoque e registrará os movimentos.`)) return;
+            if (!confirm(`Deseja dar baixa em ${targetWhNome}?${listaNoite}${listaAdm}\n\nEssa ação atualizará o estoque e registrará os movimentos.`)) return;
 
             state.contagem.saving = true;
             render();
@@ -2093,9 +2095,9 @@
                         date, type: 'SAIDA',
                         item_id: r.item_id, item_name: r.item_name,
                         quantity: r.saida,
-                        warehouse_id: item.warehouse_id || 'alm-2',
+                        warehouse_id: targetWh,
                         user_name: state.user.nome,
-                        observations: `Baixa Contagem Diária ${dateLabel}${turnoLabel} — Noite`
+                        observations: `Baixa Contagem Diária ${dateLabel}${turnoLabel} — Noite — ${targetWhNome}`
                     });
                     item.quantidade = novaQtd;
                 }
@@ -2109,9 +2111,9 @@
                         date, type: 'DISTRIBUICAO',
                         item_id: r.item_id, item_name: r.item_name,
                         quantity: r.saida_adm,
-                        warehouse_id: item.warehouse_id || 'alm-2',
+                        warehouse_id: targetWh,
                         user_name: state.user.nome,
-                        observations: `Baixa Contagem Diária ${dateLabel}${turnoLabel} — ADM`
+                        observations: `Baixa Contagem Diária ${dateLabel}${turnoLabel} — ADM — ${targetWhNome}`
                     });
                     item.quantidade = novaQtd;
                 }

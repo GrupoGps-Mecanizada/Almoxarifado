@@ -429,7 +429,7 @@
         }
 
         // ── Variação: helpers para chaves compostas (tamanho|condição) ──────────
-        const CONDICOES = ['NOVO', 'HIGIENIZADO'];
+        const CONDICOES = Object.freeze(['NOVO', 'HIGIENIZADO']);
 
         function parseVariationKey(key) {
             if (!key) return { size: null, condicao: null };
@@ -461,8 +461,6 @@
             if (!key) return '';
             return key.replace('|', ' — ');
         }
-        // ─────────────────────────────────────────────────────────────────────────
-
         function renderVariationChips(item) {
             if (!item.tamanhos) return '';
             const hasTam = hasTamanhos(item);
@@ -502,6 +500,7 @@
                 `<div class="size-chip"><strong>${s}:</strong> <span class="qty ${q > 0 ? 'ok' : 'low'}">${q}</span></div>`
             ).join('');
         }
+        // ─────────────────────────────────────────────────────────────────────────
 
         async function getItems(forceRefresh = false) {
             if (!forceRefresh && cache.items && isCacheValid(cache.itemsTimestamp)) {

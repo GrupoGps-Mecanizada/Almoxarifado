@@ -2148,7 +2148,11 @@
                     .eq('date', state.contagem.date)
                     .eq('contagem_num', num)
                     .in('item_id', uniqueItemIds);
-                if (state.contagem.turno) delQuery = delQuery.eq('turno', state.contagem.turno);
+                if (state.contagem.turno) {
+                    delQuery = delQuery.eq('turno', state.contagem.turno);
+                } else {
+                    delQuery = delQuery.is('turno', null);
+                }
                 await delQuery;
 
                 const { error } = await sbClient.from('daily_counts').insert(rows);
@@ -3784,7 +3788,7 @@
                 const wh = whName(i.warehouse_id || 'alm-1');
                 const hasSz = i.tamanhos && Object.keys(i.tamanhos).length > 0;
                 const label = hasSz
-                    ? `[${wh}] ${i.nome} — ${Object.entries(i.tamanhos).filter(([, q]) => q > 0).map(([s, q]) => `Tam ${s}:${q}`).join(', ')}`
+                    ? `[${wh}] ${i.nome} — ${Object.entries(i.tamanhos).filter(([, q]) => q > 0).map(([s, q]) => `${formatVariationLabel(s)}:${q}`).join(', ')}`
                     : `[${wh}] ${i.nome} — disp: ${i.quantidade} ${i.unidade}`;
                 return `<option value="${i.id}" ${em.formItemId === i.id ? 'selected' : ''}>${label}</option>`;
             }).join('')}
@@ -3797,7 +3801,7 @@
                                 onchange="state.emergency.formSize=this.value;state.emergency.formQty=1;render()">
                                 <option value="">— Selecione o tamanho —</option>
                                 ${Object.entries(emgSelectedItem.tamanhos).filter(([, q]) => q > 0).map(([s, q]) =>
-                `<option value="${s}" ${em.formSize === s ? 'selected' : ''}>${s} — ${q} disponível${q !== 1 ? 'is' : ''}</option>`
+                `<option value="${s}" ${em.formSize === s ? 'selected' : ''}>${formatVariationLabel(s)} — ${q} disponível${q !== 1 ? 'is' : ''}</option>`
             ).join('')}
                             </select>
                         </div>` : `
@@ -3989,7 +3993,7 @@
                                     ${hasSizes && !op.size ? `<div style="font-size:11px;color:var(--orange);margin-top:4px;"><i class="ph ph-warning"></i> Selecione um tamanho</div>` : ''}
                                 </div>
                                 <div style="text-align:right;">
-                                    <div style="font-size:11px;color:var(--text-3);">${op.size ? `Tam ${op.size}` : 'Disponível'}</div>
+                                    <div style="font-size:11px;color:var(--text-3);">${op.size ? `Tam ${formatVariationLabel(op.size)}` : 'Disponível'}</div>
                                     <div style="font-size:22px;font-weight:700;color:${availableQty > 0 ? 'var(--green)' : 'var(--red)'};">${availableQty}</div>
                                 </div>
                             </div>

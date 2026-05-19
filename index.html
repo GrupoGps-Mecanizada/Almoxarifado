@@ -2342,7 +2342,7 @@
 
             const hasSizes = item.tamanhos && Object.keys(item.tamanhos).length > 0;
             if (hasSizes && !m.size) {
-                showToast('Selecione o tamanho primeiro', 'error');
+                showToast('Selecione a variação primeiro', 'error');
                 return;
             }
 
@@ -3394,7 +3394,9 @@
                                         <label class="field-label">Tamanho / Numeração *</label>
                                         <select class="field-input field-select" onchange="state.movementOperation.size=this.value;render()" required>
                                             <option value="">-- Selecione --</option>
-                                            ${Object.entries(selectedItem.tamanhos).map(([s, q]) => `<option value="${s}" ${op.size === s ? 'selected' : ''}>${s} (Estoque: ${q})</option>`).join('')}
+                                            ${Object.entries(selectedItem.tamanhos).map(([k, q]) =>
+                                                `<option value="${k}" ${op.size === k ? 'selected' : ''}>${formatVariationLabel(k)} (Estoque: ${q})</option>`
+                                            ).join('')}
                                         </select>
                                     </div>
                                 ` : `
@@ -3628,7 +3630,7 @@
                             <select class="field-input field-select"
                                 onchange="state.baixaModal.size=this.value;state.baixaModal.quantidade=1;render()">
                                 <option value="">— Selecione o tamanho —</option>
-                                ${sizeKeys.map(s => `<option value="${s}" ${m.size === s ? 'selected' : ''}>${s} — disponível: ${item.tamanhos[s]}</option>`).join('')}
+                                ${sizeKeys.map(s => `<option value="${s}" ${m.size === s ? 'selected' : ''}>${formatVariationLabel(s)} — disponível: ${item.tamanhos[s]}</option>`).join('')}
                             </select>
                         </div>` : ''}
 

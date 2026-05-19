@@ -428,6 +428,81 @@
             }
         }
 
+        // ── Variação: helpers para chaves compostas (tamanho|condição) ──────────
+        const CONDICOES = ['NOVO', 'HIGIENIZADO'];
+
+        function parseVariationKey(key) {
+            if (!key) return { size: null, condicao: null };
+            if (key.includes('|')) {
+                const idx = key.indexOf('|');
+                return { size: key.slice(0, idx), condicao: key.slice(idx + 1) };
+            }
+            if (CONDICOES.includes(key)) return { size: null, condicao: key };
+            return { size: key, condicao: null };
+        }
+
+        function buildVariationKey(size, condicao) {
+            if (size && condicao) return `${size}|${condicao}`;
+            if (condicao) return condicao;
+            return size || null;
+        }
+
+        function hasCondicoes(item) {
+            if (!item || !item.tamanhos) return false;
+            return Object.keys(item.tamanhos).some(k => CONDICOES.includes(k) || k.includes('|'));
+        }
+
+        function hasTamanhos(item) {
+            if (!item || !item.tamanhos) return false;
+            return Object.keys(item.tamanhos).some(k => !CONDICOES.includes(k) && !k.includes('|'));
+        }
+
+        function formatVariationLabel(key) {
+            if (!key) return '';
+            return key.replace('|', ' — ');
+        }
+        // ─────────────────────────────────────────────────────────────────────────
+
+        function renderVariationChips(item) {
+            if (!item.tamanhos) return '';
+            const hasTam = hasTamanhos(item);
+            const hasCond = hasCondicoes(item);
+
+            if (hasTam && hasCond) {
+                const sizeMap = {};
+                Object.entries(item.tamanhos).forEach(([k, q]) => {
+                    const { size, condicao } = parseVariationKey(k);
+                    if (!size) return;
+                    if (!sizeMap[size]) sizeMap[size] = {};
+                    sizeMap[size][condicao] = q;
+                });
+                return Object.entries(sizeMap).map(([s, conds]) => {
+                    const novo = conds['NOVO'] ?? 0;
+                    const hig  = conds['HIGIENIZADO'] ?? 0;
+                    return `<div class="size-chip" style="flex-direction:column;align-items:flex-start;gap:2px;min-width:110px;">
+                        <strong style="font-size:11px;">${s}</strong>
+                        <span style="display:flex;gap:8px;font-size:11px;">
+                            <span style="color:var(--green);font-weight:700;">N:${novo}</span>
+                            <span style="color:var(--accent);font-weight:700;">H:${hig}</span>
+                        </span>
+                    </div>`;
+                }).join('');
+            }
+
+            if (!hasTam && hasCond) {
+                const novo = item.tamanhos['NOVO'] ?? 0;
+                const hig  = item.tamanhos['HIGIENIZADO'] ?? 0;
+                return `
+                    <div class="size-chip"><strong style="color:var(--green);">NOVO:</strong> <span class="qty ${novo > 0 ? 'ok' : 'low'}">${novo}</span></div>
+                    <div class="size-chip"><strong style="color:var(--accent);">HIGIENIZADO:</strong> <span class="qty ${hig > 0 ? 'ok' : 'low'}">${hig}</span></div>
+                `;
+            }
+
+            return Object.entries(item.tamanhos).map(([s, q]) =>
+                `<div class="size-chip"><strong>${s}:</strong> <span class="qty ${q > 0 ? 'ok' : 'low'}">${q}</span></div>`
+            ).join('');
+        }
+
         async function getItems(forceRefresh = false) {
             if (!forceRefresh && cache.items && isCacheValid(cache.itemsTimestamp)) {
                 return { success: true, items: cache.items };

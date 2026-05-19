@@ -2250,34 +2250,58 @@
                 for (const r of itensNoite) {
                     const item = state.items.find(i => i.id === r.item_id);
                     if (!item) continue;
-                    const novaQtd = Math.max(0, item.quantidade - r.saida);
-                    const { error: updErr } = await sbClient.from('items').update({ quantidade: novaQtd }).eq('id', r.item_id);
+                    let updPayload;
+                    if (r.variation_key && item.tamanhos) {
+                        const novosTam = { ...item.tamanhos };
+                        novosTam[r.variation_key] = Math.max(0, (novosTam[r.variation_key] || 0) - r.saida);
+                        const novaQtd = Object.values(novosTam).reduce((a, b) => a + b, 0);
+                        updPayload = { tamanhos: novosTam, quantidade: novaQtd };
+                        item.tamanhos = novosTam;
+                        item.quantidade = novaQtd;
+                    } else {
+                        const novaQtd = Math.max(0, item.quantidade - r.saida);
+                        updPayload = { quantidade: novaQtd };
+                        item.quantidade = novaQtd;
+                    }
+                    const { error: updErr } = await sbClient.from('items').update(updPayload).eq('id', r.item_id);
                     if (updErr) throw updErr;
                     await sbClient.from('movements').insert({
                         date, type: 'SAIDA',
                         item_id: r.item_id, item_name: r.item_name,
                         quantity: r.saida,
+                        size: r.variation_key || null,
                         warehouse_id: targetWh,
                         user_name: state.user.nome,
                         observations: `Baixa Contagem Diária ${dateLabel}${turnoLabel} — Noite — ${targetWhNome}`
                     });
-                    item.quantidade = novaQtd;
                 }
                 for (const r of itensAdm) {
                     const item = state.items.find(i => i.id === r.item_id);
                     if (!item) continue;
-                    const novaQtd = Math.max(0, item.quantidade - r.saida_adm);
-                    const { error: updErr } = await sbClient.from('items').update({ quantidade: novaQtd }).eq('id', r.item_id);
+                    let updPayload;
+                    if (r.variation_key && item.tamanhos) {
+                        const novosTam = { ...item.tamanhos };
+                        novosTam[r.variation_key] = Math.max(0, (novosTam[r.variation_key] || 0) - r.saida_adm);
+                        const novaQtd = Object.values(novosTam).reduce((a, b) => a + b, 0);
+                        updPayload = { tamanhos: novosTam, quantidade: novaQtd };
+                        item.tamanhos = novosTam;
+                        item.quantidade = novaQtd;
+                    } else {
+                        const novaQtd = Math.max(0, item.quantidade - r.saida_adm);
+                        updPayload = { quantidade: novaQtd };
+                        item.quantidade = novaQtd;
+                    }
+                    const { error: updErr } = await sbClient.from('items').update(updPayload).eq('id', r.item_id);
                     if (updErr) throw updErr;
                     await sbClient.from('movements').insert({
                         date, type: 'DISTRIBUICAO',
                         item_id: r.item_id, item_name: r.item_name,
                         quantity: r.saida_adm,
+                        size: r.variation_key || null,
                         warehouse_id: targetWh,
                         user_name: state.user.nome,
                         observations: `Baixa Contagem Diária ${dateLabel}${turnoLabel} — ADM — ${targetWhNome}`
                     });
-                    item.quantidade = novaQtd;
                 }
                 state.contagem.baixaAplicada = true;
                 const baixaKey = sessionId ? `${date}_${sessionId}` : date;
@@ -2321,10 +2345,21 @@
                 for (const m of filtered) {
                     const item = state.items.find(i => i.id === m.item_id);
                     if (!item) continue;
-                    const novaQtd = item.quantidade + m.quantity;
-                    const { error: updErr } = await sbClient.from('items').update({ quantidade: novaQtd }).eq('id', m.item_id);
+                    let updPayload;
+                    if (m.size && item.tamanhos) {
+                        const novosTam = { ...item.tamanhos };
+                        novosTam[m.size] = (novosTam[m.size] || 0) + m.quantity;
+                        const novaQtd = Object.values(novosTam).reduce((a, b) => a + b, 0);
+                        updPayload = { tamanhos: novosTam, quantidade: novaQtd };
+                        item.tamanhos = novosTam;
+                        item.quantidade = novaQtd;
+                    } else {
+                        const novaQtd = item.quantidade + m.quantity;
+                        updPayload = { quantidade: novaQtd };
+                        item.quantidade = novaQtd;
+                    }
+                    const { error: updErr } = await sbClient.from('items').update(updPayload).eq('id', m.item_id);
                     if (updErr) throw updErr;
-                    item.quantidade = novaQtd;
                 }
 
                 const ids = filtered.map(m => m.id);

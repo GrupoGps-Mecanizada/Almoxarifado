@@ -454,7 +454,7 @@
 
         function hasTamanhos(item) {
             if (!item || !item.tamanhos) return false;
-            return Object.keys(item.tamanhos).some(k => !CONDICOES.includes(k) && !k.includes('|'));
+            return Object.keys(item.tamanhos).some(k => !CONDICOES.includes(k));
         }
 
         function formatVariationLabel(key) {

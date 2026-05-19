@@ -4421,17 +4421,31 @@
                     </th>`;
                 }
 
-                const tableRows = alm2Items.map((item, idx) => {
-                    const saved1 = state.contagem.todayCounts[item.id]?.c1;
-                    const saved2 = state.contagem.todayCounts[item.id]?.c2;
-                    const saved3 = state.contagem.todayCounts[item.id]?.c3;
-                    const val1 = state.contagem.entries1[item.id] ?? '';
-                    const val2 = state.contagem.entries2[item.id] ?? '';
-                    const val3 = state.contagem.entries3[item.id] ?? '';
+                // Expande itens com variações em múltiplas linhas (uma por variação)
+                function expandItemRows(item) {
+                    if (!item.tamanhos || Object.keys(item.tamanhos).length === 0) {
+                        return [{ item, varKey: null }];
+                    }
+                    return Object.keys(item.tamanhos).map(varKey => ({ item, varKey }));
+                }
+
+                const expandedRows = alm2Items.flatMap(expandItemRows);
+
+                const tableRows = expandedRows.map(({ item, varKey }, idx) => {
+                    const ek = varKey ? `${item.id}::${varKey}` : item.id;
+                    const saved1 = state.contagem.todayCounts[ek]?.c1;
+                    const saved2 = state.contagem.todayCounts[ek]?.c2;
+                    const saved3 = state.contagem.todayCounts[ek]?.c3;
+                    const val1 = state.contagem.entries1[ek] ?? '';
+                    const val2 = state.contagem.entries2[ek] ?? '';
+                    const val3 = state.contagem.entries3[ek] ?? '';
                     const rowBg = idx % 2 === 0 ? 'var(--bg-1)' : 'var(--bg-2)';
                     const cell1Bg = saved1 ? '#e8f5ee' : val1 !== '' ? '#f0f4ff' : rowBg;
                     const cell2Bg = saved2 ? '#e8f5ee' : val2 !== '' ? '#f0f4ff' : rowBg;
                     const cell3Bg = saved3 ? '#e8f5ee' : val3 !== '' ? '#f0f4ff' : rowBg;
+                    const parsed = varKey ? parseVariationKey(varKey) : {};
+                    const condColor = parsed.condicao === 'NOVO' ? 'var(--green)'
+                        : parsed.condicao === 'HIGIENIZADO' ? 'var(--accent)' : 'var(--text-2)';
                     function cellInput(stKey, val, cellBg) {
                         return `<td style="padding:3px 4px;background:${cellBg};border-left:1px solid var(--border);text-align:center;">
                             <input type="number" min="0" placeholder="—" value="${val}"
@@ -4440,12 +4454,13 @@
                                        outline:none;padding:0 4px;"
                                 onfocus="this.style.borderColor='var(--accent)';this.style.boxShadow='0 0 0 2px var(--accent-glow)'"
                                 onblur="this.style.borderColor='var(--border)';this.style.boxShadow=''"
-                                oninput="state.contagem.${stKey}['${item.id}']=this.value">
+                                oninput="state.contagem.${stKey}['${ek}']=this.value">
                         </td>`;
                     }
                     return `<tr style="border-bottom:1px solid var(--border);">
                         <td style="padding:9px 12px;font-weight:500;font-size:13px;background:${rowBg};white-space:nowrap;">
                             ${item.nome}
+                            ${varKey ? `<span style="font-size:11px;color:${condColor};font-weight:700;margin-left:6px;">— ${formatVariationLabel(varKey)}</span>` : ''}
                             <span style="font-size:10px;color:var(--text-3);font-weight:400;margin-left:4px;">${item.unidade}</span>
                         </td>
                         ${cellInput('entries1', val1, cell1Bg)}
@@ -4480,7 +4495,7 @@
                                 <tr style="border-bottom:2px solid var(--border);">
                                     <th style="padding:10px 12px;text-align:left;background:var(--bg-2);font-size:12px;font-weight:700;color:var(--text-2);white-space:nowrap;">
                                         EPI's
-                                        <span style="font-size:10px;font-weight:400;color:var(--text-3);margin-left:4px;">(${alm2Items.length} itens)</span>
+                                        <span style="font-size:10px;font-weight:400;color:var(--text-3);margin-left:4px;">(${alm2Items.length} itens · ${expandedRows.length} linhas)</span>
                                     </th>
                                      ${colHeader(1, 'C1', c1Sub, hasC1done)}
                                      ${colHeader(2, 'C2', c2Sub, hasC2done)}

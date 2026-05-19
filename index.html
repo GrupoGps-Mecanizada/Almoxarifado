@@ -2123,27 +2123,32 @@
             }
             state.contagem.saving = true;
             render();
-            const rows = validEntries.map(([item_id, qty]) => ({
-                date: state.contagem.date,
-                item_id,
-                item_name: state.items.find(i => i.id === item_id)?.nome || item_id,
-                quantidade: Math.max(0, parseInt(qty) || 0),
-                user_name: state.user.nome,
-                contagem_num: num,
-                turno: state.contagem.turno || null,
-                horario: state.contagem.horario || null
-            }));
+            const rows = validEntries.map(([compoundKey, qty]) => {
+                const hasSep = compoundKey.includes('::');
+                const itemId = hasSep ? compoundKey.slice(0, compoundKey.indexOf('::')) : compoundKey;
+                const varKey = hasSep ? compoundKey.slice(compoundKey.indexOf('::') + 2) : null;
+                const item   = state.items.find(i => i.id === itemId);
+                return {
+                    date:         state.contagem.date,
+                    item_id:      itemId,
+                    item_name:    item?.nome || itemId,
+                    size:         varKey || null,
+                    quantidade:   Math.max(0, parseInt(qty) || 0),
+                    user_name:    state.user.nome,
+                    contagem_num: num,
+                    turno:        state.contagem.turno  || null,
+                    horario:      state.contagem.horario || null
+                };
+            });
             try {
                 // Remove registros anteriores do mesmo dia e mesmo num para esses itens
-                const itemIds = rows.map(r => r.item_id);
+                const uniqueItemIds = [...new Set(rows.map(r => r.item_id))];
                 let delQuery = sbClient.from('daily_counts')
                     .delete()
                     .eq('date', state.contagem.date)
                     .eq('contagem_num', num)
-                    .in('item_id', itemIds);
-                if (state.contagem.turno) {
-                    delQuery = delQuery.eq('turno', state.contagem.turno);
-                }
+                    .in('item_id', uniqueItemIds);
+                if (state.contagem.turno) delQuery = delQuery.eq('turno', state.contagem.turno);
                 await delQuery;
 
                 const { error } = await sbClient.from('daily_counts').insert(rows);
@@ -2151,28 +2156,34 @@
 
                 // Atualiza estado local
                 rows.forEach(row => {
-                    if (!state.contagem.todayCounts[row.item_id]) state.contagem.todayCounts[row.item_id] = {};
+                    const ek = row.size ? `${row.item_id}::${row.size}` : row.item_id;
+                    if (!state.contagem.todayCounts[ek]) state.contagem.todayCounts[ek] = {};
                     const key = num === 1 ? 'c1' : num === 2 ? 'c2' : 'c3';
-                    state.contagem.todayCounts[row.item_id][key] = row;
+                    state.contagem.todayCounts[ek][key] = row;
                 });
 
                 if (num === 3) {
                     // Saída ADM = C2 (início do turno) - C3 (pós-distribuição)
                     const result = rows.map(row => {
-                        const c2 = state.contagem.todayCounts[row.item_id]?.c2
-                            ?? state.contagem.lastC2[row.item_id];
-                        const c1 = state.contagem.lastC1[row.item_id];
-                        const saidaADM = c2 != null ? c2.quantidade - row.quantidade : null;
+                        const ek = row.size ? `${row.item_id}::${row.size}` : row.item_id;
+                        const c2 = state.contagem.todayCounts[ek]?.c2
+                            ?? state.contagem.lastC2[ek];
+                        const c1 = state.contagem.lastC1[ek];
+                        const saidaADM   = c2 != null ? c2.quantidade - row.quantidade : null;
                         const saidaTurno = c1 != null && c2 != null ? c1.quantidade - c2.quantidade : null;
+                        const itemName   = row.size
+                            ? `${row.item_name} — ${formatVariationLabel(row.size)}`
+                            : row.item_name;
                         return {
-                            item_id: row.item_id,
-                            item_name: row.item_name,
-                            c1_qtd: c1?.quantidade ?? null,
-                            c1_date: c1?.date ?? null,
-                            c2_qtd: c2?.quantidade ?? null,
-                            c3_qtd: row.quantidade,
-                            saida: saidaTurno,      // usado pela aplicarBaixaContagem (consumo do turno)
-                            saida_adm: saidaADM,    // distribuição ao ADM
+                            item_id:       row.item_id,
+                            item_name:     itemName,
+                            variation_key: row.size || null,
+                            c1_qtd:        c1?.quantidade ?? null,
+                            c1_date:       c1?.date       ?? null,
+                            c2_qtd:        c2?.quantidade ?? null,
+                            c3_qtd:        row.quantidade,
+                            saida:         saidaTurno,      // usado pela aplicarBaixaContagem (consumo do turno)
+                            saida_adm:     saidaADM,        // distribuição ao ADM
                         };
                     });
                     state.contagem.savedResult = result;
@@ -2183,14 +2194,16 @@
                 } else if (num === 2) {
                     // C2 salvo — avança para etapa C3
                     rows.forEach(row => {
-                        state.contagem.lastC2[row.item_id] = { item_id: row.item_id, date: row.date, quantidade: row.quantidade };
+                        const ek = row.size ? `${row.item_id}::${row.size}` : row.item_id;
+                        state.contagem.lastC2[ek] = { item_id: row.item_id, date: row.date, quantidade: row.quantidade, size: row.size };
                     });
                     state.contagem.contagemStep = 3;
                     showToast('Conferência de chegada salva! Agora faça a contagem pós-ADM.', 'success');
                 } else {
                     // C1 salvo — atualiza lastC1 e avança para C2
                     rows.forEach(row => {
-                        state.contagem.lastC1[row.item_id] = { item_id: row.item_id, date: row.date, quantidade: row.quantidade };
+                        const ek = row.size ? `${row.item_id}::${row.size}` : row.item_id;
+                        state.contagem.lastC1[ek] = { item_id: row.item_id, date: row.date, quantidade: row.quantidade, size: row.size };
                     });
                     state.contagem.contagemStep = 2;
                     showToast('Contagem de Entrega salva! Prossiga com a Conferência de Chegada.', 'success');

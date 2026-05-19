@@ -1462,59 +1462,106 @@
             }
         }
 
-        function toggleSizesSection(show) {
-            const sizesArea = document.getElementById('sizesConfigArea');
+        function updateItemFormLayout() {
+            const hasSzChk = document.getElementById('hasSizes')?.checked;
+            const hasCondChk = document.getElementById('hasCondicoes')?.checked;
             const singleQtyArea = document.getElementById('singleQuantityArea');
-            const itemQuantityInput = document.getElementById('itemQuantity');
+            const sizesConfigArea = document.getElementById('sizesConfigArea');
+            const condicoesOnlyArea = document.getElementById('condicoesOnlyArea');
+            const itemQtyInput = document.getElementById('itemQuantity');
+            const addSizeBtn = document.getElementById('addSizeBtn');
+            const sizeListLabel = document.getElementById('sizeListLabel');
 
-            if (show) {
-                sizesArea.classList.remove('hidden');
-                sizesArea.classList.add('block');
-                singleQtyArea.classList.add('hidden');
-                singleQtyArea.classList.remove('block');
-                itemQuantityInput.required = false;
+            if (!hasSzChk && !hasCondChk) {
+                singleQtyArea.className = 'block';
+                sizesConfigArea.className = 'hidden';
+                condicoesOnlyArea.className = 'hidden';
+                if (itemQtyInput) itemQtyInput.required = true;
+            } else if (hasSzChk && !hasCondChk) {
+                singleQtyArea.className = 'hidden';
+                sizesConfigArea.className = 'block';
+                condicoesOnlyArea.className = 'hidden';
+                if (itemQtyInput) itemQtyInput.required = false;
+                if (sizeListLabel) sizeListLabel.textContent = 'Tamanhos e Quantidades';
+                if (addSizeBtn) addSizeBtn.style.display = '';
+            } else if (!hasSzChk && hasCondChk) {
+                singleQtyArea.className = 'hidden';
+                sizesConfigArea.className = 'hidden';
+                condicoesOnlyArea.className = 'block';
+                if (itemQtyInput) itemQtyInput.required = false;
             } else {
-                sizesArea.classList.add('hidden');
-                sizesArea.classList.remove('block');
-                singleQtyArea.classList.remove('hidden');
-                singleQtyArea.classList.add('block');
-                itemQuantityInput.required = true;
+                // ambos: sizes + condições
+                singleQtyArea.className = 'hidden';
+                sizesConfigArea.className = 'block';
+                condicoesOnlyArea.className = 'hidden';
+                if (itemQtyInput) itemQtyInput.required = false;
+                if (sizeListLabel) sizeListLabel.textContent = 'Tamanhos × Condição (NOVO / HIGIENIZADO)';
+                if (addSizeBtn) addSizeBtn.style.display = '';
             }
         }
 
+        function toggleSizesSection(show) { updateItemFormLayout(); }
+
         function addSizeRow() {
+            const hasCondChk = document.getElementById('hasCondicoes')?.checked;
             const list = document.getElementById('sizesList');
             const row = document.createElement('div');
             row.className = 'size-row';
-            row.style.cssText = 'display:flex;gap:10px;align-items:center;';
-            row.innerHTML = `
-                <input type="text" class="size-name field-input" style="width:120px;" placeholder="Ex: 40 ou M" required>
-                <input type="number" class="size-qty field-input" style="width:100px;" placeholder="Qtd" value="0" required min="0">
-                <button type="button" onclick="this.parentElement.remove()" class="btn-icon" style="color:var(--red)"><i class="ph-bold ph-trash"></i></button>
-            `;
+            row.style.cssText = 'display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:6px;';
+            if (hasCondChk) {
+                row.innerHTML = `
+                    <input type="text" class="size-name field-input" style="width:90px;" placeholder="Ex: P ou 40" required>
+                    <span style="font-size:12px;color:var(--green);font-weight:600;">NOVO:</span>
+                    <input type="number" class="size-qty-novo field-input" style="width:80px;" placeholder="0" value="0" min="0">
+                    <span style="font-size:12px;color:var(--accent);font-weight:600;">HIG:</span>
+                    <input type="number" class="size-qty-hig field-input" style="width:80px;" placeholder="0" value="0" min="0">
+                    <button type="button" onclick="this.parentElement.remove()" class="btn-icon" style="color:var(--red)"><i class="ph-bold ph-trash"></i></button>
+                `;
+            } else {
+                row.innerHTML = `
+                    <input type="text" class="size-name field-input" style="width:120px;" placeholder="Ex: 40 ou M" required>
+                    <input type="number" class="size-qty field-input" style="width:100px;" placeholder="Qtd" value="0" min="0">
+                    <button type="button" onclick="this.parentElement.remove()" class="btn-icon" style="color:var(--red)"><i class="ph-bold ph-trash"></i></button>
+                `;
+            }
             list.appendChild(row);
         }
 
         async function handleSaveItem(e) {
             e.preventDefault();
 
-            const hasSizes = document.getElementById('hasSizes')?.checked;
+            const hasSizesChecked = document.getElementById('hasSizes')?.checked;
+            const hasCondicoesChecked = document.getElementById('hasCondicoes')?.checked;
             let tamanhos = null;
             let quantidade = 0;
 
-            if (hasSizes) {
+            if (hasSizesChecked && hasCondicoesChecked) {
                 tamanhos = {};
-                const rows = document.querySelectorAll('.size-row');
-                rows.forEach(row => {
-                    const name = row.querySelector('.size-name').value.trim();
-                    const qty = parseInt(row.querySelector('.size-qty').value) || 0;
-                    if (name) {
-                        tamanhos[name] = qty;
-                        quantidade += qty;
-                    }
+                document.querySelectorAll('.size-row').forEach(row => {
+                    const name = row.querySelector('.size-name')?.value.trim();
+                    if (!name) return;
+                    const novoQty = parseInt(row.querySelector('.size-qty-novo')?.value) || 0;
+                    const higQty  = parseInt(row.querySelector('.size-qty-hig')?.value)  || 0;
+                    tamanhos[`${name}|NOVO`]        = novoQty;
+                    tamanhos[`${name}|HIGIENIZADO`] = higQty;
+                    quantidade += novoQty + higQty;
                 });
+            } else if (hasSizesChecked) {
+                tamanhos = {};
+                document.querySelectorAll('.size-row').forEach(row => {
+                    const name = row.querySelector('.size-name')?.value.trim();
+                    const qty  = parseInt(row.querySelector('.size-qty')?.value) || 0;
+                    if (name) { tamanhos[name] = qty; quantidade += qty; }
+                });
+            } else if (hasCondicoesChecked) {
+                tamanhos = {};
+                const novoQty = parseInt(document.getElementById('condicaoNovo')?.value) || 0;
+                const higQty  = parseInt(document.getElementById('condicaoHig')?.value)  || 0;
+                tamanhos['NOVO']        = novoQty;
+                tamanhos['HIGIENIZADO'] = higQty;
+                quantidade = novoQty + higQty;
             } else {
-                quantidade = parseInt(document.getElementById('itemQuantity').value);
+                quantidade = parseInt(document.getElementById('itemQuantity')?.value) || 0;
             }
 
             const selectedWarehouse = document.querySelector('input[name="itemWarehouse"]:checked');
@@ -4039,6 +4086,8 @@
 
         function renderEditItem() {
             const item = state.editingItem || {};
+            const itemHasTam   = hasTamanhos(item);
+            const itemHasCond  = hasCondicoes(item);
             return `
         <div class="page-wrap">
             ${renderHeader()}
@@ -4094,33 +4143,80 @@
                         <div class="field-group" style="grid-column:1/-1;">
                             <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-weight:600;font-size:13px;color:var(--text-2);">
                                 <input type="checkbox" id="hasSizes" style="width:18px;height:18px;accent-color:var(--accent);"
-                                    ${item.tamanhos && Object.keys(item.tamanhos).length > 0 ? 'checked' : ''}
-                                    onchange="toggleSizesSection(this.checked)">
+                                    ${itemHasTam ? 'checked' : ''}
+                                    onchange="updateItemFormLayout()">
                                 Este item tem tamanhos / numerações diferentes
                             </label>
                         </div>
+                        <div class="field-group" style="grid-column:1/-1;">
+                            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-weight:600;font-size:13px;color:var(--text-2);">
+                                <input type="checkbox" id="hasCondicoes" style="width:18px;height:18px;accent-color:var(--green);"
+                                    ${itemHasCond ? 'checked' : ''}
+                                    onchange="updateItemFormLayout()">
+                                Este item tem condição (NOVO / HIGIENIZADO)
+                            </label>
+                        </div>
 
-                        <div id="singleQuantityArea" class="${item.tamanhos && Object.keys(item.tamanhos).length > 0 ? 'hidden' : 'block'}" style="grid-column:1/-1;">
+                        <!-- Quantidade única -->
+                        <div id="singleQuantityArea" class="${!itemHasTam && !itemHasCond ? 'block' : 'hidden'}" style="grid-column:1/-1;">
                             <div class="field-group">
                                 <label class="field-label">Quantidade</label>
                                 <input class="field-input" type="number" id="itemQuantity" value="${item.quantidade || 0}" min="0">
                             </div>
                         </div>
 
-                        <div id="sizesConfigArea" class="${item.tamanhos && Object.keys(item.tamanhos).length > 0 ? 'block' : 'hidden'}" style="grid-column:1/-1;">
+                        <!-- Só condição (NOVO / HIGIENIZADO) -->
+                        <div id="condicoesOnlyArea" class="${!itemHasTam && itemHasCond ? 'block' : 'hidden'}" style="grid-column:1/-1;">
                             <div class="field-group">
-                                <label class="field-label">Tamanhos e Quantidades</label>
-                                <div id="sizesList" class="stack-sm">
-                                    ${item.tamanhos && Object.keys(item.tamanhos).length > 0
-                    ? Object.entries(item.tamanhos).map(([s, q]) => `
-                                            <div class="flex gap-3 items-center size-row mb-2" style="display:flex;gap:10px;align-items:center;">
-                                                <input type="text" class="size-name field-input" style="width:120px;" placeholder="Ex: 40 ou M" value="${s}" required>
-                                                <input type="number" class="size-qty field-input" style="width:100px;" placeholder="Qtd" value="${q}" min="0" required>
-                                                <button type="button" onclick="this.parentElement.remove()" class="btn-icon" style="color:var(--red)"><i class="ph-bold ph-trash"></i></button>
-                                            </div>`).join('')
-                    : ''}
+                                <label class="field-label">Quantidades por Condição</label>
+                                <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;">
+                                    <label style="display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px;color:var(--green);">
+                                        NOVO:
+                                        <input type="number" id="condicaoNovo" class="field-input" style="width:100px;"
+                                            value="${item.tamanhos?.['NOVO'] ?? 0}" min="0">
+                                    </label>
+                                    <label style="display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px;color:var(--accent);">
+                                        HIGIENIZADO:
+                                        <input type="number" id="condicaoHig" class="field-input" style="width:100px;"
+                                            value="${item.tamanhos?.['HIGIENIZADO'] ?? 0}" min="0">
+                                    </label>
                                 </div>
-                                <button type="button" onclick="addSizeRow()" class="btn-secondary" style="margin-top:10px;">
+                            </div>
+                        </div>
+
+                        <!-- Tamanhos (com ou sem condição) -->
+                        <div id="sizesConfigArea" class="${itemHasTam ? 'block' : 'hidden'}" style="grid-column:1/-1;">
+                            <div class="field-group">
+                                <label class="field-label" id="sizeListLabel">${itemHasTam && itemHasCond ? 'Tamanhos × Condição (NOVO / HIGIENIZADO)' : 'Tamanhos e Quantidades'}</label>
+                                <div id="sizesList" class="stack-sm">
+                                    ${(() => {
+                                        if (!itemHasTam) return '';
+                                        if (itemHasCond) {
+                                            const sizes = [...new Set(
+                                                Object.keys(item.tamanhos)
+                                                    .filter(k => k.includes('|'))
+                                                    .map(k => k.split('|')[0])
+                                            )];
+                                            return sizes.map(s => `
+                                                <div class="size-row" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:6px;">
+                                                    <input type="text" class="size-name field-input" style="width:90px;" placeholder="Ex: P ou 40" value="${s}" required>
+                                                    <span style="font-size:12px;color:var(--green);font-weight:600;">NOVO:</span>
+                                                    <input type="number" class="size-qty-novo field-input" style="width:80px;" value="${item.tamanhos[s+'|NOVO'] ?? 0}" min="0">
+                                                    <span style="font-size:12px;color:var(--accent);font-weight:600;">HIG:</span>
+                                                    <input type="number" class="size-qty-hig field-input" style="width:80px;" value="${item.tamanhos[s+'|HIGIENIZADO'] ?? 0}" min="0">
+                                                    <button type="button" onclick="this.parentElement.remove()" class="btn-icon" style="color:var(--red)"><i class="ph-bold ph-trash"></i></button>
+                                                </div>`).join('');
+                                        } else {
+                                            return Object.entries(item.tamanhos).map(([s, q]) => `
+                                                <div class="flex gap-3 items-center size-row mb-2" style="display:flex;gap:10px;align-items:center;">
+                                                    <input type="text" class="size-name field-input" style="width:120px;" placeholder="Ex: 40 ou M" value="${s}" required>
+                                                    <input type="number" class="size-qty field-input" style="width:100px;" placeholder="Qtd" value="${q}" min="0" required>
+                                                    <button type="button" onclick="this.parentElement.remove()" class="btn-icon" style="color:var(--red)"><i class="ph-bold ph-trash"></i></button>
+                                                </div>`).join('');
+                                        }
+                                    })()}
+                                </div>
+                                <button type="button" id="addSizeBtn" onclick="addSizeRow()" class="btn-secondary" style="margin-top:10px;">
                                     <i class="ph ph-plus"></i> Adicionar Tamanho
                                 </button>
                             </div>

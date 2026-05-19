@@ -3574,9 +3574,7 @@
                                 </div>
                                 ${item.tamanhos && Object.keys(item.tamanhos).length > 0 ? `
                                     <div class="sizes-grid">
-                                        ${Object.entries(item.tamanhos).map(([s, q]) => `
-                                            <div class="size-chip"><strong>${s}:</strong> <span class="qty ${q > 0 ? 'ok' : 'low'}">${q}</span></div>
-                                        `).join('')}
+                                        ${renderVariationChips(item)}
                                     </div>
                                 ` : ''}
                                 ${item.unidades_por_caixa && item.unidades_por_caixa > 1 ? `
@@ -3780,9 +3778,7 @@
                                 </div>
                                 ${item.tamanhos && Object.keys(item.tamanhos).length > 0 ? `
                                     <div class="sizes-grid" style="margin-top:8px;">
-                                        ${Object.entries(item.tamanhos).map(([s, q]) => `
-                                            <div class="size-chip"><strong>${s}:</strong> <span class="qty ${q > 0 ? 'ok' : 'low'}">${q}</span></div>
-                                        `).join('')}
+                                        ${renderVariationChips(item)}
                                     </div>` : ''}
                                 <div style="display:flex;gap:6px;margin-top:10px;border-top:1px solid var(--border);padding-top:10px;">
                                     <button onclick='openEditItem(${JSON.stringify(item).replace(/'/g, "&#39;")})' class="btn-secondary" style="flex:1;font-size:11px;padding:5px 8px;">

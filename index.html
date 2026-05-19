@@ -1473,27 +1473,27 @@
             const sizeListLabel = document.getElementById('sizeListLabel');
 
             if (!hasSzChk && !hasCondChk) {
-                singleQtyArea.className = 'block';
-                sizesConfigArea.className = 'hidden';
-                condicoesOnlyArea.className = 'hidden';
+                if (singleQtyArea) singleQtyArea.className = 'block';
+                if (sizesConfigArea) sizesConfigArea.className = 'hidden';
+                if (condicoesOnlyArea) condicoesOnlyArea.className = 'hidden';
                 if (itemQtyInput) itemQtyInput.required = true;
             } else if (hasSzChk && !hasCondChk) {
-                singleQtyArea.className = 'hidden';
-                sizesConfigArea.className = 'block';
-                condicoesOnlyArea.className = 'hidden';
+                if (singleQtyArea) singleQtyArea.className = 'hidden';
+                if (sizesConfigArea) sizesConfigArea.className = 'block';
+                if (condicoesOnlyArea) condicoesOnlyArea.className = 'hidden';
                 if (itemQtyInput) itemQtyInput.required = false;
                 if (sizeListLabel) sizeListLabel.textContent = 'Tamanhos e Quantidades';
                 if (addSizeBtn) addSizeBtn.style.display = '';
             } else if (!hasSzChk && hasCondChk) {
-                singleQtyArea.className = 'hidden';
-                sizesConfigArea.className = 'hidden';
-                condicoesOnlyArea.className = 'block';
+                if (singleQtyArea) singleQtyArea.className = 'hidden';
+                if (sizesConfigArea) sizesConfigArea.className = 'hidden';
+                if (condicoesOnlyArea) condicoesOnlyArea.className = 'block';
                 if (itemQtyInput) itemQtyInput.required = false;
             } else {
                 // ambos: sizes + condições
-                singleQtyArea.className = 'hidden';
-                sizesConfigArea.className = 'block';
-                condicoesOnlyArea.className = 'hidden';
+                if (singleQtyArea) singleQtyArea.className = 'hidden';
+                if (sizesConfigArea) sizesConfigArea.className = 'block';
+                if (condicoesOnlyArea) condicoesOnlyArea.className = 'hidden';
                 if (itemQtyInput) itemQtyInput.required = false;
                 if (sizeListLabel) sizeListLabel.textContent = 'Tamanhos × Condição (NOVO / HIGIENIZADO)';
                 if (addSizeBtn) addSizeBtn.style.display = '';
@@ -1524,7 +1524,7 @@
                     <button type="button" onclick="this.parentElement.remove()" class="btn-icon" style="color:var(--red)"><i class="ph-bold ph-trash"></i></button>
                 `;
             }
-            list.appendChild(row);
+            if (list) list.appendChild(row);
         }
 
         async function handleSaveItem(e) {

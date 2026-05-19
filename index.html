@@ -1978,20 +1978,27 @@
                 const { data } = await q;
                 const c1Map = {}, c2Map = {}, c3Map = {};
                 (data || []).forEach(r => {
-                    if (r.contagem_num === 1) c1Map[r.item_id] = r;
-                    if (r.contagem_num === 2) c2Map[r.item_id] = r;
-                    if (r.contagem_num === 3) c3Map[r.item_id] = r;
+                    const k = r.size ? `${r.item_id}::${r.size}` : r.item_id;
+                    if (r.contagem_num === 1) c1Map[k] = r;
+                    if (r.contagem_num === 2) c2Map[k] = r;
+                    if (r.contagem_num === 3) c3Map[k] = r;
                 });
 
-                const allItemIdsWithCounts = new Set([...Object.keys(c1Map), ...Object.keys(c2Map), ...Object.keys(c3Map)]);
-                const result = Array.from(allItemIdsWithCounts).map(itemId => {
-                    const c1 = c1Map[itemId];
-                    const c2 = c2Map[itemId];
-                    const c3 = c3Map[itemId];
+                const allKeys = new Set([...Object.keys(c1Map), ...Object.keys(c2Map), ...Object.keys(c3Map)]);
+                const result = Array.from(allKeys).map(compoundKey => {
+                    const c1 = c1Map[compoundKey];
+                    const c2 = c2Map[compoundKey];
+                    const c3 = c3Map[compoundKey];
+                    const baseRow = c1 || c2 || c3;
+                    const variationKey = baseRow.size || null;
+                    const itemName = variationKey
+                        ? `${baseRow.item_name} — ${formatVariationLabel(variationKey)}`
+                        : baseRow.item_name;
                     return {
-                        item_id: itemId,
-                        item_name: (c1 || c2 || c3).item_name,
-                        saida: (c1 != null && c2 != null) ? c1.quantidade - c2.quantidade : null,
+                        item_id: baseRow.item_id,
+                        item_name: itemName,
+                        variation_key: variationKey,
+                        saida:     (c1 != null && c2 != null) ? c1.quantidade - c2.quantidade : null,
                         saida_adm: (c2 != null && c3 != null) ? c2.quantidade - c3.quantidade : null,
                         c1_qtd: c1?.quantidade ?? null,
                         c1_date: c1?.date ?? null,
@@ -2027,7 +2034,10 @@
                     .order('date', { ascending: false })
                     .order('created_at', { ascending: false });
                 const lastC1 = {};
-                if (allC1) allC1.forEach(row => { if (!lastC1[row.item_id]) lastC1[row.item_id] = row; });
+                if (allC1) allC1.forEach(row => {
+                    const k = row.size ? `${row.item_id}::${row.size}` : row.item_id;
+                    if (!lastC1[k]) lastC1[k] = row;
+                });
                 state.contagem.lastC1 = lastC1;
 
                 // C2 mais recente por item (qualquer data) — referência para cálculo ADM
@@ -2039,7 +2049,10 @@
                     .order('date', { ascending: false })
                     .order('created_at', { ascending: false });
                 const lastC2 = {};
-                if (allC2) allC2.forEach(row => { if (!lastC2[row.item_id]) lastC2[row.item_id] = row; });
+                if (allC2) allC2.forEach(row => {
+                    const k = row.size ? `${row.item_id}::${row.size}` : row.item_id;
+                    if (!lastC2[k]) lastC2[k] = row;
+                });
                 state.contagem.lastC2 = lastC2;
 
                 // Contagens já salvas para a data/turno selecionados (prefill)
@@ -2058,24 +2071,32 @@
                 const todayCounts = {};
                 if (todayData) {
                     todayData.forEach(row => {
-                        if (!todayCounts[row.item_id]) todayCounts[row.item_id] = {};
-                        if (row.contagem_num === 1) todayCounts[row.item_id].c1 = row;
-                        if (row.contagem_num === 2) todayCounts[row.item_id].c2 = row;
-                        if (row.contagem_num === 3) todayCounts[row.item_id].c3 = row;
+                        const k = row.size ? `${row.item_id}::${row.size}` : row.item_id;
+                        if (!todayCounts[k]) todayCounts[k] = {};
+                        if (row.contagem_num === 1) todayCounts[k].c1 = row;
+                        if (row.contagem_num === 2) todayCounts[k].c2 = row;
+                        if (row.contagem_num === 3) todayCounts[k].c3 = row;
                     });
                 }
                 state.contagem.todayCounts = todayCounts;
 
                 const entries1 = {}, entries2 = {}, entries3 = {};
-                Object.entries(todayCounts).forEach(([id, counts]) => {
-                    if (counts.c1) entries1[id] = String(counts.c1.quantidade);
-                    if (counts.c2) entries2[id] = String(counts.c2.quantidade);
-                    if (counts.c3) entries3[id] = String(counts.c3.quantidade);
+                Object.entries(todayCounts).forEach(([compoundKey, counts]) => {
+                    if (counts.c1) entries1[compoundKey] = String(counts.c1.quantidade);
+                    if (counts.c2) entries2[compoundKey] = String(counts.c2.quantidade);
+                    if (counts.c3) entries3[compoundKey] = String(counts.c3.quantidade);
                 });
                 if (isVinculoAlmoxEnabled()) {
                     alm2Items.forEach(item => {
-                        if (entries1[item.id] === undefined && item.quantidade != null) {
-                            entries1[item.id] = String(item.quantidade);
+                        if (hasCondicoes(item) || hasTamanhos(item)) {
+                            Object.keys(item.tamanhos).forEach(varKey => {
+                                const ek = `${item.id}::${varKey}`;
+                                if (entries1[ek] === undefined) entries1[ek] = String(item.tamanhos[varKey] ?? 0);
+                            });
+                        } else {
+                            if (entries1[item.id] === undefined && item.quantidade != null) {
+                                entries1[item.id] = String(item.quantidade);
+                            }
                         }
                     });
                 }

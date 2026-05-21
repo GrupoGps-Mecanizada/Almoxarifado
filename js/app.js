@@ -5186,6 +5186,130 @@ function _renderTabAlerts(cm) {
         '</tr></thead><tbody>' + rows + '</tbody></table></div></div>';
 }
 
+function _renderTabGiro(cm) {
+    var g = cm.giroData || { top10: [], top5parado: [], totalDistribuido: 0, mediaDiaria: 0, diaTop: null };
+    var kpis = '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px;">' +
+        _kpiCard('Total Distribuído', g.totalDistribuido, 'ph-package', 'var(--accent)') +
+        _kpiCard('Média Diária', g.mediaDiaria.toFixed(1), 'ph-chart-line', 'var(--green)') +
+        _kpiCard('Pico Diário', g.diaTop
+            ? g.diaTop.total + ' (' + _escHtml(g.diaTop.data) + ')'
+            : '—', 'ph-rocket-launch', 'var(--orange)') +
+        '</div>';
+
+    var chartCard = '<div style="margin-bottom:14px;">' +
+        _chartCard(
+            '<i class="ph ph-chart-bar" style="color:var(--accent);"></i> Top 10 Mais Consumidos',
+            'dash-chart-giro', 280) + '</div>';
+
+    var paradoRows = g.top5parado.length === 0
+        ? '<tr><td colspan="5" style="padding:24px;text-align:center;color:var(--text-3);">Todos os itens tiveram saída no período</td></tr>'
+        : g.top5parado.map(function (p) {
+            var diasFmt = p.diasParado != null
+                ? '<span style="font-weight:700;color:' +
+                  (p.diasParado > 30 ? '#ef4444' : '#f59e0b') + ';">' + p.diasParado + 'd</span>'
+                : '—';
+            return '<tr style="border-bottom:1px solid var(--border);">' +
+                '<td style="padding:9px 12px;font-weight:600;">' + _escHtml(p.nome) + '</td>' +
+                '<td style="padding:9px 12px;font-size:12px;color:var(--text-2);">' + _escHtml(p.categoria) + '</td>' +
+                '<td style="padding:9px 12px;font-size:12px;color:var(--text-2);">' + _escHtml(p.almoxarifado) + '</td>' +
+                '<td style="padding:9px 12px;font-size:12px;color:var(--text-3);">' + _escHtml(p.lastMov) + '</td>' +
+                '<td style="padding:9px 12px;text-align:right;">' + diasFmt + '</td></tr>';
+        }).join('');
+
+    return kpis + chartCard +
+        '<div class="card"><div style="padding:14px 16px 10px;border-bottom:1px solid var(--border);">' +
+        '<div class="section-title"><i class="ph ph-clock" style="color:var(--orange);"></i> Top 5 Itens Sem Saída no Período</div>' +
+        '</div><div style="overflow-x:auto;">' +
+        '<table style="width:100%;border-collapse:collapse;font-size:13px;">' +
+        '<thead><tr style="background:var(--bg-2);">' +
+        '<th style="padding:8px 12px;text-align:left;font-size:11px;color:var(--text-3);">Item</th>' +
+        '<th style="padding:8px 12px;text-align:left;font-size:11px;color:var(--text-3);">Categoria</th>' +
+        '<th style="padding:8px 12px;text-align:left;font-size:11px;color:var(--text-3);">Almoxarifado</th>' +
+        '<th style="padding:8px 12px;text-align:left;font-size:11px;color:var(--text-3);">Última Mov.</th>' +
+        '<th style="padding:8px 12px;text-align:right;font-size:11px;color:var(--text-3);">Dias Parado</th>' +
+        '</tr></thead><tbody>' + paradoRows + '</tbody></table></div></div>';
+}
+
+function _renderTabCounts(cm) {
+    var cd = cm.contagemData || { rows: [], totalSaidas: 0, sessAplicadas: 0, sessPendentes: 0, maiorConsumo: 0 };
+    var kpis = '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px;">' +
+        _kpiCard('Baixas Aplicadas', cd.sessAplicadas, 'ph-check-circle', 'var(--green)') +
+        _kpiCard('Pendentes', cd.sessPendentes, 'ph-clock',
+            cd.sessPendentes > 0 ? 'var(--orange)' : 'var(--green)', cd.sessPendentes > 0) +
+        _kpiCard('Total Saídas (Cont.)', cd.totalSaidas, 'ph-arrow-up-right', 'var(--red)') +
+        '</div>';
+
+    if (cd.rows.length === 0) {
+        return kpis + '<div class="card" style="text-align:center;padding:40px;">' +
+            '<p style="color:var(--text-3);">Nenhuma sessão de contagem no período</p></div>';
+    }
+
+    var totDN = cd.rows.reduce(function (s, r) { return s + Math.max(0, r.deltaNight || 0); }, 0);
+    var totDA = cd.rows.reduce(function (s, r) { return s + Math.max(0, r.deltaAdm   || 0); }, 0);
+
+    var badge = function (l, c) {
+        return '<span style="display:inline-flex;align-items:center;justify-content:center;' +
+            'width:22px;height:22px;border-radius:50%;background:' + c + ';color:#fff;' +
+            'font-size:11px;font-weight:800;">' + _escHtml(l) + '</span>';
+    };
+
+    var rows = cd.rows.map(function (r) {
+        var anom   = r.deltaNight != null && r.deltaNight < 0;
+        var rowBg  = anom ? 'background:rgba(239,68,68,.07);' : '';
+        var dnFmt  = r.deltaNight != null
+            ? '<span style="font-weight:700;color:' +
+              (r.deltaNight < 0 ? '#ef4444' : r.deltaNight > 0 ? '#10b981' : 'var(--text-3)') + ';">' +
+              (r.deltaNight >= 0 ? '+' : '') + r.deltaNight + '</span>'
+            : '<span style="color:var(--text-3);">—</span>';
+        var daFmt  = r.deltaAdm != null
+            ? '<span style="font-weight:700;color:' +
+              (r.deltaAdm > 0 ? '#f59e0b' : 'var(--text-3)') + ';">' +
+              (r.deltaAdm >= 0 ? '+' : '') + r.deltaAdm + '</span>'
+            : '<span style="color:var(--text-3);">—</span>';
+        var bxBdg  = r.baixaStatus === 'APLICADA'
+            ? '<span style="padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700;background:#d1fae5;color:#065f46;">APLICADA</span>'
+            : r.baixaStatus === 'PENDENTE'
+            ? '<span style="padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700;background:#fef9c3;color:#d97706;">PENDENTE</span>'
+            : '<span style="font-size:11px;color:var(--text-3);">—</span>';
+        return '<tr style="border-bottom:1px solid var(--border);' + rowBg + '">' +
+            '<td style="padding:9px 12px;font-weight:600;">' + _escHtml(r.date) + '</td>' +
+            '<td style="padding:9px 12px;">' + badge(r.turnoNoite, '#ef4444') + '</td>' +
+            '<td style="padding:9px 12px;">' + badge(r.turnoDia,   '#f59e0b') + '</td>' +
+            '<td style="padding:9px 12px;text-align:right;color:var(--text-2);">' + r.c1 + '</td>' +
+            '<td style="padding:9px 12px;text-align:right;color:var(--text-2);">' + r.c2 + '</td>' +
+            '<td style="padding:9px 12px;text-align:center;">' + dnFmt + '</td>' +
+            '<td style="padding:9px 12px;text-align:right;color:var(--text-2);">' + r.c3 + '</td>' +
+            '<td style="padding:9px 12px;text-align:center;">' + daFmt + '</td>' +
+            '<td style="padding:9px 12px;text-align:center;">' + bxBdg + '</td></tr>';
+    }).join('');
+
+    var footer = '<tr style="background:var(--bg-2);font-weight:700;font-size:12px;">' +
+        '<td style="padding:8px 12px;" colspan="3">TOTAIS</td>' +
+        '<td></td><td></td>' +
+        '<td style="padding:8px 12px;text-align:center;color:var(--green);">+' + totDN + '</td>' +
+        '<td></td>' +
+        '<td style="padding:8px 12px;text-align:center;color:var(--orange);">+' + totDA + '</td>' +
+        '<td></td></tr>';
+
+    return kpis +
+        '<div class="card"><div style="padding:14px 16px 10px;border-bottom:1px solid var(--border);">' +
+        '<div class="section-title"><i class="ph ph-clipboard-text" style="color:var(--accent);"></i> Histórico de Sessões de Contagem</div>' +
+        '<p style="font-size:12px;color:var(--text-3);margin:4px 0 0;">Δ negativo (vermelho) indica anomalia — C2 > C1</p>' +
+        '</div><div style="overflow-x:auto;">' +
+        '<table style="width:100%;border-collapse:collapse;font-size:13px;">' +
+        '<thead><tr style="background:var(--bg-2);">' +
+        '<th style="padding:8px 12px;text-align:left;font-size:11px;color:var(--text-3);">Data</th>' +
+        '<th style="padding:8px 12px;font-size:11px;color:var(--red);">T. Noite</th>' +
+        '<th style="padding:8px 12px;font-size:11px;color:var(--orange);">T. Dia</th>' +
+        '<th style="padding:8px 12px;text-align:right;font-size:11px;color:var(--text-3);">C1 Total</th>' +
+        '<th style="padding:8px 12px;text-align:right;font-size:11px;color:var(--text-3);">C2 Total</th>' +
+        '<th style="padding:8px 12px;text-align:center;font-size:11px;color:var(--red);">Δ Noite</th>' +
+        '<th style="padding:8px 12px;text-align:right;font-size:11px;color:var(--text-3);">C3 Total</th>' +
+        '<th style="padding:8px 12px;text-align:center;font-size:11px;color:var(--orange);">Δ ADM</th>' +
+        '<th style="padding:8px 12px;text-align:center;font-size:11px;color:var(--text-3);">Baixa</th>' +
+        '</tr></thead><tbody>' + rows + footer + '</tbody></table></div></div>';
+}
+
 function renderEpiDashboard() {
     var dash = state.dashboard || { loading: false, data: [], period: '30d', dashTab: 'overview' };
     var tab = dash.dashTab || 'overview';

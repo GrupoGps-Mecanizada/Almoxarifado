@@ -5117,6 +5117,69 @@ function _renderTabMovements(m) {
         '</tr></thead><tbody>' + movRows + empty + '</tbody></table></div></div>';
 }
 
+function _renderTabAlerts(cm) {
+    var alerts = cm.alertItems || [];
+    var kpis = '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px;">' +
+        _kpiCard('Itens Zerados',    cm.zeradosCount, 'ph-x-circle',      '#ef4444', cm.zeradosCount > 0) +
+        _kpiCard('Abaixo do Mínimo', cm.baixoCount,   'ph-warning-circle','#f59e0b', cm.baixoCount > 0) +
+        _kpiCard('Dias Médio Rest.', cm.diasMedioRestante != null ? cm.diasMedioRestante + 'd' : '—',
+            'ph-clock', 'var(--accent)') +
+        '</div>';
+
+    var exportBtn = '<div style="text-align:right;margin-bottom:10px;">' +
+        '<button onclick="exportAlertsToXLSX()" class="btn-secondary" style="font-size:12px;">' +
+        '<i class="ph ph-download-simple"></i> Exportar Alertas</button></div>';
+
+    if (alerts.length === 0) {
+        return kpis +
+            '<div class="card" style="text-align:center;padding:40px;border:1.5px solid var(--green);">' +
+            '<i class="ph ph-check-circle" style="font-size:32px;color:var(--green);"></i>' +
+            '<p style="color:var(--green);font-weight:600;margin-top:8px;">Todos os itens com estoque adequado!</p></div>';
+    }
+
+    var rows = alerts.map(function (a) {
+        var bg  = a.isZero ? 'rgba(239,68,68,.07)' : 'rgba(245,158,11,.07)';
+        var bdg = a.isZero
+            ? '<span style="padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700;background:#fee2e2;color:#ef4444;">ZERADO</span>'
+            : '<span style="padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700;background:#fef9c3;color:#d97706;">BAIXO</span>';
+        var diasFmt = a.diasRestantes != null
+            ? '<span style="font-weight:700;color:' +
+              (a.diasRestantes <= 3 ? '#ef4444' : a.diasRestantes <= 7 ? '#f59e0b' : 'var(--text-1)') +
+              ';">' + a.diasRestantes + 'd</span>'
+            : '<span style="color:var(--text-3);">—</span>';
+        var sugFmt = a.qtdSugerida != null
+            ? '<span style="font-weight:700;color:var(--accent);">' + a.qtdSugerida + '</span>'
+            : '<span style="color:var(--text-3);">—</span>';
+        return '<tr style="border-bottom:1px solid var(--border);background:' + bg + ';">' +
+            '<td style="padding:9px 12px;font-weight:600;">' + a.nome + '</td>' +
+            '<td style="padding:9px 12px;font-size:12px;color:var(--text-2);">' + a.almoxarifado + '</td>' +
+            '<td style="padding:9px 12px;text-align:right;font-weight:700;color:' +
+            (a.isZero ? '#ef4444' : '#f59e0b') + ';">' + a.quantidade + '</td>' +
+            '<td style="padding:9px 12px;text-align:right;color:var(--text-3);">' +
+            (a.minimo != null ? a.minimo : '—') + '</td>' +
+            '<td style="padding:9px 12px;text-align:center;">' + bdg + '</td>' +
+            '<td style="padding:9px 12px;text-align:center;">' + diasFmt + '</td>' +
+            '<td style="padding:9px 12px;text-align:center;">' + sugFmt + '</td></tr>';
+    }).join('');
+
+    return kpis + exportBtn +
+        '<div class="card"><div style="padding:14px 16px 10px;border-bottom:1px solid var(--border);">' +
+        '<div class="section-title"><i class="ph ph-warning" style="color:#ef4444;"></i> Itens em Alerta (' +
+        alerts.length + ')</div>' +
+        '<p style="font-size:12px;color:var(--text-3);margin:4px 0 0;">Zerados primeiro → ordenado por dias restantes</p>' +
+        '</div><div style="overflow-x:auto;">' +
+        '<table style="width:100%;border-collapse:collapse;font-size:13px;">' +
+        '<thead><tr style="background:var(--bg-2);">' +
+        '<th style="padding:8px 12px;text-align:left;font-size:11px;color:var(--text-3);">Item</th>' +
+        '<th style="padding:8px 12px;text-align:left;font-size:11px;color:var(--text-3);">Almoxarifado</th>' +
+        '<th style="padding:8px 12px;text-align:right;font-size:11px;color:var(--text-3);">Qtd</th>' +
+        '<th style="padding:8px 12px;text-align:right;font-size:11px;color:var(--text-3);">Mínimo</th>' +
+        '<th style="padding:8px 12px;text-align:center;font-size:11px;color:var(--text-3);">Status</th>' +
+        '<th style="padding:8px 12px;text-align:center;font-size:11px;color:var(--text-3);">Dias Rest.</th>' +
+        '<th style="padding:8px 12px;text-align:center;font-size:11px;color:var(--text-3);">Qtd Sug. (7d)</th>' +
+        '</tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+}
+
 function renderEpiDashboard() {
     var dash = state.dashboard || { loading: false, data: [], period: '30d', dashTab: 'overview' };
     var tab = dash.dashTab || 'overview';

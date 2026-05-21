@@ -18,7 +18,7 @@ const sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 window.supabase = sbClient;
 
 const MOVEMENT_TYPES = {
-    'COMPRA':       { label: 'Compra de Estoque',   color: 'emerald', icon: 'shopping-cart',    sign: '+' },
+    'COMPRA':       { label: 'Entrada de Estoque',  color: 'emerald', icon: 'shopping-cart',    sign: '+' },
     'REPOSICAO':    { label: 'Reposição',            color: 'blue',    icon: 'arrow-clockwise',  sign: '-' },
     'DISTRIBUICAO': { label: 'Distribuição EPI',     color: 'purple',  icon: 'hand-coins',       sign: '-' },
     'SAIDA':        { label: 'Saída',                color: 'red',     icon: 'arrow-up-right',   sign: '-' },

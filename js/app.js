@@ -2499,7 +2499,7 @@ function renderDashboard() {
             <div class="grid-4">
                 <button onclick="startMovement('COMPRA')" class="action-card">
                     <div class="action-icon icon-green"><i class="ph-fill ph-shopping-cart"></i></div>
-                    <h3>Compra</h3><p>Registrar entrada</p>
+                    <h3>Entrada</h3><p>Adicionar ao estoque</p>
                 </button>
                 <button onclick="navigateTo('stock')" class="action-card">
                     <div class="action-icon icon-blue"><i class="ph-fill ph-warehouse"></i></div>
@@ -2618,8 +2618,8 @@ function renderMovementSelector() {
             <div class="stack" style="max-width:360px;margin:0 auto;">
                 <button onclick="startMovement('COMPRA')" class="action-card" style="padding:28px;">
                     <div class="action-icon icon-green" style="width:56px;height:56px;font-size:26px;"><i class="ph-fill ph-shopping-cart"></i></div>
-                    <h3 style="font-size:16px;">Compra de Estoque</h3>
-                    <p>Registrar entrada de material</p>
+                    <h3 style="font-size:16px;">Entrada de Estoque</h3>
+                    <p>Adicionar itens ao almoxarifado</p>
                 </button>
             </div>
         </div>

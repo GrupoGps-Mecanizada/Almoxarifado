@@ -59,6 +59,7 @@ let state = {
 
     batchOperation: {
         active: false,
+        saving: false,
         targetWarehouse: 'alm-1',
         form: {
             createNewItem: false,

@@ -757,8 +757,11 @@ function cancelBatchMovement() {
 
 async function confirmBatchMovement() {
     const op = state.batchOperation;
+    if (op.saving) return;
     if (!op.lines.length) { showToast('Adicione ao menos um item', 'error'); return; }
 
+    op.saving = true;
+    render();
     showToast('Processando entradas...', 'info', 10000);
 
     for (const line of op.lines) {
@@ -780,6 +783,7 @@ async function confirmBatchMovement() {
             const itemResult = await saveItem(newItem);
             if (!itemResult.success) {
                 showToast(`Erro ao criar item "${line.itemName}"`, 'error');
+                op.saving = false; render();
                 return;
             }
             itemId = newItemId;
@@ -802,6 +806,7 @@ async function confirmBatchMovement() {
         const movResult = await saveMovement(movement);
         if (!movResult.success) {
             showToast(`Erro ao registrar entrada de "${line.itemName}"`, 'error');
+            op.saving = false; render();
             return;
         }
     }
@@ -3127,8 +3132,10 @@ function renderBatchMovement() {
 
                 <div class="row-end" style="padding-top:8px;">
                     <button type="button" onclick="cancelBatchMovement()" class="btn-ghost">CANCELAR</button>
-                    <button type="button" onclick="confirmBatchMovement()" class="btn-primary" style="min-width:200px;" ${op.lines.length === 0 ? 'disabled' : ''}>
-                        <i class="ph ph-check-circle"></i> CONFIRMAR ${op.lines.length} ${op.lines.length === 1 ? 'ENTRADA' : 'ENTRADAS'}
+                    <button type="button" onclick="confirmBatchMovement()" class="btn-primary" style="min-width:200px;" ${op.lines.length === 0 || op.saving ? 'disabled' : ''}>
+                        ${op.saving
+                            ? `<i class="ph ph-circle-notch" style="animation:spin 1s linear infinite;"></i> PROCESSANDO...`
+                            : `<i class="ph ph-check-circle"></i> CONFIRMAR ${op.lines.length} ${op.lines.length === 1 ? 'ENTRADA' : 'ENTRADAS'}`}
                     </button>
                 </div>
             </div>

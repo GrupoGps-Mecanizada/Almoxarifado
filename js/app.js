@@ -4750,6 +4750,179 @@ function _computeDashMetrics() {
     };
 }
 
+function _computeControlMetrics() {
+    var dash       = state.dashboard || {};
+    var stockItems = dash.stockItems  || [];
+    var movements  = dash.movements   || [];
+    var sessions   = dash.sessions    || [];
+    var dailyRows  = dash.data        || [];
+    var p          = dash.period      || '30d';
+    var pDays      = p === '7d' ? 7 : p === '90d' ? 90 : 30;
+
+    var outboundByItem = {};
+    movements.forEach(function (m) {
+        if (['SAIDA', 'DISTRIBUICAO', 'REPOSICAO'].indexOf(m.type) >= 0)
+            outboundByItem[m.item_name] = (outboundByItem[m.item_name] || 0) + (m.quantity || 0);
+    });
+    var movedItems = Object.keys(outboundByItem);
+
+    var alertItems = stockItems
+        .filter(function (i) {
+            return (i.quantidade || 0) === 0 ||
+                (i.estoque_minimo != null && (i.quantidade || 0) < i.estoque_minimo);
+        })
+        .map(function (item) {
+            var saidas = outboundByItem[item.nome] || 0;
+            var cons   = saidas / pDays;
+            var dias   = cons > 0 ? Math.floor((item.quantidade || 0) / cons) : null;
+            var sug    = cons > 0 ? Math.ceil(cons * 7) : null;
+            var wh     = (state.warehouses || []).find(function (w) {
+                return w.id === (item.warehouse_id || 'alm-1');
+            });
+            return {
+                nome: item.nome, categoria: item.categoria || '—',
+                almoxarifado: wh ? wh.nome : '—',
+                quantidade: item.quantidade || 0,
+                minimo: item.estoque_minimo,
+                consMedia: cons, diasRestantes: dias, qtdSugerida: sug,
+                isZero: (item.quantidade || 0) === 0
+            };
+        })
+        .sort(function (a, b) {
+            if (a.isZero !== b.isZero) return a.isZero ? -1 : 1;
+            return (a.diasRestantes != null ? a.diasRestantes : 9999) -
+                   (b.diasRestantes != null ? b.diasRestantes : 9999);
+        });
+
+    var itemsWithCons = alertItems.filter(function (a) { return a.diasRestantes != null; });
+    var diasMedio = itemsWithCons.length > 0
+        ? Math.round(itemsWithCons.reduce(function (s, a) { return s + a.diasRestantes; }, 0) / itemsWithCons.length)
+        : null;
+
+    var itemConsMap = {};
+    movements.forEach(function (m) {
+        if (m.type === 'SAIDA' || m.type === 'DISTRIBUICAO') {
+            if (!itemConsMap[m.item_name]) itemConsMap[m.item_name] = { cons: 0, distAdm: 0 };
+            if (m.type === 'SAIDA')        itemConsMap[m.item_name].cons    += (m.quantity || 0);
+            else                           itemConsMap[m.item_name].distAdm += (m.quantity || 0);
+        }
+    });
+    var top10 = Object.entries(itemConsMap)
+        .sort(function (a, b) {
+            return (b[1].cons + b[1].distAdm) - (a[1].cons + a[1].distAdm);
+        })
+        .slice(0, 10);
+
+    var top5parado = stockItems
+        .filter(function (i) {
+            return (i.quantidade || 0) > 0 && movedItems.indexOf(i.nome) < 0;
+        })
+        .map(function (i) {
+            var allMovs  = state.movements || [];
+            var lastMov  = allMovs
+                .filter(function (m) { return m.item_name === i.nome; })
+                .sort(function (a, b) { return b.date.localeCompare(a.date); })[0];
+            var lastDate = lastMov ? lastMov.date : null;
+            var diasP    = lastDate
+                ? Math.floor((Date.now() - new Date(lastDate).getTime()) / 86400000)
+                : null;
+            var wh = (state.warehouses || []).find(function (w) {
+                return w.id === (i.warehouse_id || 'alm-1');
+            });
+            return {
+                nome: i.nome, categoria: i.categoria || '—',
+                almoxarifado: wh ? wh.nome : '—',
+                lastMov: lastDate ? formatDate(lastDate) : 'Nunca',
+                diasParado: diasP
+            };
+        })
+        .sort(function (a, b) {
+            return (b.diasParado != null ? b.diasParado : 9999) -
+                   (a.diasParado != null ? a.diasParado : 9999);
+        })
+        .slice(0, 5);
+
+    var totalDist = 0, byDate = {};
+    movements.forEach(function (m) {
+        if (['SAIDA', 'DISTRIBUICAO', 'REPOSICAO'].indexOf(m.type) >= 0) {
+            totalDist += (m.quantity || 0);
+            if (m.date) byDate[m.date] = (byDate[m.date] || 0) + (m.quantity || 0);
+        }
+    });
+    var diaTopEntry = Object.entries(byDate).sort(function (a, b) { return b[1] - a[1]; })[0];
+    var diaTop = diaTopEntry ? { data: formatDate(diaTopEntry[0]), total: diaTopEntry[1] } : null;
+
+    var sesGroups = {};
+    dailyRows.forEach(function (row) {
+        if (!row.turno || !isSessionId(row.turno)) return;
+        var sid = row.turno;
+        if (!sesGroups[sid]) sesGroups[sid] = { c1: 0, c2: 0, c3: 0, hC1: false, hC2: false, hC3: false };
+        if (row.contagem_num === 1) { sesGroups[sid].c1 += (row.quantidade || 0); sesGroups[sid].hC1 = true; }
+        if (row.contagem_num === 2) { sesGroups[sid].c2 += (row.quantidade || 0); sesGroups[sid].hC2 = true; }
+        if (row.contagem_num === 3) { sesGroups[sid].c3 += (row.quantidade || 0); sesGroups[sid].hC3 = true; }
+    });
+
+    var baixaMap = {};
+    movements.forEach(function (m) {
+        if (m.observations && m.observations.indexOf('Baixa Contagem Diária') >= 0) {
+            var match = m.observations.match(/Turno\s+(\d{8})/);
+            var key   = match ? (m.date + '_' + match[1]) : m.date;
+            baixaMap[key] = true;
+        }
+    });
+
+    var contagemRows = sessions.map(function (s) {
+        var sid = s.id || '';
+        var g   = sesGroups[sid] || { c1: 0, c2: 0, c3: 0, hC1: false, hC2: false, hC3: false };
+        var dN  = (g.hC1 && g.hC2) ? g.c1 - g.c2 : null;
+        var dA  = (g.hC2 && g.hC3) ? g.c2 - g.c3 : null;
+        var dateDisp = sid.length === 8
+            ? sid.slice(6,8) + '/' + sid.slice(4,6) + '/' + sid.slice(0,4) : sid;
+        var isoD = sid.length === 8
+            ? sid.slice(0,4) + '-' + sid.slice(4,6) + '-' + sid.slice(6,8) : null;
+        var bKey = isoD ? (isoD + '_' + sid) : isoD;
+        var bSt  = baixaMap[bKey] ? 'APLICADA'
+            : (g.hC3 ? 'APLICADA' : (g.hC1 ? 'PENDENTE' : 'SEM DADOS'));
+        return {
+            id: sid, date: dateDisp, isoDate: isoD,
+            turnoNoite: s.turno_noite || '?', turnoDia: s.turno_dia || '?',
+            c1: g.c1, c2: g.c2, c3: g.c3,
+            deltaNight: dN, deltaAdm: dA,
+            baixaStatus: bSt
+        };
+    }).sort(function (a, b) {
+        return (b.isoDate || '').localeCompare(a.isoDate || '');
+    });
+
+    var totSaidasCont = contagemRows.reduce(function (s, r) {
+        return s + Math.max(0, r.deltaNight || 0) + Math.max(0, r.deltaAdm || 0);
+    }, 0);
+    var maiorCons = contagemRows.reduce(function (mx, r) {
+        var tot = Math.max(0, r.deltaNight || 0) + Math.max(0, r.deltaAdm || 0);
+        return tot > mx ? tot : mx;
+    }, 0);
+
+    return {
+        alertItems: alertItems,
+        zeradosCount: alertItems.filter(function (a) { return a.isZero; }).length,
+        baixoCount:   alertItems.filter(function (a) { return !a.isZero; }).length,
+        diasMedioRestante: diasMedio,
+        giroData: {
+            top10: top10, top5parado: top5parado,
+            totalDistribuido: totalDist,
+            mediaDiaria: totalDist / pDays,
+            diaTop: diaTop
+        },
+        contagemData: {
+            rows: contagemRows,
+            totalSaidas: totSaidasCont,
+            sessAplicadas: contagemRows.filter(function (r) { return r.baixaStatus === 'APLICADA'; }).length,
+            sessPendentes: contagemRows.filter(function (r) { return r.baixaStatus === 'PENDENTE'; }).length,
+            maiorConsumo: maiorCons
+        }
+    };
+}
+
 function _kpiCard(label, value, icon, color, alert) {
     return '<div class="card" style="padding:14px 12px;text-align:center;' + (alert ? 'border:1.5px solid ' + color + ';' : '') + '">' +
         '<div style="font-size:10px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">' +

@@ -4670,7 +4670,7 @@ async function loadDashboardData() {
         }
         var dcQ = sbClient.from('daily_counts').select('*').order('date', { ascending: true });
         var sQ = sbClient.from('count_sessions').select('*').order('created_at', { ascending: false });
-        var mQ = sbClient.from('movements').select('*').order('date', { ascending: false }).limit(100);
+        var mQ = sbClient.from('movements').select('*').order('date', { ascending: false }).limit(500);
         if (since) { dcQ = dcQ.gte('date', since); sQ = sQ.gte('created_at', since); mQ = mQ.gte('date', since); }
         var results = await Promise.all([dcQ, sQ, sbClient.from('items').select('*').order('nome'), mQ]);
         state.dashboard.data = results[0].data || [];
@@ -5411,7 +5411,17 @@ function renderDashboardCharts() {
             },
             options: {
                 responsive: true, maintainAspectRatio: false,
-                plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
+                plugins: {
+                    legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } },
+                    tooltip: {
+                        callbacks: {
+                            label: function (ctx) {
+                                return ' ' + ctx.dataset.label + ': ' +
+                                    ctx.parsed.y.toLocaleString('pt-BR');
+                            }
+                        }
+                    }
+                },
                 scales: {
                     x: { grid: { display: false }, ticks: { font: { size: 10 }, maxRotation: 45 } },
                     y: { grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { font: { size: 10 } }, beginAtZero: true }
@@ -5461,6 +5471,48 @@ function renderDashboardCharts() {
             options: {
                 indexAxis: 'y', responsive: true, maintainAspectRatio: false,
                 plugins: { legend: { display: false } },
+                scales: {
+                    x: { grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { font: { size: 10 } }, beginAtZero: true },
+                    y: { grid: { display: false }, ticks: { font: { size: 11 } } }
+                }
+            }
+        });
+    } else if (tab === 'giro') {
+        var cm3 = _computeControlMetrics();
+        var top10 = cm3.giroData.top10;
+        if (top10.length === 0) return;
+        _mkDashChart('dash-chart-giro', {
+            type: 'bar',
+            data: {
+                labels: top10.map(function (e) {
+                    var n = e[0]; return n.length > 22 ? n.slice(0, 22) + '…' : n;
+                }),
+                datasets: [
+                    {
+                        label: 'Saída Direta',
+                        data: top10.map(function (e) { return e[1].cons; }),
+                        backgroundColor: 'rgba(239,68,68,.8)', borderRadius: 4
+                    },
+                    {
+                        label: 'Distribuição ADM',
+                        data: top10.map(function (e) { return e[1].distAdm; }),
+                        backgroundColor: 'rgba(245,158,11,.8)', borderRadius: 4
+                    }
+                ]
+            },
+            options: {
+                indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } },
+                    tooltip: {
+                        callbacks: {
+                            label: function (ctx) {
+                                return ' ' + ctx.dataset.label + ': ' +
+                                    ctx.parsed.x.toLocaleString('pt-BR');
+                            }
+                        }
+                    }
+                },
                 scales: {
                     x: { grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { font: { size: 10 } }, beginAtZero: true },
                     y: { grid: { display: false }, ticks: { font: { size: 11 } } }

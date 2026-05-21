@@ -4923,6 +4923,12 @@ function _computeControlMetrics() {
     };
 }
 
+function _escHtml(s) {
+    return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 function _kpiCard(label, value, icon, color, alert) {
     return '<div class="card" style="padding:14px 12px;text-align:center;' + (alert ? 'border:1.5px solid ' + color + ';' : '') + '">' +
         '<div style="font-size:10px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">' +
@@ -5120,8 +5126,8 @@ function _renderTabMovements(m) {
 function _renderTabAlerts(cm) {
     var alerts = cm.alertItems || [];
     var kpis = '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px;">' +
-        _kpiCard('Itens Zerados',    cm.zeradosCount, 'ph-x-circle',      '#ef4444', cm.zeradosCount > 0) +
-        _kpiCard('Abaixo do Mínimo', cm.baixoCount,   'ph-warning-circle','#f59e0b', cm.baixoCount > 0) +
+        _kpiCard('Itens Zerados',    cm.zeradosCount || 0, 'ph-x-circle',      '#ef4444', (cm.zeradosCount || 0) > 0) +
+        _kpiCard('Abaixo do Mínimo', cm.baixoCount   || 0, 'ph-warning-circle','#f59e0b', (cm.baixoCount   || 0) > 0) +
         _kpiCard('Dias Médio Rest.', cm.diasMedioRestante != null ? cm.diasMedioRestante + 'd' : '—',
             'ph-clock', 'var(--accent)') +
         '</div>';
@@ -5151,12 +5157,12 @@ function _renderTabAlerts(cm) {
             ? '<span style="font-weight:700;color:var(--accent);">' + a.qtdSugerida + '</span>'
             : '<span style="color:var(--text-3);">—</span>';
         return '<tr style="border-bottom:1px solid var(--border);background:' + bg + ';">' +
-            '<td style="padding:9px 12px;font-weight:600;">' + a.nome + '</td>' +
-            '<td style="padding:9px 12px;font-size:12px;color:var(--text-2);">' + a.almoxarifado + '</td>' +
+            '<td style="padding:9px 12px;font-weight:600;">' + _escHtml(a.nome) + '</td>' +
+            '<td style="padding:9px 12px;font-size:12px;color:var(--text-2);">' + _escHtml(a.almoxarifado) + '</td>' +
             '<td style="padding:9px 12px;text-align:right;font-weight:700;color:' +
             (a.isZero ? '#ef4444' : '#f59e0b') + ';">' + a.quantidade + '</td>' +
             '<td style="padding:9px 12px;text-align:right;color:var(--text-3);">' +
-            (a.minimo != null ? a.minimo : '—') + '</td>' +
+            (a.minimo != null ? _escHtml(a.minimo) : '—') + '</td>' +
             '<td style="padding:9px 12px;text-align:center;">' + bdg + '</td>' +
             '<td style="padding:9px 12px;text-align:center;">' + diasFmt + '</td>' +
             '<td style="padding:9px 12px;text-align:center;">' + sugFmt + '</td></tr>';

@@ -231,115 +231,213 @@ function exportStockToXLSX() {
             showToast('Não há dados para exportar', 'error');
             return;
         }
+        var wb = XLSX.utils.book_new();
+        var now = new Date();
+        var nowStr = now.toLocaleString('pt-BR');
+        var dateStr = getCurrentDate();
+        var periodDays = 30;
+        var periodStart = new Date();
+        periodStart.setDate(periodStart.getDate() - periodDays);
+        var periodStartStr = periodStart.toISOString().split('T')[0];
 
-        const workbook = XLSX.utils.book_new();
-        const dateStr = getCurrentDate();
+        var movs = state.movements || [];
+        var outboundByItem = {}, inboundByItem = {};
+        movs.forEach(function (m) {
+            if (!m.date || m.date < periodStartStr) return;
+            if (['SAIDA', 'DISTRIBUICAO', 'REPOSICAO'].indexOf(m.type) >= 0)
+                outboundByItem[m.item_name] = (outboundByItem[m.item_name] || 0) + (m.quantity || 0);
+            if (m.type === 'COMPRA')
+                inboundByItem[m.item_name] = (inboundByItem[m.item_name] || 0) + (m.quantity || 0);
+        });
 
-        // Colunas fixas base
-        const BASE_COLS = ['#', 'Nome do Item', 'Categoria', 'Unidade', 'Qtd Total', 'Observações'];
+        var S_TITLE    = _xlS('1F4E79', 'FFFFFF', true,  true);
+        var S_SUB      = _xlS('2E75B6', 'FFFFFF', false, false);
+        var S_HDR      = _xlS('1F4E79', 'FFFFFF', true,  true);
+        var S_ZERO     = _xlS('FFCCCC', '9C0006', true,  false);
+        var S_LOW      = _xlS('FFF2CC', '7D6608', false, false);
+        var S_ALT      = _xlS('F5F5F5', null,     false, false);
+        var S_NORM     = _xlS(null,     null,     false, false);
+        var S_KPI_L    = _xlS('2E75B6', 'FFFFFF', true,  false);
+        var S_KPI_V    = _xlS('EBF3FB', '1F4E79', true,  false);
+        var S_TOTAL    = _xlS('D9D9D9', '000000', true,  false);
+        var S_OK       = _xlS('C6EFCE', '276221', false, false);
 
-        // Descobre todos os tamanhos usados em qualquer item
-        const allSizes = [...new Set(
-            state.items.flatMap(i => i.tamanhos ? Object.keys(i.tamanhos) : [])
-        )].sort();
+        // ===== ABA RESUMO =====
+        var wsRes = {};
+        var nC = 5;
+        var r = 0;
+        _xlSetRow(wsRes, r++, ['ALMOXARIFADO EPI — RESUMO GERAL'], [S_TITLE]);
+        _xlSetRow(wsRes, r++, ['Gerado em: ' + nowStr], [S_SUB]);
+        r++;
+        var totItens = state.items.length;
+        var totQtd   = state.items.reduce(function (s, i) { return s + (i.quantidade || 0); }, 0);
+        var totZero  = state.items.filter(function (i) { return (i.quantidade || 0) === 0; }).length;
+        var totBaixo = state.items.filter(function (i) {
+            return i.estoque_minimo != null && (i.quantidade || 0) > 0 && i.quantidade < i.estoque_minimo;
+        }).length;
+        _xlSetRow(wsRes, r++, ['Indicador', 'Valor'], [S_HDR, S_HDR]);
+        _xlSetRow(wsRes, r++, ['Total de Itens Cadastrados', totItens],              [S_KPI_L, S_KPI_V]);
+        _xlSetRow(wsRes, r++, ['Total em Estoque (todas as unidades)', totQtd],       [S_KPI_L, S_KPI_V]);
+        _xlSetRow(wsRes, r++, ['Itens com Estoque Zerado', totZero],                  [S_ZERO,  S_ZERO]);
+        _xlSetRow(wsRes, r++, ['Itens Abaixo do Mínimo', totBaixo],                   [S_LOW,   S_LOW]);
+        r++;
+        _xlSetRow(wsRes, r++, ['COMPARATIVO POR ALMOXARIFADO'], [S_TITLE]);
+        _xlSetRow(wsRes, r++, ['Almoxarifado', 'Nº Itens', 'Qtd Total', 'Zerados', 'Abaixo Mínimo'],
+            [S_HDR, S_HDR, S_HDR, S_HDR, S_HDR]);
+        state.warehouses.forEach(function (wh, idx) {
+            var wi = state.items.filter(function (i) { return (i.warehouse_id || 'alm-1') === wh.id; });
+            var q  = wi.reduce(function (s, i) { return s + (i.quantidade || 0); }, 0);
+            var z  = wi.filter(function (i) { return (i.quantidade || 0) === 0; }).length;
+            var b  = wi.filter(function (i) {
+                return i.estoque_minimo != null && (i.quantidade || 0) > 0 && i.quantidade < i.estoque_minimo;
+            }).length;
+            var rs = idx % 2 === 0 ? S_NORM : S_ALT;
+            _xlSetRow(wsRes, r++, [wh.nome, wi.length, q, z, b], [rs, rs, rs, rs, rs]);
+        });
+        wsRes['!ref']    = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: r, c: nC - 1 } });
+        wsRes['!cols']   = [{ wch: 42 }, { wch: 12 }, { wch: 16 }, { wch: 12 }, { wch: 16 }];
+        wsRes['!merges'] = [
+            { s: { r: 0, c: 0 }, e: { r: 0, c: nC - 1 } },
+            { s: { r: 7, c: 0 }, e: { r: 7, c: nC - 1 } }
+        ];
+        XLSX.utils.book_append_sheet(wb, wsRes, '📊 Resumo');
 
-        const buildSheet = (items, warehouseName) => {
-            if (items.length === 0) return null;
+        // ===== ABAS POR ALMOXARIFADO =====
+        var allSizes = [].concat.apply([], state.items.map(function (i) {
+            return i.tamanhos ? Object.keys(i.tamanhos) : [];
+        })).filter(function (v, i, a) { return a.indexOf(v) === i; }).sort();
 
-            // ---- Cabeçalho informativo ----
-            const titleRows = [
-                [`RELATÓRIO DE ESTOQUE — ${warehouseName.toUpperCase()}`],
-                [`Gerado em: ${new Date().toLocaleString('pt-BR')}`],
-                [`Total de itens: ${items.length}   |   Total em estoque: ${items.reduce((s, i) => s + (i.quantidade || 0), 0)}`],
-                [] // linha vazia
-            ];
-
-            const headers = [...BASE_COLS, ...allSizes.map(s => formatVariationLabel(s))];
-
-            let rowIndex = 1;
-            const ws = {};
-            const range = { s: { c: 0, r: 0 }, e: { c: headers.length - 1, r: 0 } };
-
-            // Escreve linhas do cabeçalho informativo
-            titleRows.forEach((row) => {
-                row.forEach((val, c) => {
-                    ws[XLSX.utils.encode_cell({ r: rowIndex - 1, c })] = { v: val, t: 's' };
+        state.warehouses.forEach(function (wh) {
+            var whItems = state.items
+                .filter(function (i) { return (i.warehouse_id || 'alm-1') === wh.id; })
+                .sort(function (a, b) {
+                    return (a.categoria || '').localeCompare(b.categoria || '') || a.nome.localeCompare(b.nome);
                 });
-                rowIndex++;
-            });
+            if (whItems.length === 0) return;
 
-            // Escreve linha de headers das colunas
-            headers.forEach((h, c) => {
-                const cell = { v: h, t: 's' };
-                ws[XLSX.utils.encode_cell({ r: rowIndex - 1, c })] = cell;
-            });
-            rowIndex++;
-
-            // Escreve os dados
-            items.forEach((item, idx) => {
-                const row = [
-                    idx + 1,
-                    item.nome || '',
-                    item.categoria || '',
-                    item.unidade || '',
+            var ws2 = {};
+            var cols = ['#', 'Item', 'Categoria', 'Unidade', 'Qtd Total', 'Mínimo', 'Status']
+                .concat(allSizes.map(function (s) { return formatVariationLabel(s); }));
+            var r2 = 0;
+            _xlSetRow(ws2, r2++, ['ESTOQUE — ' + wh.nome.toUpperCase()], [S_TITLE]);
+            _xlSetRow(ws2, r2++, ['Gerado em: ' + nowStr + '   |   ' + whItems.length + ' itens'], [S_SUB]);
+            r2++;
+            _xlSetRow(ws2, r2++, cols, cols.map(function () { return S_HDR; }));
+            whItems.forEach(function (item, idx) {
+                var isZero = (item.quantidade || 0) === 0;
+                var isLow  = !isZero && item.estoque_minimo != null && (item.quantidade || 0) < item.estoque_minimo;
+                var rs     = isZero ? S_ZERO : (isLow ? S_LOW : (idx % 2 === 0 ? S_NORM : S_ALT));
+                var status = isZero ? 'ZERADO' : (isLow ? 'ABAIXO MÍN.' : 'OK');
+                var row = [
+                    idx + 1, item.nome || '', item.categoria || '', item.unidade || '',
                     item.quantidade || 0,
-                    item.observacoes || '',
-                    ...allSizes.map(s => item.tamanhos ? (item.tamanhos[s] ?? '') : '')
-                ];
-                row.forEach((val, c) => {
-                    const t = typeof val === 'number' ? 'n' : 's';
-                    ws[XLSX.utils.encode_cell({ r: rowIndex - 1, c })] = { v: val, t };
+                    item.estoque_minimo != null ? item.estoque_minimo : '—',
+                    status
+                ].concat(allSizes.map(function (s) {
+                    return item.tamanhos ? (item.tamanhos[s] != null ? item.tamanhos[s] : '') : '';
+                }));
+                _xlSetRow(ws2, r2++, row, row.map(function () { return rs; }));
+            });
+            ws2['!ref']    = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: r2, c: cols.length - 1 } });
+            ws2['!cols']   = [{ wch: 4 }, { wch: 32 }, { wch: 20 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 12 }]
+                .concat(allSizes.map(function () { return { wch: 10 }; }));
+            ws2['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: cols.length - 1 } }];
+            XLSX.utils.book_append_sheet(wb, ws2, ('📦 ' + wh.nome).substring(0, 31));
+        });
+
+        // ===== ABA POR CATEGORIA =====
+        var catMap = {};
+        state.items.forEach(function (item) {
+            var cat = item.categoria || 'Sem Categoria';
+            if (!catMap[cat]) catMap[cat] = { itens: 0, estoque: 0, saidas: 0, entradas: 0 };
+            catMap[cat].itens++;
+            catMap[cat].estoque  += (item.quantidade || 0);
+            catMap[cat].saidas   += (outboundByItem[item.nome] || 0);
+            catMap[cat].entradas += (inboundByItem[item.nome] || 0);
+        });
+        var catRows = Object.entries(catMap).sort(function (a, b) { return a[0].localeCompare(b[0]); });
+        var wsCat = {}, r3 = 0;
+        var catCols = ['Categoria', 'Nº Itens', 'Total em Estoque', 'Saídas (30d)', 'Entradas (30d)', 'Giro (%)'];
+        _xlSetRow(wsCat, r3++, ['ESTOQUE POR CATEGORIA'], [S_TITLE]);
+        _xlSetRow(wsCat, r3++, ['Período de análise: últimos ' + periodDays + ' dias   |   Gerado em: ' + nowStr], [S_SUB]);
+        r3++;
+        _xlSetRow(wsCat, r3++, catCols, catCols.map(function () { return S_HDR; }));
+        var cTotItens = 0, cTotEst = 0, cTotSai = 0, cTotEnt = 0;
+        catRows.forEach(function (entry, idx) {
+            var cat = entry[0], d = entry[1];
+            var giro = d.estoque > 0 ? parseFloat(((d.saidas / d.estoque) * 100).toFixed(1)) : 0;
+            var rs = idx % 2 === 0 ? S_NORM : S_ALT;
+            _xlSetRow(wsCat, r3++, [cat, d.itens, d.estoque, d.saidas, d.entradas, giro],
+                [rs, rs, rs, rs, rs, rs]);
+            cTotItens += d.itens; cTotEst += d.estoque;
+            cTotSai   += d.saidas; cTotEnt += d.entradas;
+        });
+        var totalGiro = cTotEst > 0 ? parseFloat(((cTotSai / cTotEst) * 100).toFixed(1)) : 0;
+        _xlSetRow(wsCat, r3++, ['TOTAL', cTotItens, cTotEst, cTotSai, cTotEnt, totalGiro],
+            [S_TOTAL, S_TOTAL, S_TOTAL, S_TOTAL, S_TOTAL, S_TOTAL]);
+        wsCat['!ref']    = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: r3, c: 5 } });
+        wsCat['!cols']   = [{ wch: 28 }, { wch: 10 }, { wch: 18 }, { wch: 14 }, { wch: 14 }, { wch: 12 }];
+        wsCat['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 5 } }];
+        XLSX.utils.book_append_sheet(wb, wsCat, '🏷️ Por Categoria');
+
+        // ===== ABA ALERTAS =====
+        var alertItems = state.items
+            .filter(function (i) {
+                return (i.quantidade || 0) === 0 ||
+                    (i.estoque_minimo != null && (i.quantidade || 0) < i.estoque_minimo);
+            })
+            .map(function (item) {
+                var saidas = outboundByItem[item.nome] || 0;
+                var cons   = saidas / periodDays;
+                var dias   = cons > 0 ? Math.floor((item.quantidade || 0) / cons) : null;
+                var sug    = cons > 0 ? Math.ceil(cons * 7) : null;
+                var wh     = (state.warehouses || []).find(function (w) {
+                    return w.id === (item.warehouse_id || 'alm-1');
                 });
-                rowIndex++;
+                return {
+                    item: item, almox: wh ? wh.nome : '—',
+                    cons: cons, dias: dias, sug: sug,
+                    isZero: (item.quantidade || 0) === 0
+                };
+            })
+            .sort(function (a, b) {
+                if (a.isZero !== b.isZero) return a.isZero ? -1 : 1;
+                return (a.dias != null ? a.dias : 9999) - (b.dias != null ? b.dias : 9999);
             });
 
-            range.e.r = rowIndex - 1;
-            ws['!ref'] = XLSX.utils.encode_range(range);
+        var wsAlt = {}, r4 = 0;
+        var altCols = ['Item', 'Categoria', 'Almoxarifado', 'Qtd Atual', 'Mínimo',
+                       'Status', 'Cons. Médio/Dia', 'Dias Restantes', 'Qtd Sugerida (7d)'];
+        _xlSetRow(wsAlt, r4++, ['ALERTAS DE ESTOQUE — ' + alertItems.length + ' ITENS CRÍTICOS'], [S_TITLE]);
+        _xlSetRow(wsAlt, r4++,
+            ['Período: últimos ' + periodDays + ' dias   |   Gerado em: ' + nowStr], [S_SUB]);
+        r4++;
+        _xlSetRow(wsAlt, r4++, altCols, altCols.map(function () { return S_HDR; }));
+        if (alertItems.length === 0) {
+            _xlSetRow(wsAlt, r4++, ['✅ Nenhum item crítico no momento'], [S_OK]);
+        } else {
+            alertItems.forEach(function (a) {
+                var rs = a.isZero ? S_ZERO : S_LOW;
+                var status = a.isZero ? 'ZERADO' : 'ABAIXO MÍN.';
+                _xlSetRow(wsAlt, r4++, [
+                    a.item.nome, a.item.categoria || '—', a.almox,
+                    a.item.quantidade || 0,
+                    a.item.estoque_minimo != null ? a.item.estoque_minimo : '—',
+                    status,
+                    a.cons > 0 ? parseFloat(a.cons.toFixed(2)) : 0,
+                    a.dias != null ? a.dias : '—',
+                    a.sug  != null ? a.sug  : '—'
+                ], altCols.map(function () { return rs; }));
+            });
+        }
+        wsAlt['!ref']        = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: r4, c: 8 } });
+        wsAlt['!cols']       = [{ wch: 32 }, { wch: 18 }, { wch: 20 }, { wch: 10 }, { wch: 10 },
+                                 { wch: 14 }, { wch: 16 }, { wch: 16 }, { wch: 20 }];
+        wsAlt['!merges']     = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 8 } }];
+        wsAlt['!autofilter'] = { ref: 'A4:I' + (r4 + 1) };
+        XLSX.utils.book_append_sheet(wb, wsAlt, '⚠️ Alertas');
 
-            // Larguras das colunas
-            ws['!cols'] = [
-                { wch: 4 },  // #
-                { wch: 32 }, // Nome
-                { wch: 20 }, // Categoria
-                { wch: 8 },  // Unidade
-                { wch: 10 }, // Qtd
-                { wch: 30 }, // Observações
-                ...allSizes.map(() => ({ wch: 10 }))
-            ];
-
-            return ws;
-        };
-
-        // Aba: Resumo geral (todos os almoxarifados)
-        const resumoData = state.warehouses.map(wh => {
-            const whItems = state.items.filter(i => (i.warehouse_id || 'alm-1') === wh.id);
-            return {
-                'Almoxarifado': wh.nome,
-                'Total de Itens': whItems.length,
-                'Quantidade em Estoque': whItems.reduce((s, i) => s + (i.quantidade || 0), 0),
-                'Itens com Estoque Zerado': whItems.filter(i => i.quantidade === 0).length,
-                'Itens com Estoque Baixo (< 10)': whItems.filter(i => i.quantidade > 0 && i.quantidade < 10).length
-            };
-        });
-        const wsResumo = XLSX.utils.json_to_sheet(resumoData);
-        wsResumo['!cols'] = [{ wch: 28 }, { wch: 16 }, { wch: 22 }, { wch: 22 }, { wch: 26 }];
-        XLSX.utils.book_append_sheet(workbook, wsResumo, 'Resumo');
-
-        // Uma aba por almoxarifado
-        state.warehouses.forEach(wh => {
-            const whItems = state.items
-                .filter(i => (i.warehouse_id || 'alm-1') === wh.id)
-                .sort((a, b) => (a.categoria || '').localeCompare(b.categoria || '') || a.nome.localeCompare(b.nome));
-
-            const ws = buildSheet(whItems, wh.nome);
-            if (ws) {
-                // Nome da aba: máx 31 chars (limite do Excel)
-                const sheetName = wh.nome.substring(0, 31);
-                XLSX.utils.book_append_sheet(workbook, ws, sheetName);
-            }
-        });
-
-        XLSX.writeFile(workbook, `Estoque_Almoxarifados_${dateStr}.xlsx`);
+        XLSX.writeFile(wb, 'Estoque_Almoxarifados_' + dateStr + '.xlsx');
         showToast('Relatório completo exportado!', 'success');
     } catch (error) {
         console.error('Erro ao exportar estoque:', error);

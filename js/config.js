@@ -14,6 +14,8 @@ const sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
         detectSessionInUrl: false
     }
 });
+// Expõe o client como window.supabase para sge-session-ping.js
+window.supabase = sbClient;
 
 const MOVEMENT_TYPES = {
     'COMPRA':       { label: 'Compra de Estoque',   color: 'emerald', icon: 'shopping-cart',    sign: '+' },

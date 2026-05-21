@@ -4649,7 +4649,7 @@ var _dashCharts = {};
 async function navigateToEpiDashboard() {
     state.view = 'epi_dashboard';
     if (!state.dashboard) {
-        state.dashboard = { loading: false, data: [], sessions: [], stockItems: [], movements: [], period: '30d', dashTab: 'overview' };
+        state.dashboard = { loading: false, data: [], sessions: [], stockItems: [], movements: [], period: '30d', dashTab: 'alerts' };
     }
     render();
     await loadDashboardData();
@@ -4943,7 +4943,15 @@ function _chartCard(title, chartId, height) {
 }
 
 function _renderTabOverview(m) {
-    return '<div style="display:grid;grid-template-columns:2fr 1fr;gap:14px;margin-bottom:14px;">' +
+    var diasDados = Object.keys(m.byDate || {}).length;
+    var kpiRow = '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px;">' +
+        _kpiCard('EPIs Distribuídos', m.totalEPIs       || 0, 'ph-package',        'var(--accent)') +
+        _kpiCard('Cons. Noite',       m.totalConsNoite  || 0, 'ph-moon',           'var(--red)') +
+        _kpiCard('Dist. ADM',         m.totalDistAdm    || 0, 'ph-sun',            'var(--orange)') +
+        _kpiCard('Dias de Dados',     diasDados + 'd',        'ph-calendar-check', 'var(--green)') +
+        '</div>';
+    return kpiRow +
+        '<div style="display:grid;grid-template-columns:2fr 1fr;gap:14px;margin-bottom:14px;">' +
         _chartCard('<i class="ph ph-trend-up" style="color:var(--accent);"></i> Distribuição Diária — Linha do Tempo', 'dash-chart-timeline', 200) +
         _chartCard('<i class="ph ph-chart-pie" style="color:var(--accent);"></i> Por Turno', 'dash-chart-turno', 200) +
         '</div>' +
@@ -5324,23 +5332,21 @@ function renderEpiDashboard() {
     }
 
     var m = _computeDashMetrics();
-    var lowN = m.lowStock.length;
     var periodOpts = [['7d', '7 dias'], ['30d', '30 dias'], ['90d', '90 dias'], ['all', 'Tudo']];
     var tabs = [
-        ['overview', 'ph-chart-line', 'Visão Geral'],
-        ['items', 'ph-list-numbers', 'Por Item'],
-        ['sessions', 'ph-calendar-check', 'Sessões'],
-        ['stock', 'ph-package', 'Estoque'],
-        ['movements', 'ph-arrows-left-right', 'Movimentações']
+        ['alerts',   'ph-warning',        'Alertas'],
+        ['giro',     'ph-chart-bar',      'Giro'],
+        ['counts',   'ph-clipboard-text', 'Contagens'],
+        ['overview', 'ph-trend-up',       'Visão Geral'],
+        ['stock',    'ph-package',        'Estoque']
     ];
 
+    var cm = _computeControlMetrics();
     var kpis = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:16px;">' +
-        _kpiCard('EPIs Distribuídos', m.totalEPIs, 'ph-package', 'var(--accent)') +
-        _kpiCard('Cons. Noite', m.totalConsNoite, 'ph-moon', 'var(--red)') +
-        _kpiCard('Dist. ADM', m.totalDistAdm, 'ph-sun', 'var(--orange)') +
-        _kpiCard('Sessões', m.sessCount, 'ph-calendar-check', 'var(--green)') +
-        _kpiCard('Itens Únicos', m.allItems.length, 'ph-tag', '#6366f1') +
-        _kpiCard('Est. Baixo', lowN, 'ph-warning', lowN > 0 ? 'var(--red)' : 'var(--green)', lowN > 0) +
+        _kpiCard('EPIs Distribuídos', m.totalEPIs   || 0, 'ph-package',        'var(--accent)') +
+        _kpiCard('Sessões',           m.sessCount   || 0, 'ph-calendar-check', 'var(--green)') +
+        _kpiCard('Itens Zerados',     cm.zeradosCount || 0, 'ph-x-circle',       cm.zeradosCount > 0 ? '#ef4444' : 'var(--green)', cm.zeradosCount > 0) +
+        _kpiCard('Abaixo Mínimo',     cm.baixoCount   || 0, 'ph-warning-circle', cm.baixoCount   > 0 ? '#f59e0b' : 'var(--green)', cm.baixoCount   > 0) +
         '</div>';
 
     var perOpts = periodOpts.map(function (po) {
@@ -5370,11 +5376,11 @@ function renderEpiDashboard() {
         }).join('') + '</div>';
 
     var content = '';
-    if (tab === 'overview') content = _renderTabOverview(m);
-    else if (tab === 'items') content = _renderTabItems(m);
-    else if (tab === 'sessions') content = _renderTabSessions();
-    else if (tab === 'stock') content = _renderTabStock();
-    else if (tab === 'movements') content = _renderTabMovements(m);
+    if      (tab === 'alerts')   content = _renderTabAlerts(cm);
+    else if (tab === 'giro')     content = _renderTabGiro(cm);
+    else if (tab === 'counts')   content = _renderTabCounts(cm);
+    else if (tab === 'overview') content = _renderTabOverview(m);
+    else if (tab === 'stock')    content = _renderTabStock();
 
     return '<div class="page-wrap">' + renderHeader() + '<div class="page-content">' +
         '<div class="row-between" style="margin-bottom:16px;">' +

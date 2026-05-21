@@ -657,7 +657,8 @@ function startBatchMovement() {
             newItemCategory: '',
             newItemUnit: 'UN',
             size: '',
-            quantity: 1
+            quantity: 1,
+            sizeQtys: {}
         },
         lines: []
     };
@@ -668,33 +669,65 @@ function addBatchItem() {
     const op = state.batchOperation;
     const f = op.form;
 
+    // Caso 1: Novo item
     if (f.createNewItem) {
         if (!f.newItemName.trim()) { showToast('Nome do item é obrigatório', 'error'); return; }
         if (!f.newItemCategory) { showToast('Categoria é obrigatória', 'error'); return; }
-    } else {
-        if (!f.selectedItem) { showToast('Selecione um item', 'error'); return; }
+        if (!f.quantity || f.quantity < 1) { showToast('Quantidade deve ser maior que zero', 'error'); return; }
+        op.lines.push({
+            id: Date.now() + Math.floor(Math.random() * 1000),
+            isNew: true,
+            itemId: null,
+            itemName: f.newItemName.trim().toUpperCase(),
+            categoria: f.newItemCategory,
+            unidade: f.newItemUnit,
+            size: f.size.trim() || null,
+            quantity: f.quantity
+        });
+        op.form.newItemName = '';
+        op.form.size = '';
+        op.form.quantity = 1;
+        render();
+        return;
     }
+
+    if (!f.selectedItem) { showToast('Selecione um item', 'error'); return; }
+    const existingItem = state.items.find(i => i.id === f.selectedItem);
+    const hasTamanhos = existingItem?.tamanhos && Object.keys(existingItem.tamanhos).length > 0;
+
+    // Caso 2: Item existente COM tamanhos — usa grade sizeQtys
+    if (hasTamanhos) {
+        const entries = Object.entries(f.sizeQtys).filter(([, qty]) => qty > 0);
+        if (!entries.length) { showToast('Preencha a quantidade de ao menos um tamanho', 'error'); return; }
+        entries.forEach(([size, qty]) => {
+            op.lines.push({
+                id: Date.now() + Math.floor(Math.random() * 1000),
+                isNew: false,
+                itemId: existingItem.id,
+                itemName: existingItem.nome,
+                categoria: existingItem.categoria,
+                unidade: existingItem.unidade,
+                size,
+                quantity: qty
+            });
+        });
+        op.form.sizeQtys = {};
+        render();
+        return;
+    }
+
+    // Caso 3: Item existente SEM tamanhos — quantidade simples
     if (!f.quantity || f.quantity < 1) { showToast('Quantidade deve ser maior que zero', 'error'); return; }
-
-    const existingItem = f.createNewItem ? null : state.items.find(i => i.id === f.selectedItem);
-    const itemName = f.createNewItem
-        ? f.newItemName.trim().toUpperCase()
-        : (existingItem?.nome || '');
-
     op.lines.push({
         id: Date.now() + Math.floor(Math.random() * 1000),
-        isNew: f.createNewItem,
-        itemId: f.createNewItem ? null : f.selectedItem,
-        itemName,
-        categoria: f.createNewItem ? f.newItemCategory : (existingItem?.categoria || ''),
-        unidade: f.createNewItem ? f.newItemUnit : (existingItem?.unidade || 'UN'),
-        size: f.size.trim() || null,
+        isNew: false,
+        itemId: existingItem.id,
+        itemName: existingItem.nome,
+        categoria: existingItem.categoria,
+        unidade: existingItem.unidade,
+        size: null,
         quantity: f.quantity
     });
-
-    op.form.selectedItem = null;
-    op.form.newItemName = '';
-    op.form.size = '';
     op.form.quantity = 1;
     render();
 }
@@ -2981,15 +3014,43 @@ function renderBatchMovement() {
                             </label>
                         </div>
 
-                        ${!f.createNewItem ? `
+                        ${!f.createNewItem ? (() => {
+                            const selItem = f.selectedItem ? itemsInWarehouse.find(i => i.id === f.selectedItem) : null;
+                            const hasTam = selItem?.tamanhos && Object.keys(selItem.tamanhos).length > 0;
+                            return `
                             <div class="field-group">
                                 <label class="field-label">Item *</label>
-                                <select class="field-input field-select" onchange="state.batchOperation.form.selectedItem=this.value;render()">
+                                <select class="field-input field-select" onchange="state.batchOperation.form.selectedItem=this.value;state.batchOperation.form.sizeQtys={};render()">
                                     <option value="">-- Escolha um item --</option>
                                     ${itemsInWarehouse.map(item => `<option value="${item.id}" ${f.selectedItem === item.id ? 'selected' : ''}>${item.nome} (${item.quantidade})</option>`).join('')}
                                 </select>
                             </div>
-                        ` : `
+                            ${selItem && hasTam ? `
+                                <div class="field-group">
+                                    <label class="field-label">Quantidades por Tamanho</label>
+                                    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:8px;margin-top:4px;">
+                                        ${Object.entries(selItem.tamanhos).map(([size, estoque]) => `
+                                            <div style="background:var(--bg-2);border:1px solid var(--border);border-radius:10px;padding:10px 8px;text-align:center;transition:border-color .15s;" id="szcell-${size.replace(/[^a-z0-9]/gi,'-')}">
+                                                <div style="font-weight:700;font-size:13px;color:var(--text-1);margin-bottom:2px;">${formatVariationLabel(size)}</div>
+                                                <div style="font-size:10px;color:var(--text-3);margin-bottom:6px;">estoque: ${estoque}</div>
+                                                <input type="number" min="0" placeholder="0"
+                                                    value="${f.sizeQtys[size] || ''}"
+                                                    oninput="state.batchOperation.form.sizeQtys['${size}']=parseInt(this.value)||0;this.closest('div[id]').style.borderColor=parseInt(this.value)>0?'var(--green)':'var(--border)'"
+                                                    style="width:100%;text-align:center;font-size:18px;font-weight:700;padding:4px;border:none;background:transparent;color:var(--text-1);outline:none;">
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                            ` : selItem ? `
+                                <div class="field-group">
+                                    <label class="field-label">Quantidade *</label>
+                                    <input class="field-input" type="number" value="${f.quantity}" min="1"
+                                        oninput="state.batchOperation.form.quantity=parseInt(this.value)||1"
+                                        style="font-size:20px;font-weight:700;text-align:center;">
+                                </div>
+                            ` : ''}
+                            `;
+                        })() : `
                             <div class="field-group">
                                 <label class="field-label">Nome do Item *</label>
                                 <input class="field-input" type="text" value="${f.newItemName}"
@@ -3018,25 +3079,25 @@ function renderBatchMovement() {
                                     </select>
                                 </div>
                             </div>
+                            <div class="grid-2">
+                                <div class="field-group">
+                                    <label class="field-label">Tamanho / Numeração</label>
+                                    <input class="field-input" type="text" value="${f.size}"
+                                        oninput="state.batchOperation.form.size=this.value"
+                                        placeholder="Ex: 38, M, G...">
+                                </div>
+                                <div class="field-group">
+                                    <label class="field-label">Quantidade *</label>
+                                    <input class="field-input" type="number" value="${f.quantity}" min="1"
+                                        oninput="state.batchOperation.form.quantity=parseInt(this.value)||1">
+                                </div>
+                            </div>
                         `}
 
-                        <div class="grid-2">
-                            <div class="field-group">
-                                <label class="field-label">Tamanho / Numeração</label>
-                                <input class="field-input" type="text" value="${f.size}"
-                                    oninput="state.batchOperation.form.size=this.value"
-                                    placeholder="Ex: 38, M, G...">
-                            </div>
-                            <div class="field-group">
-                                <label class="field-label">Quantidade *</label>
-                                <input class="field-input" type="number" value="${f.quantity}" min="1"
-                                    oninput="state.batchOperation.form.quantity=parseInt(this.value)||1">
-                            </div>
-                        </div>
-
+                        ${f.selectedItem || f.createNewItem ? `
                         <button type="button" onclick="addBatchItem()" class="btn-primary" style="width:100%;">
                             <i class="ph ph-plus"></i> Adicionar à Lista
-                        </button>
+                        </button>` : ''}
                     </div>
                 </div>
 

@@ -67,7 +67,8 @@ let state = {
             newItemCategory: '',
             newItemUnit: 'UN',
             size: '',
-            quantity: 1
+            quantity: 1,
+            sizeQtys: {}
         },
         lines: []
     },

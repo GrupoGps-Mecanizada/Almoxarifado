@@ -2922,13 +2922,6 @@ function renderStock() {
         `}
         `}
 
-        ${state.activeWarehouse !== 'alm-emergencial' ? `
-        <div style="position:fixed;bottom:80px;right:20px;z-index:100;">
-            <button onclick="startMovement('COMPRA')" class="btn-primary"
-                style="border-radius:50px;padding:14px 22px;box-shadow:0 4px 24px rgba(0,0,0,0.35);font-size:14px;display:flex;align-items:center;gap:8px;">
-                <i class="ph-fill ph-plus-circle"></i> Nova Entrada
-            </button>
-        </div>` : ''}
         ${state.baixaModal.open ? renderBaixaModal() : ''}
     </div>
 </div>

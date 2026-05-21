@@ -197,6 +197,32 @@ function calculateAnalytics() {
 }
 
 // ============================================
+// XLSX EXPORT — HELPERS DE ESTILO
+// ============================================
+function _xlS(fgColor, fontColor, bold, center) {
+    var s = {};
+    if (fgColor) s.fill = { patternType: 'solid', fgColor: { rgb: fgColor } };
+    if (fontColor || bold) {
+        s.font = {};
+        if (fontColor) s.font.color = { rgb: fontColor };
+        if (bold) s.font.bold = true;
+    }
+    if (center) s.alignment = { horizontal: 'center', vertical: 'center' };
+    return s;
+}
+function _xlC(v, t, s) {
+    var c = { v: v != null ? v : '', t: t || (typeof v === 'number' ? 'n' : 's') };
+    if (s) c.s = s;
+    return c;
+}
+function _xlSetRow(ws, r, values, styles) {
+    values.forEach(function (v, c) {
+        var s = Array.isArray(styles) ? (styles[c] || null) : (styles || null);
+        ws[XLSX.utils.encode_cell({ r: r, c: c })] = _xlC(v, null, s);
+    });
+}
+
+// ============================================
 // EXPORTAÇÃO PARA EXCEL (SHEETJS)
 // ============================================
 function exportStockToXLSX() {

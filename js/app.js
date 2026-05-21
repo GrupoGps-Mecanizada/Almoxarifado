@@ -294,11 +294,11 @@ function exportStockToXLSX() {
             var rs = idx % 2 === 0 ? S_NORM : S_ALT;
             _xlSetRow(wsRes, r++, [wh.nome, wi.length, q, z, b], [rs, rs, rs, rs, rs]);
         });
-        wsRes['!ref']    = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: r, c: nC - 1 } });
+        wsRes['!ref']    = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: r - 1, c: nC - 1 } });
         wsRes['!cols']   = [{ wch: 42 }, { wch: 12 }, { wch: 16 }, { wch: 12 }, { wch: 16 }];
         wsRes['!merges'] = [
             { s: { r: 0, c: 0 }, e: { r: 0, c: nC - 1 } },
-            { s: { r: 7, c: 0 }, e: { r: 7, c: nC - 1 } }
+            { s: { r: 9, c: 0 }, e: { r: 9, c: nC - 1 } }
         ];
         XLSX.utils.book_append_sheet(wb, wsRes, '📊 Resumo');
 
@@ -338,7 +338,7 @@ function exportStockToXLSX() {
                 }));
                 _xlSetRow(ws2, r2++, row, row.map(function () { return rs; }));
             });
-            ws2['!ref']    = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: r2, c: cols.length - 1 } });
+            ws2['!ref']    = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: r2 - 1, c: cols.length - 1 } });
             ws2['!cols']   = [{ wch: 4 }, { wch: 32 }, { wch: 20 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 12 }]
                 .concat(allSizes.map(function () { return { wch: 10 }; }));
             ws2['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: cols.length - 1 } }];
@@ -375,7 +375,7 @@ function exportStockToXLSX() {
         var totalGiro = cTotEst > 0 ? parseFloat(((cTotSai / cTotEst) * 100).toFixed(1)) : 0;
         _xlSetRow(wsCat, r3++, ['TOTAL', cTotItens, cTotEst, cTotSai, cTotEnt, totalGiro],
             [S_TOTAL, S_TOTAL, S_TOTAL, S_TOTAL, S_TOTAL, S_TOTAL]);
-        wsCat['!ref']    = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: r3, c: 5 } });
+        wsCat['!ref']    = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: r3 - 1, c: 5 } });
         wsCat['!cols']   = [{ wch: 28 }, { wch: 10 }, { wch: 18 }, { wch: 14 }, { wch: 14 }, { wch: 12 }];
         wsCat['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 5 } }];
         XLSX.utils.book_append_sheet(wb, wsCat, '🏷️ Por Categoria');
@@ -430,11 +430,11 @@ function exportStockToXLSX() {
                 ], altCols.map(function () { return rs; }));
             });
         }
-        wsAlt['!ref']        = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: r4, c: 8 } });
+        wsAlt['!ref']        = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: r4 - 1, c: 8 } });
         wsAlt['!cols']       = [{ wch: 32 }, { wch: 18 }, { wch: 20 }, { wch: 10 }, { wch: 10 },
                                  { wch: 14 }, { wch: 16 }, { wch: 16 }, { wch: 20 }];
         wsAlt['!merges']     = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 8 } }];
-        wsAlt['!autofilter'] = { ref: 'A4:I' + (r4 + 1) };
+        wsAlt['!autofilter'] = { ref: 'A4:I' + r4 };
         XLSX.utils.book_append_sheet(wb, wsAlt, '⚠️ Alertas');
 
         XLSX.writeFile(wb, 'Estoque_Almoxarifados_' + dateStr + '.xlsx');

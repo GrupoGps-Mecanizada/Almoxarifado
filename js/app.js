@@ -627,6 +627,25 @@ function cancelMovement() {
     goBack();
 }
 
+function startMovementForItem(itemId) {
+    const item = state.items.find(i => i.id === itemId);
+    state.movementOperation = {
+        active: true,
+        type: 'COMPRA',
+        selectedItem: itemId,
+        employeeName: '',
+        supplier: '',
+        quantity: 1,
+        observations: '',
+        targetWarehouse: item?.warehouse_id || state.activeWarehouse,
+        createNewItem: false,
+        newItemName: '',
+        newItemCategory: '',
+        newItemUnit: 'UN'
+    };
+    navigateTo('movement');
+}
+
 async function confirmMovement() {
     const op = state.movementOperation;
 
@@ -2760,22 +2779,14 @@ function renderMovement() {
                 `}
 
                 <div class="field-group">
-                    <label class="field-label">Fornecedor</label>
-                    <input class="field-input" type="text" value="${op.supplier}" oninput="state.movementOperation.supplier=this.value" placeholder="Nome do fornecedor (opcional)">
-                </div>
-                <div class="field-group">
                     <label class="field-label">Quantidade *</label>
                     <input class="field-input" type="number" value="${op.quantity}" oninput="state.movementOperation.quantity=parseInt(this.value)||1" min="1" required>
-                </div>
-                <div class="field-group">
-                    <label class="field-label">Observações</label>
-                    <textarea class="field-input" rows="3" oninput="state.movementOperation.observations=this.value" placeholder="Informações adicionais">${op.observations}</textarea>
                 </div>
 
                 <div class="row-end" style="padding-top:8px;">
                     <button type="button" onclick="cancelMovement()" class="btn-ghost">CANCELAR</button>
                     <button type="submit" class="btn-primary" style="min-width:160px;">
-                        <i class="ph ph-check-circle"></i> CONFIRMAR COMPRA
+                        <i class="ph ph-check-circle"></i> CONFIRMAR ENTRADA
                     </button>
                 </div>
             </form>
@@ -2900,8 +2911,9 @@ function renderStock() {
                             <div style="font-size:11px;color:var(--text-2);margin-top:6px;"><i class="ph ph-package"></i> ${item.unidades_por_caixa} un/caixa</div>
                         ` : ''}
                         <div class="item-actions">
-                            <button onclick='openEditItem(${JSON.stringify(item).replace(/'/g, "&#39;")})' class="btn-secondary" style="flex:1;font-size:12px;padding:8px;"><i class="ph ph-pencil-simple"></i> Editar</button>
-                            <button onclick="startTransfer('${item.warehouse_id || 'alm-1'}','${item.id}')" class="btn-cyan" style="padding:8px 12px;font-size:12px;" title="Transferir / Dar Baixa"><i class="ph ph-arrows-left-right"></i> Transferir</button>
+                            <button onclick="startMovementForItem('${item.id}')" class="btn-primary" style="flex:1;font-size:12px;padding:8px;"><i class="ph ph-arrow-down-circle"></i> + Entrada</button>
+                            <button onclick='openEditItem(${JSON.stringify(item).replace(/'/g, "&#39;")})' class="btn-secondary" style="padding:8px 10px;font-size:12px;" title="Editar"><i class="ph ph-pencil-simple"></i></button>
+                            <button onclick="startTransfer('${item.warehouse_id || 'alm-1'}','${item.id}')" class="btn-cyan" style="padding:8px 10px;font-size:12px;" title="Transferir"><i class="ph ph-arrows-left-right"></i></button>
                             <button onclick="handleDeleteItem('${item.id}')" class="btn-danger" style="padding:8px 10px;"><i class="ph ph-trash"></i></button>
                         </div>
                     </div>
@@ -2910,6 +2922,13 @@ function renderStock() {
         `}
         `}
 
+        ${state.activeWarehouse !== 'alm-emergencial' ? `
+        <div style="position:fixed;bottom:80px;right:20px;z-index:100;">
+            <button onclick="startMovement('COMPRA')" class="btn-primary"
+                style="border-radius:50px;padding:14px 22px;box-shadow:0 4px 24px rgba(0,0,0,0.35);font-size:14px;display:flex;align-items:center;gap:8px;">
+                <i class="ph-fill ph-plus-circle"></i> Nova Entrada
+            </button>
+        </div>` : ''}
         ${state.baixaModal.open ? renderBaixaModal() : ''}
     </div>
 </div>

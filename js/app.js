@@ -447,33 +447,137 @@ function exportStockToXLSX() {
 
 function exportMovementsToXLSX() {
     try {
-        const movements = getFilteredMovements();
+        var movements = getFilteredMovements();
         if (!movements || movements.length === 0) {
             showToast('Não há dados para exportar', 'error');
             return;
         }
-
-        const data = movements.map(m => ({
-            'Data': formatDate(m.date),
-            'Tipo': MOVEMENT_TYPES[m.type]?.label || m.type,
-            'Item': m.item_name,
-            'Quantidade': m.quantity,
-            'Colaborador': m.employeeName || m.employee || '-',
-            'Fornecedor': m.supplier || '-',
-            'Usuário': m.user || '-',
-            'Observações': m.observations || '',
-            'Data/Hora Registro': formatDateTime(m.timestamp || m.created_at)
-        }));
-
-        const worksheet = XLSX.utils.json_to_sheet(data);
-        const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, "Movimentações");
-
-        XLSX.writeFile(workbook, `Movimentacoes_Almoxarifado_${getCurrentDate()}.xlsx`);
+        var TYPE_STYLES = {
+            'COMPRA':        { bg: 'C6EFCE', fg: '276221' },
+            'DISTRIBUICAO':  { bg: 'FFCCCC', fg: '9C0006' },
+            'SAIDA':         { bg: 'FFCCCC', fg: '9C0006' },
+            'REPOSICAO':     { bg: 'DDEEFF', fg: '1F4E79' },
+            'AJUSTE':        { bg: 'FFF2CC', fg: '7D6608' },
+            'TRANSFERENCIA': { bg: 'CCF2F4', fg: '005A60' }
+        };
+        var S_TITLE = _xlS('1F4E79', 'FFFFFF', true,  true);
+        var S_SUB   = _xlS('2E75B6', 'FFFFFF', false, false);
+        var S_HDR   = _xlS('1F4E79', 'FFFFFF', true,  true);
+        var ws = {}, r = 0;
+        var nowStr = new Date().toLocaleString('pt-BR');
+        var cols = ['Data', 'Tipo', 'Item', 'Qtd', 'Colaborador/Fornecedor',
+                    'Usuário', 'Observações', 'Data/Hora Registro'];
+        _xlSetRow(ws, r++, ['HISTÓRICO DE MOVIMENTAÇÕES'], [S_TITLE]);
+        _xlSetRow(ws, r++,
+            ['Período filtrado   |   ' + movements.length + ' registros   |   Gerado em: ' + nowStr], [S_SUB]);
+        r++;
+        _xlSetRow(ws, r++, cols, cols.map(function () { return S_HDR; }));
+        movements.forEach(function (m) {
+            var ts = TYPE_STYLES[m.type] || { bg: 'F5F5F5', fg: '000000' };
+            var rs = _xlS(ts.bg, ts.fg, false, false);
+            var d  = m.date ? m.date.slice(8,10)+'/'+m.date.slice(5,7)+'/'+m.date.slice(0,4) : '—';
+            var typeLabel = MOVEMENT_TYPES[m.type] ? MOVEMENT_TYPES[m.type].label : m.type;
+            var collab    = m.employeeName || m.employee || m.supplier || '—';
+            var dtReg     = formatDateTime(m.timestamp || m.created_at);
+            _xlSetRow(ws, r++,
+                [d, typeLabel, m.item_name || '—', m.quantity || 0, collab,
+                 m.user_name || '—', m.observations || '', dtReg],
+                cols.map(function () { return rs; })
+            );
+        });
+        ws['!ref']        = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: r - 1, c: 7 } });
+        ws['!cols']       = [{ wch: 12 }, { wch: 20 }, { wch: 30 }, { wch: 8 },
+                              { wch: 22 }, { wch: 16 }, { wch: 40 }, { wch: 20 }];
+        ws['!merges']     = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 7 } }];
+        ws['!autofilter'] = { ref: 'A4:H' + r };
+        var wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, '📋 Movimentações');
+        XLSX.writeFile(wb, 'Movimentacoes_Almoxarifado_' + getCurrentDate() + '.xlsx');
         showToast('Histórico exportado!', 'success');
     } catch (error) {
         console.error('Erro ao exportar histórico:', error);
         showToast('Erro ao exportar para Excel', 'error');
+    }
+}
+
+function exportAlertsToXLSX() {
+    try {
+        var items  = (state.dashboard && state.dashboard.stockItems) ? state.dashboard.stockItems : state.items;
+        var movs   = (state.dashboard && state.dashboard.movements)  ? state.dashboard.movements  : (state.movements || []);
+        var p      = state.dashboard && state.dashboard.period;
+        var pDays  = p === '7d' ? 7 : p === '90d' ? 90 : 30;
+        var outboundByItem = {};
+        movs.forEach(function (m) {
+            if (['SAIDA', 'DISTRIBUICAO', 'REPOSICAO'].indexOf(m.type) >= 0)
+                outboundByItem[m.item_name] = (outboundByItem[m.item_name] || 0) + (m.quantity || 0);
+        });
+        var alertItems = items
+            .filter(function (i) {
+                return (i.quantidade || 0) === 0 ||
+                    (i.estoque_minimo != null && (i.quantidade || 0) < i.estoque_minimo);
+            })
+            .map(function (item) {
+                var saidas = outboundByItem[item.nome] || 0;
+                var cons   = saidas / pDays;
+                var dias   = cons > 0 ? Math.floor((item.quantidade || 0) / cons) : null;
+                var sug    = cons > 0 ? Math.ceil(cons * 7) : null;
+                var wh     = (state.warehouses || []).find(function (w) {
+                    return w.id === (item.warehouse_id || 'alm-1');
+                });
+                return {
+                    nome: item.nome, categoria: item.categoria || '—',
+                    almox: wh ? wh.nome : '—',
+                    qtd: item.quantidade || 0,
+                    min: item.estoque_minimo != null ? item.estoque_minimo : '—',
+                    status: (item.quantidade || 0) === 0 ? 'ZERADO' : 'ABAIXO MÍN.',
+                    cons: cons > 0 ? parseFloat(cons.toFixed(2)) : 0,
+                    dias: dias != null ? dias : '—',
+                    sug:  sug  != null ? sug  : '—',
+                    isZero: (item.quantidade || 0) === 0
+                };
+            })
+            .sort(function (a, b) {
+                if (a.isZero !== b.isZero) return a.isZero ? -1 : 1;
+                var da = typeof a.dias === 'number' ? a.dias : 9999;
+                var db = typeof b.dias === 'number' ? b.dias : 9999;
+                return da - db;
+            });
+        if (alertItems.length === 0) {
+            showToast('Nenhum item em alerta no momento', 'info');
+            return;
+        }
+        var S_TITLE = _xlS('1F4E79', 'FFFFFF', true, true);
+        var S_SUB   = _xlS('2E75B6', 'FFFFFF', false, false);
+        var S_HDR   = _xlS('1F4E79', 'FFFFFF', true, true);
+        var S_ZERO  = _xlS('FFCCCC', '9C0006', true, false);
+        var S_LOW   = _xlS('FFF2CC', '7D6608', false, false);
+        var ws = {}, r = 0;
+        var cols = ['Item', 'Categoria', 'Almoxarifado', 'Qtd Atual', 'Mínimo',
+                    'Status', 'Cons. Médio/Dia', 'Dias Restantes', 'Qtd Sugerida (7d)'];
+        _xlSetRow(ws, r++, ['ALERTAS DE ESTOQUE — ' + alertItems.length + ' ITENS CRÍTICOS'], [S_TITLE]);
+        _xlSetRow(ws, r++,
+            ['Período: últimos ' + pDays + ' dias   |   Gerado em: ' + new Date().toLocaleString('pt-BR')], [S_SUB]);
+        r++;
+        _xlSetRow(ws, r++, cols, cols.map(function () { return S_HDR; }));
+        alertItems.forEach(function (a) {
+            var rs = a.isZero ? S_ZERO : S_LOW;
+            _xlSetRow(ws, r++,
+                [a.nome, a.categoria, a.almox, a.qtd, a.min, a.status, a.cons, a.dias, a.sug],
+                cols.map(function () { return rs; })
+            );
+        });
+        ws['!ref']        = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: r - 1, c: 8 } });
+        ws['!cols']       = [{ wch: 32 }, { wch: 18 }, { wch: 20 }, { wch: 10 }, { wch: 10 },
+                              { wch: 14 }, { wch: 16 }, { wch: 16 }, { wch: 20 }];
+        ws['!merges']     = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 8 } }];
+        ws['!autofilter'] = { ref: 'A4:I' + r };
+        var wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, '⚠️ Alertas');
+        XLSX.writeFile(wb, 'Alertas_Estoque_' + getCurrentDate() + '.xlsx');
+        showToast('Alertas exportados!', 'success');
+    } catch (error) {
+        console.error('Erro ao exportar alertas:', error);
+        showToast('Erro ao exportar alertas', 'error');
     }
 }
 

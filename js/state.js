@@ -57,6 +57,21 @@ let state = {
         newItemUnit: 'UN'
     },
 
+    batchOperation: {
+        active: false,
+        targetWarehouse: 'alm-1',
+        form: {
+            createNewItem: false,
+            selectedItem: null,
+            newItemName: '',
+            newItemCategory: '',
+            newItemUnit: 'UN',
+            size: '',
+            quantity: 1
+        },
+        lines: []
+    },
+
     editingItem: null,
 
     statistics: null,

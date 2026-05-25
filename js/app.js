@@ -1103,11 +1103,23 @@ async function transferItems() {
     let toQtd = toItem ? toItem.quantidade : 0;
 
     if (op.size) {
-        if (!fromTamanhos[op.size] || fromTamanhos[op.size] < op.quantity) {
-            showToast('Quantidade indisponível neste tamanho', 'error');
-            return;
+        const variationConfigured = fromTamanhos[op.size] !== undefined;
+        if (variationConfigured) {
+            // Item tem essa variação configurada — valida estritamente por variação
+            if (fromTamanhos[op.size] < op.quantity) {
+                showToast('Quantidade indisponível nesta variação', 'error');
+                return;
+            }
+            fromTamanhos[op.size] -= op.quantity;
+        } else {
+            // Item não tem variação configurada (ex: BOTA PVC sem NOVO/HIGIENIZADO no BD)
+            // Valida pela quantidade total e registra a condição só no movimento
+            if (fromQtd < op.quantity) {
+                showToast('Quantidade indisponível', 'error');
+                return;
+            }
         }
-        fromTamanhos[op.size] -= op.quantity;
+        // Sempre registra a variação no destino
         toTamanhos[op.size] = (toTamanhos[op.size] || 0) + op.quantity;
     } else {
         if (fromQtd < op.quantity) {
@@ -1190,11 +1202,21 @@ async function transferDarBaixa() {
     let fromQtd = fromItem.quantidade;
 
     if (op.size) {
-        if (!fromTamanhos[op.size] || fromTamanhos[op.size] < op.quantity) {
-            showToast('Quantidade indisponível neste tamanho', 'error');
-            return;
+        const variationConfigured = fromTamanhos[op.size] !== undefined;
+        if (variationConfigured) {
+            // Item tem essa variação configurada — valida estritamente por variação
+            if (fromTamanhos[op.size] < op.quantity) {
+                showToast('Quantidade indisponível nesta variação', 'error');
+                return;
+            }
+            fromTamanhos[op.size] -= op.quantity;
+        } else {
+            // Item não tem variação configurada — valida pela quantidade total
+            if (fromQtd < op.quantity) {
+                showToast('Quantidade indisponível', 'error');
+                return;
+            }
         }
-        fromTamanhos[op.size] -= op.quantity;
     } else {
         if (fromQtd < op.quantity) {
             showToast('Quantidade indisponível', 'error');
@@ -3596,16 +3618,16 @@ function renderTransfer() {
                         <div>
                             <div style="font-size:11px;color:var(--text-3);">Item selecionado</div>
                             <div style="font-weight:700;font-size:15px;color:var(--text-1);">${selectedItem.nome}</div>
-                            ${hasSizes && !op.size ? `<div style="font-size:11px;color:var(--orange);margin-top:4px;"><i class="ph ph-warning"></i> Selecione um tamanho</div>` : ''}
+                            ${hasSizes && !op.size ? `<div style="font-size:11px;color:var(--orange);margin-top:4px;"><i class="ph ph-warning"></i> Selecione uma variação</div>` : ''}
                         </div>
                         <div style="text-align:right;">
-                            <div style="font-size:11px;color:var(--text-3);">${op.size ? `Tam ${formatVariationLabel(op.size)}` : 'Disponível'}</div>
+                            <div style="font-size:11px;color:var(--text-3);">${op.size ? `${CONDICOES.includes(op.size) ? 'Cond' : 'Tam'} ${formatVariationLabel(op.size)}` : 'Disponível'}</div>
                             <div style="font-size:22px;font-weight:700;color:${availableQty > 0 ? 'var(--green)' : 'var(--red)'};">${availableQty}</div>
                         </div>
                     </div>
                     ${hasSizes ? `
                         <div class="field-group">
-                            <label class="field-label">Tamanho / Numeração *</label>
+                            <label class="field-label">${hasCondicoes(selectedItem) && !hasTamanhos(selectedItem) ? 'Condição *' : hasTamanhos(selectedItem) && hasCondicoes(selectedItem) ? 'Tamanho / Condição *' : 'Tamanho / Numeração *'}</label>
                             <select class="field-input field-select" onchange="state.transferOperation.size=this.value;state.transferOperation.quantity=1;render()" required>
                                 <option value="">-- Selecione --</option>
                                 ${Object.entries(selectedItem.tamanhos).filter(([, q]) => q > 0).map(([s, q]) => `<option value="${s}" ${op.size === s ? 'selected' : ''}>${formatVariationLabel(s)} — ${q} disponível${q !== 1 ? 'is' : ''}</option>`).join('')}
@@ -3613,10 +3635,12 @@ function renderTransfer() {
                         </div>
                     ` : `
                         <div class="field-group">
-                            <label class="field-label">Tamanho / Numeração <span style="font-weight:400;color:var(--text-3)">(ex: 38, 39, M, G)</span></label>
-                            <input class="field-input" type="text" placeholder="Digite o tamanho ou numeração..."
-                                value="${op.size || ''}"
-                                oninput="state.transferOperation.size=this.value.trim()||null;render()">
+                            <label class="field-label">Condição <span style="font-weight:400;color:var(--text-3)">(opcional)</span></label>
+                            <select class="field-input field-select" onchange="state.transferOperation.size=this.value||null;render()">
+                                <option value="" ${!op.size ? 'selected' : ''}>— Sem classificação —</option>
+                                <option value="NOVO" ${op.size === 'NOVO' ? 'selected' : ''} style="color:var(--green);font-weight:600;">NOVO</option>
+                                <option value="HIGIENIZADO" ${op.size === 'HIGIENIZADO' ? 'selected' : ''} style="color:var(--accent);font-weight:600;">HIGIENIZADO</option>
+                            </select>
                         </div>
                     `}
                 ` : ''}

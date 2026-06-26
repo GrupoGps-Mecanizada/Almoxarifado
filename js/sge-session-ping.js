@@ -109,6 +109,10 @@
     const RETRY_DELAY = 3000; // 3s entre tentativas
 
     async function start() {
+        if (_channel) {
+            console.log('[SGE Presence] Radar já inicializado.');
+            return;
+        }
         const data = getSessionData();
         if (!data) {
             if (_retryCount < MAX_RETRIES) {
@@ -161,7 +165,10 @@
         if (_awayTimer) clearTimeout(_awayTimer);
         if (_channel) {
             await _channel.untrack();
-            _supabase.removeChannel(_channel);
+            if (_supabase) {
+                _supabase.removeChannel(_channel);
+            }
+            _channel = null;
         }
     }
 

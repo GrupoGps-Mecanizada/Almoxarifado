@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Almoxarifado EPI — App
  * Lógica da aplicação: render, eventos, movimentações, contagem
  */
@@ -1916,7 +1916,8 @@ async function confirmDarBaixa() {
             quantity: qty,
             warehouse_id: item.warehouse_id || 'alm-1',
             user_name: state.user.nome,
-            observations: obs
+            observations: obs,
+            size: m.size || null
         });
 
         // Atualiza estado local
@@ -2170,9 +2171,11 @@ async function loadContagemHistory() {
             sbClient.from('movements')
                 .select('date, observations')
                 .ilike('observations', 'Baixa Contagem Diária%')
+                .order('timestamp', { ascending: false })
                 .limit(200),
             sbClient.from('count_sessions')
                 .select('id, observacao')
+                .order('created_at', { ascending: false })
                 .limit(200)
         ]);
 
